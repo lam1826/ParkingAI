@@ -1,0 +1,16 @@
+fastapi==0.115.6
+uvicorn[standard]==0.32.1
+sqlalchemy==2.0.36
+pydantic==2.10.3
+pydantic-settings==2.6.1
+python-jose[cryptography]==3.3.0
+python-multipart==0.0.19
+# Ghim bcrypt < 4.1: các bản 4.1.x có bug đã biết trên một số nền tảng
+# (đặc biệt bản wheel cho Windows) khiến bcrypt.checkpw() ném
+# "ValueError: password cannot be longer than 72 bytes" ngay cả với
+# mật khẩu rất ngắn (vd. "password123"). Bản 4.0.1 ổn định, không dính bug này.
+bcrypt==4.0.1
+email-validator==2.2.0
+google-genai==0.3.0
+pytest==8.3.4
+httpx==0.28.1
