@@ -1,6 +1,5 @@
 from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session  # Sử dụng Session đồng bộ
 
 from database import get_db
@@ -9,19 +8,18 @@ from schemas.auth import CurrentUserResponse, TokenResponse, LoginRequest
 from services.auth_service import AuthService, get_current_user
 
 router = APIRouter(
-    prefix="/auth",
     tags=["Authentication"]
 )
 
 @router.post("/login", response_model=TokenResponse, summary="Đăng nhập hệ thống lấy JWT Token")
 def login(  # Bỏ async vì hàm service xử lý đồng bộ
-    form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
+    body: LoginRequest,
     db: Annotated[Session, Depends(get_db)]  # Dùng Session đồng bộ
 ):
     """
-    Xác thực tài khoản qua OAuth2 Form (username & password), trả về Access Token.
+    Xác thực tài khoản qua JSON body (username & password), trả về Access Token.
     """
-    if not form_data.username.strip() or not form_data.password.strip():
+    if not body.username.strip() or not body.password.strip():
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Tên đăng nhập và mật khẩu không được để trống",
@@ -31,8 +29,8 @@ def login(  # Bỏ async vì hàm service xử lý đồng bộ
     # Gọi hàm đồng bộ trực tiếp không dùng await
     user = auth_service.authenticate_user(
         db=db, 
-        username=form_data.username, 
-        password=form_data.password
+        username=body.username, 
+        password=body.password
     )
     
     access_token = auth_service.create_access_token(
@@ -62,4 +60,9 @@ def get_me(
     """
     Trả về thông tin chi tiết của user đang sở hữu Access Token.
     """
-    return current_user
+    return {
+        "id": current_user.id,
+        "username": current_user.username,
+        "role": str(current_user.role.name) if current_user.role else "",
+        "is_active": current_user.is_active,
+    }

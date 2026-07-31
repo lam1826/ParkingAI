@@ -1,13 +1,18 @@
-import React from 'react';
-import { BrowserRouter } from 'react-router-dom';
-import AppRouter from './routes/AppRouter';
+import { BrowserRouter as Router } from "react-router-dom";
+import AppRoutes from "./routes/AppRoutes"; // <-- Đã sửa lại đường dẫn ở đây
+import { AuthProvider } from "./context/AuthContext";
+import { ThemeProvider } from "@mui/material/styles";
+import theme from "./theme"; 
 
 function App() {
   return (
-    // Bọc AppRouter bên trong BrowserRouter để các Route hoạt động được
-    <BrowserRouter>
-      <AppRouter />
-    </BrowserRouter>
+    <ThemeProvider theme={theme}>
+      <Router>
+        <AuthProvider>
+          <AppRoutes />
+        </AuthProvider>
+      </Router>
+    </ThemeProvider>
   );
 }
 

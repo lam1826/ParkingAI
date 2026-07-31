@@ -8,5 +8,9 @@
   },
   "devDependencies": {
     "concurrently": "^9.0.0"
+  },
+  "dependencies": {
+    "@mui/x-data-grid": "^9.10.1",
+    "recharts": "^3.10.1"
   }
 }

@@ -14,7 +14,7 @@ from models.user import User
 # 1. SETUP BẢO MẬT & MÃ HÓA
 # ==========================================
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 
 ROLE_HIERARCHY: Dict[str, int] = {
     "staff": 1,
