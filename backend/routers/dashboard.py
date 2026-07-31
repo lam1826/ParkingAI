@@ -1,4 +1,4 @@
-from typing import Annotated
+from typing import Annotated, List
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 
@@ -7,7 +7,7 @@ from schemas.dashboard import DashboardResponse
 from services.parking_service import ParkingService
 from services.auth_service import get_current_user
 from models.user import User
-from schemas.dashboard import AIInsightResponse
+from schemas.dashboard import AIInsightResponse, RecentSessionItem, RevenueChartItem
 
 
 
@@ -52,3 +52,34 @@ def get_ai_insight(
     """
     service = ParkingService(db)
     return service.get_ai_insight_data()
+
+
+@router.get(
+    "/recent-sessions",
+    response_model=List[RecentSessionItem],
+    status_code=status.HTTP_200_OK,
+    summary="Lấy danh sách các phiên gửi xe gần đây nhất"
+)
+def get_recent_sessions(
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+    limit: int = 10,
+):
+    """Trả về danh sách phiên gửi xe gần đây nhất (kèm biển số, loại xe) cho bảng Dashboard."""
+    service = ParkingService(db)
+    return service.get_recent_sessions(limit=limit)
+
+
+@router.get(
+    "/revenue-chart",
+    response_model=List[RevenueChartItem],
+    status_code=status.HTTP_200_OK,
+    summary="Lấy doanh thu theo từng ngày trong 7 ngày gần nhất"
+)
+def get_revenue_chart(
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+):
+    """Trả về doanh thu từng ngày trong 7 ngày gần nhất để vẽ biểu đồ trên Dashboard."""
+    service = ParkingService(db)
+    return service.get_revenue_last_7_days()

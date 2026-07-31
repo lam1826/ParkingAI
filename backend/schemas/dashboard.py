@@ -21,3 +21,18 @@ class AIInsightResponse(BaseModel):
     insight: str = Field(..., description="Nội dung phân tích và gợi ý từ AI Gemini")
 
     model_config = ConfigDict(from_attributes=True)
+
+class RecentSessionItem(BaseModel):
+    id: str = Field(..., description="Mã phiên gửi xe")
+    plate: str = Field(..., description="Biển số xe")
+    vehicleType: str = Field(..., description="Loại xe")
+    timeIn: str = Field(..., description="Thời gian xe vào bãi (ISO datetime)")
+    status: str = Field(..., description="Trạng thái hiển thị: 'Đang đỗ' hoặc 'Đã rời bãi'")
+
+    model_config = ConfigDict(from_attributes=True)
+
+class RevenueChartItem(BaseModel):
+    day: str = Field(..., description="Ngày (VD: 24/07)")
+    revenue: float = Field(..., description="Doanh thu trong ngày")
+
+    model_config = ConfigDict(from_attributes=True)

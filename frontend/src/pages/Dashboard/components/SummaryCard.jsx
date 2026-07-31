@@ -1,26 +1,19 @@
-import React from 'react';
-import { Card, CardContent, Typography, Skeleton, Box } from '@mui/material';
+import { Paper, Typography, Box } from "@mui/material";
 
-const SummaryCard = ({ title, value, loading, unit = "" }) => {
+export default function SummaryCard({ title, value, icon, color = "primary.main" }) {
   return (
-    <Card sx={{ height: '100%', boxShadow: 3 }}>
-      <CardContent>
-        {/* Đưa textTransform vào trong object sx để tránh cảnh báo DOM */}
-        <Typography color="textSecondary" gutterBottom variant="subtitle2" sx={{ textTransform: 'uppercase' }}>
+    <Paper sx={{ p: 3, display: "flex", alignItems: "center", justifyContent: "space-between", height: "100%" }}>
+      <Box>
+        <Typography variant="subtitle2" color="text.secondary" gutterBottom>
           {title}
         </Typography>
-        <Box sx={{ mt: 2 }}>
-          {loading ? (
-            <Skeleton variant="text" width="80%" height={40} />
-          ) : (
-            <Typography variant="h4" component="div" fontWeight="bold" color="primary">
-              {value !== undefined && value !== null ? `${value} ${unit}` : "0"}
-            </Typography>
-          )}
-        </Box>
-      </CardContent>
-    </Card>
-  ); 
-};
-
-export default SummaryCard;
+        <Typography variant="h5" fontWeight="bold">
+          {value}
+        </Typography>
+      </Box>
+      <Box sx={{ color: color, display: "flex", alignItems: "center", fontSize: 40 }}>
+        {icon}
+      </Box>
+    </Paper>
+  );
+}

@@ -36,7 +36,7 @@ Base.metadata.create_all(bind=engine)
 
 # --- ĐĂNG KÝ CÁC ROUTERS ---
 app.include_router(zone_router, prefix="/zones", tags=["Zones"])
-app.include_router(auth.router)
+app.include_router(auth.router, prefix="/api/auth", tags=["Auth"])
 app.include_router(dashboard.router)
 app.include_router(parking.router)
 app.include_router(ai_report.router)

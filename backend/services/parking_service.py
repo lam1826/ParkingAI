@@ -1,5 +1,5 @@
 import math
-from datetime import datetime, time
+from datetime import datetime, time, timedelta
 from typing import Optional, Any, Dict
 
 from fastapi import HTTPException, status
@@ -742,4 +742,75 @@ class ParkingService:
             raise HTTPException(
                 status_code=500,
                 detail=f"Lỗi khi tổng hợp AI Insight: {db_err}"
+            )
+
+    def get_recent_sessions(self, limit: int = 10) -> list:
+        """
+        Lấy danh sách các phiên gửi xe gần đây nhất (kèm biển số & loại xe)
+        để hiển thị ở bảng "Phiên gửi xe gần đây" trên Dashboard.
+        """
+        try:
+            stmt = (
+                select(
+                    ParkingSession.id,
+                    ParkingSession.check_in_time,
+                    ParkingSession.status,
+                    Vehicle.license_plate,
+                    VehicleType.name.label("vehicle_type_name"),
+                )
+                .join(Vehicle, ParkingSession.vehicle_id == Vehicle.id)
+                .join(VehicleType, Vehicle.vehicle_type_id == VehicleType.id)
+                .order_by(desc(ParkingSession.check_in_time))
+                .limit(limit)
+            )
+            rows = self.db.execute(stmt).all()
+
+            return [
+                {
+                    "id": r.id,
+                    "plate": r.license_plate,
+                    "vehicleType": r.vehicle_type_name,
+                    "timeIn": r.check_in_time.isoformat() if r.check_in_time else None,
+                    "status": "Đang đỗ" if r.status == "active" else "Đã rời bãi",
+                }
+                for r in rows
+            ]
+        except SQLAlchemyError as db_err:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Lỗi cơ sở dữ liệu khi lấy phiên gửi xe gần đây: {db_err}"
+            )
+
+    def get_revenue_last_7_days(self) -> list:
+        """
+        Doanh thu theo từng ngày trong 7 ngày gần nhất (kể cả hôm nay),
+        phục vụ biểu đồ doanh thu trên Dashboard.
+        """
+        try:
+            today = datetime.now().date()
+            start_date = datetime.combine(today - timedelta(days=6), time.min)
+
+            stmt = (
+                select(
+                    func.strftime("%Y-%m-%d", ParkingSession.check_out_time).label("day"),
+                    func.coalesce(func.sum(ParkingSession.parking_fee), 0.0).label("revenue"),
+                )
+                .where(
+                    ParkingSession.status == "completed",
+                    ParkingSession.check_out_time >= start_date,
+                )
+                .group_by("day")
+            )
+            rows = {r.day: float(r.revenue) for r in self.db.execute(stmt).all()}
+
+            result = []
+            for i in range(7):
+                d = today - timedelta(days=6 - i)
+                key = d.strftime("%Y-%m-%d")
+                result.append({"day": d.strftime("%d/%m"), "revenue": rows.get(key, 0.0)})
+            return result
+        except SQLAlchemyError as db_err:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Lỗi cơ sở dữ liệu khi lấy doanh thu 7 ngày: {db_err}"
             )
