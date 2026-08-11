@@ -14,6 +14,7 @@ from .monthly_pass import MonthlyPass
 from .price_config import PriceConfig
 from .parking_session import ParkingSession
 from .ai_report import AiReport
+from .audit_log import AuditLog
 
 # Sử dụng __all__ để kiểm soát chính xác những gì được export ra 
 # khi gọi `from models import *` và tránh cảnh báo unused import trong IDE
@@ -30,4 +31,5 @@ __all__ = [
     "PriceConfig",
     "ParkingSession",
     "AiReport",
+    "AuditLog",
 ]

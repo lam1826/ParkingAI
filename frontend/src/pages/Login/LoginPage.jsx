@@ -10,9 +10,13 @@ import {
   CircularProgress 
 } from "@mui/material";
 import { AuthContext } from "../../context/AuthContext";
+import { Link as RouterLink } from "react-router-dom";
+import { useLocation } from "react-router-dom";
+import PasswordField from "../../components/common/PasswordField";
 
 export default function LoginPage() {
   const { login } = useContext(AuthContext);
+  const location = useLocation();
   const [formData, setFormData] = useState({ username: "", password: "" });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -61,6 +65,11 @@ export default function LoginPage() {
               {error}
             </Alert>
           )}
+          {location.state?.message && (
+            <Alert severity="success" sx={{ width: "100%", mb: 2 }}>
+              {location.state.message}
+            </Alert>
+          )}
 
           <Box component="form" onSubmit={handleSubmit} sx={{ width: '100%' }}>
             <TextField
@@ -75,13 +84,12 @@ export default function LoginPage() {
               value={formData.username}
               onChange={handleChange}
             />
-            <TextField
+            <PasswordField
               margin="normal"
               required
               fullWidth
               name="password"
               label="Mật khẩu"
-              type="password"
               id="password"
               autoComplete="current-password"
               value={formData.password}
@@ -95,6 +103,9 @@ export default function LoginPage() {
               disabled={loading}
             >
               {loading ? <CircularProgress size={24} color="inherit" /> : "Đăng Nhập"}
+            </Button>
+            <Button component={RouterLink} to="/register" fullWidth>
+              Chưa có tài khoản? Đăng ký
             </Button>
           </Box>
         </Paper>

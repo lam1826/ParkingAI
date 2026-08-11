@@ -1,4 +1,4 @@
-import { createContext, useState, useEffect } from "react";
+import { createContext, useCallback, useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import authService from "../services/authService";
 
@@ -9,20 +9,34 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
+  const persistUser = useCallback((userData) => {
+    localStorage.setItem("user", JSON.stringify(userData));
+    setUser(userData);
+    return userData;
+  }, []);
+
+  const refreshUser = useCallback(async () => {
+    const userData = await authService.getProfile();
+    return persistUser(userData);
+  }, [persistUser]);
+
   // Kiểm tra token khi khởi chạy app
   useEffect(() => {
     const checkAuth = async () => {
       const token = localStorage.getItem("token");
-      const storedUser = localStorage.getItem("user");
 
-      if (token && storedUser) {
-        setUser(JSON.parse(storedUser));
-        // Tùy chọn: Gọi API getProfile() ở đây để cập nhật dữ liệu user mới nhất
+      if (token) {
+        try {
+          await refreshUser();
+        } catch {
+          localStorage.removeItem("token");
+          localStorage.removeItem("user");
+        }
       }
       setLoading(false);
     };
     checkAuth();
-  }, []);
+  }, [refreshUser]);
 
   const login = async (credentials) => {
     try {
@@ -35,15 +49,9 @@ export const AuthProvider = ({ children }) => {
       localStorage.setItem("token", token);
 
       // Lấy thông tin user hiện tại từ /api/auth/me
-      const userData = await authService.getProfile();
-
-      localStorage.setItem("user", JSON.stringify(userData));
-
-      // Cập nhật state
-      setUser(userData);
+      const userData = await refreshUser();
       
-      // Chuyển hướng vào trang chính (Dashboard)
-      navigate("/");
+      navigate(userData.role === "customer" ? "/account" : "/");
       return { success: true };
     } catch (error) {
       console.error("Login failed:", error);
@@ -66,7 +74,7 @@ export const AuthProvider = ({ children }) => {
   }
 
   return (
-    <AuthContext.Provider value={{ user, login, logout }}>
+    <AuthContext.Provider value={{ user, login, logout, refreshUser }}>
       {children}
     </AuthContext.Provider>
   );

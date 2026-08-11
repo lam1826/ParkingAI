@@ -23,9 +23,7 @@ const useParkingSession = () => {
     setLoading(true);
     try {
       const data = await parkingSessionService.getAllSessions();
-      const list = data.data || data || [];
-      // Backend chưa hỗ trợ lọc theo status, nên lọc "active" ngay tại client
-      setSessions(list.filter((s) => s.status === "active"));
+      setSessions(data || []);
     } catch (err) {
       console.error("Lỗi lấy dữ liệu phiên đỗ:", err);
       showNotify("Không thể tải danh sách xe đang đỗ", "error");
@@ -57,7 +55,10 @@ const useParkingSession = () => {
         return;
       }
 
-      await parkingSessionService.checkIn(vehicle.id);
+      await parkingSessionService.checkIn({
+        licensePlate: vehicle.license_plate,
+        vehicleTypeId: vehicle.vehicle_type_id,
+      });
       showNotify("Ghi nhận xe vào thành công!", "success");
       setLicensePlate("");
       fetchSessions();
@@ -68,9 +69,9 @@ const useParkingSession = () => {
     }
   };
 
-  const handleCheckOut = async (sessionId) => {
+  const handleCheckOut = async (licensePlate) => {
     try {
-      const res = await parkingSessionService.checkOut(sessionId);
+      const res = await parkingSessionService.checkOut(licensePlate);
       const fee = res.parking_fee ? new Intl.NumberFormat("vi-VN").format(res.parking_fee) : 0;
       showNotify(`Xe ra thành công! Phí đỗ xe: ${fee} VNĐ`, "success");
       fetchSessions();

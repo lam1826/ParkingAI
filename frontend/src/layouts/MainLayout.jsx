@@ -15,7 +15,6 @@ import {
   ListItemText,
   Menu,
   MenuItem,
-  Avatar,
 } from "@mui/material";
 
 // Import Icons
@@ -26,8 +25,15 @@ import DirectionsCarIcon from "@mui/icons-material/DirectionsCar";
 import CardMembershipIcon from "@mui/icons-material/CardMembership";
 import PeopleIcon from "@mui/icons-material/People";
 import AccountCircleIcon from "@mui/icons-material/AccountCircle";
+import DomainIcon from "@mui/icons-material/Domain";
+import CategoryIcon from "@mui/icons-material/Category";
+import PriceChangeIcon from "@mui/icons-material/PriceChange";
+import AssessmentIcon from "@mui/icons-material/Assessment";
+import AdminPanelSettingsIcon from "@mui/icons-material/AdminPanelSettings";
+import HistoryIcon from "@mui/icons-material/History";
 
 import { AuthContext } from "../context/AuthContext";
+import AIChatbot from "../components/ai/AIChatbot";
 
 const drawerWidth = 260; // Độ rộng của Sidebar
 
@@ -41,12 +47,20 @@ export default function MainLayout() {
 
   // Danh sách các menu trong Sidebar
   const menuItems = [
-    { text: "Dashboard", icon: <DashboardIcon />, path: "/" },
-    { text: "Phiên Đỗ Xe", icon: <LocalParkingIcon />, path: "/sessions" },
-    { text: "Xe & Khách Hàng", icon: <DirectionsCarIcon />, path: "/vehicles" },
-    { text: "Vé Tháng", icon: <CardMembershipIcon />, path: "/monthly-passes" },
-    // Chỉ hiển thị menu Tài Khoản nếu là Admin (có thể tùy chỉnh logic theo role của bạn)
-    { text: "Tài Khoản", icon: <PeopleIcon />, path: "/users", role: "admin" },
+    { text: "Tài khoản của tôi", icon: <AccountCircleIcon />, path: "/account" },
+    { text: "Dashboard", icon: <DashboardIcon />, path: "/", role: "staff" },
+    { text: "Phiên Đỗ Xe", icon: <LocalParkingIcon />, path: "/sessions", role: "staff" },
+    { text: "Khu vực", icon: <DomainIcon />, path: "/zones", role: "staff" },
+    { text: "Vị trí đỗ", icon: <LocalParkingIcon />, path: "/parking-slots", role: "staff" },
+    { text: "Loại xe", icon: <CategoryIcon />, path: "/vehicle-types", role: "staff" },
+    { text: "Phương tiện", icon: <DirectionsCarIcon />, path: "/vehicles", role: "staff" },
+    { text: "Khách hàng", icon: <PeopleIcon />, path: "/customers", role: "staff" },
+    { text: "Vé Tháng", icon: <CardMembershipIcon />, path: "/monthly-passes", role: "staff" },
+    { text: "Bảng giá", icon: <PriceChangeIcon />, path: "/price-configs", role: "staff" },
+    { text: "Báo cáo", icon: <AssessmentIcon />, path: "/reports", role: "staff" },
+    { text: "Tài Khoản", icon: <PeopleIcon />, path: "/users", role: "manager" },
+    { text: "Nhật ký hoạt động", icon: <HistoryIcon />, path: "/audit-logs", role: "manager" },
+    { text: "Vai trò", icon: <AdminPanelSettingsIcon />, path: "/roles", role: "admin" },
   ];
 
   const handleMenuOpen = (event) => {
@@ -60,6 +74,11 @@ export default function MainLayout() {
   const handleLogout = () => {
     handleMenuClose();
     logout();
+  };
+
+  const handleNavigate = (path) => {
+    handleMenuClose();
+    navigate(path);
   };
 
   return (
@@ -95,8 +114,8 @@ export default function MainLayout() {
               anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
               transformOrigin={{ vertical: 'top', horizontal: 'right' }}
             >
-              <MenuItem onClick={handleMenuClose}>Hồ sơ cá nhân</MenuItem>
-              <MenuItem onClick={handleMenuClose}>Cài đặt</MenuItem>
+              <MenuItem onClick={() => handleNavigate("/profile")}>Hồ sơ cá nhân</MenuItem>
+              <MenuItem onClick={() => handleNavigate("/settings")}>Cài đặt</MenuItem>
               <Divider />
               <MenuItem onClick={handleLogout} sx={{ color: 'error.main' }}>
                 Đăng xuất
@@ -120,7 +139,8 @@ export default function MainLayout() {
           <List>
             {menuItems.map((item) => {
               // Ẩn menu nếu có yêu cầu role mà user không thỏa mãn (ví dụ giả lập)
-              if (item.role && user?.role !== item.role && item.role === 'admin_chua_dung_den_chuc_nang_nay') return null;
+              const roleLevel = { customer: 0, staff: 1, manager: 2, admin: 3 };
+              if (item.role && (roleLevel[String(user?.role).toLowerCase()] || 0) < roleLevel[item.role]) return null;
 
               const isSelected = location.pathname === item.path || (location.pathname.startsWith(item.path) && item.path !== '/');
 
@@ -161,6 +181,7 @@ export default function MainLayout() {
         {/* ĐÂY LÀ NƠI CÁC TRANG (Dashboard, Users,...) SẼ ĐƯỢC RENDER VÀO */}
         <Outlet /> 
       </Box>
+      {(["staff", "manager", "admin"].includes(String(user?.role).toLowerCase())) && <AIChatbot />}
     </Box>
   );
 }

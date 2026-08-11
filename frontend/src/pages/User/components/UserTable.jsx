@@ -9,13 +9,12 @@ const UserTable = ({ users, loading, canManage, onAdd, onEdit, onDelete }) => {
   const columns = [
     { field: "username", headerName: "Tên đăng nhập", flex: 1, minWidth: 150, renderCell: (p) => <strong>{p.value}</strong> },
     { field: "full_name", headerName: "Họ và tên", flex: 1.5, minWidth: 180 },
-    { field: "email", headerName: "Email", flex: 1.5, minWidth: 200 },
     {
       field: "role",
       headerName: "Vai trò",
       flex: 1,
       minWidth: 130,
-      valueGetter: (params) => params.row.role?.name || params.row.role || "N/A",
+      valueGetter: (_value, row) => row.role?.name || "N/A",
       renderCell: (params) => (
         <Chip label={params.value} color="primary" size="small" variant="outlined" />
       ),

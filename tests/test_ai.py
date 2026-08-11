@@ -32,7 +32,7 @@ def test_ai_question_valid_prompt(mock_genai_client, client: TestClient, auth_he
         "parking_stats": {"active_sessions": 15, "total_slots": 50}
     }
     
-    response = client.post("/ai/question", json=payload, headers=auth_headers)
+    response = client.post("/ai/ask", json=payload, headers=auth_headers)
     
     assert response.status_code == 200
     data = response.json()
@@ -46,30 +46,22 @@ def test_ai_question_empty_prompt(client: TestClient, auth_headers: dict):
         "parking_stats": {"active_sessions": 5}
     }
     
-    response = client.post("/ai/question", json=payload, headers=auth_headers)
+    response = client.post("/ai/ask", json=payload, headers=auth_headers)
     
     # Tùy thuộc vào schema có validate min_length hay không, nếu có hoặc bắt buộc -> 422 hoặc 400
     assert response.status_code in [400, 422]
 
 
-@patch("services.ai_service.genai.Client")
-def test_ai_question_empty_data(mock_genai_client, client: TestClient, auth_headers: dict):
-    """3. Kiểm thử POST /ai/question khi dữ liệu truyền lên bị rỗng (Empty data)."""
-    mock_instance = MagicMock()
-    mock_response = MagicMock()
-    mock_response.text = "Tôi không có đủ dữ liệu để trả lời câu hỏi này."
-    mock_instance.models.generate_content.return_value = mock_response
-    mock_genai_client.return_value = mock_instance
-
+def test_ai_question_empty_data(client: TestClient, auth_headers: dict):
+    """3. Kiểm thử POST /ai/ask từ chối dữ liệu rỗng trước khi gọi Gemini."""
     payload = {
         "question": "Doanh thu hôm nay là bao nhiêu?",
         "parking_stats": {}  # Dữ liệu rỗng
     }
     
-    response = client.post("/ai/question", json=payload, headers=auth_headers)
+    response = client.post("/ai/ask", json=payload, headers=auth_headers)
     
-    assert response.status_code == 200
-    assert "không có đủ dữ liệu" in response.text
+    assert response.status_code == 422
 
 
 @patch("services.ai_service.genai.Client")
@@ -85,7 +77,7 @@ def test_ai_gemini_returns_error(mock_genai_client, client: TestClient, auth_hea
         "parking_stats": {"total": 10}
     }
     
-    response = client.post("/ai/question", json=payload, headers=auth_headers)
+    response = client.post("/ai/ask", json=payload, headers=auth_headers)
     
     assert response.status_code == 500
     assert "lỗi" in response.json().get("detail", "").lower()
@@ -104,7 +96,7 @@ def test_ai_gemini_timeout(mock_genai_client, client: TestClient, auth_headers: 
         "parking_stats": {"data": [1, 2, 3]}
     }
     
-    response = client.post("/ai/question", json=payload, headers=auth_headers)
+    response = client.post("/ai/ask", json=payload, headers=auth_headers)
     
     assert response.status_code == 500
 
@@ -124,7 +116,7 @@ def test_ai_anti_hallucination_constraint(mock_genai_client, client: TestClient,
         "parking_stats": {"active_sessions": [{"license_plate": "30A-111.11"}]}  # Không chứa biển số được hỏi
     }
     
-    response = client.post("/ai/question", json=payload, headers=auth_headers)
+    response = client.post("/ai/ask", json=payload, headers=auth_headers)
     
     assert response.status_code == 200
     assert "không có đủ dữ liệu" in response.text
@@ -148,3 +140,97 @@ def test_ai_daily_report_success(mock_genai_client, client: TestClient, auth_hea
     
     assert response.status_code in [200, 201]
     assert "Tóm tắt" in response.text or "Hoạt động ổn định" in response.text
+
+
+@patch("services.ai_service.genai.Client")
+def test_ai_weekly_report_success(mock_genai_client, client: TestClient, auth_headers: dict):
+    mock_instance = MagicMock()
+    mock_response = MagicMock()
+    mock_response.text = "Lưu lượng tăng vào thứ Sáu; khung giờ cao điểm là 17:00."
+    mock_instance.models.generate_content.return_value = mock_response
+    mock_genai_client.return_value = mock_instance
+
+    response = client.post(
+        "/ai/weekly-report",
+        headers=auth_headers,
+        json={
+            "start_date": "2026-08-03",
+            "end_date": "2026-08-09",
+            "weekly_data": [
+                {"time_label": "2026-08-03", "total_vehicles": 20},
+                {"time_label": "2026-08-08", "total_vehicles": 35},
+            ],
+        },
+    )
+
+    assert response.status_code == 200
+    assert "thứ Sáu" in response.json()["content"]
+    prompt = mock_instance.models.generate_content.call_args.kwargs["contents"]
+    assert "2026-08-03" in prompt
+    assert "total_vehicles" in prompt
+
+
+@patch("services.ai_service.genai.Client")
+def test_ai_staff_suggestion_success(mock_genai_client, client: TestClient, auth_headers: dict):
+    mock_instance = MagicMock()
+    mock_response = MagicMock()
+    mock_response.text = "Tăng cường nhân sự tại cổng vào trong khung 17:00."
+    mock_instance.models.generate_content.return_value = mock_response
+    mock_genai_client.return_value = mock_instance
+
+    response = client.post(
+        "/ai/staff-suggestion",
+        headers=auth_headers,
+        json={
+            "hourly_traffic": [{"time_label": "17:00", "total_vehicles": 40}],
+            "revenue": 1500000,
+            "occupancy_rate": 82.5,
+        },
+    )
+
+    assert response.status_code == 200
+    assert "nhân sự" in response.json()["content"]
+    prompt = mock_instance.models.generate_content.call_args.kwargs["contents"]
+    assert "82.5" in prompt
+    assert "1500000" in prompt
+
+
+@pytest.mark.parametrize(
+    ("path", "payload"),
+    [
+        ("/ai/daily-report", {"target_date": "2026-08-11", "parking_stats": {}}),
+        (
+            "/ai/weekly-report",
+            {"start_date": "2026-08-05", "end_date": "2026-08-11", "weekly_data": []},
+        ),
+        (
+            "/ai/staff-suggestion",
+            {"hourly_traffic": [], "revenue": 0, "occupancy_rate": 0},
+        ),
+    ],
+)
+def test_ai_reports_reject_empty_data(client: TestClient, auth_headers: dict, path: str, payload: dict):
+    response = client.post(path, headers=auth_headers, json=payload)
+    assert response.status_code == 422
+
+
+def test_ai_weekly_report_rejects_invalid_date_range(client: TestClient, auth_headers: dict):
+    response = client.post(
+        "/ai/weekly-report",
+        headers=auth_headers,
+        json={
+            "start_date": "2026-08-11",
+            "end_date": "2026-08-05",
+            "weekly_data": [{"time_label": "2026-08-08", "total_vehicles": 10}],
+        },
+    )
+    assert response.status_code == 422
+
+
+def test_ai_dashboard_question_rejects_whitespace(client: TestClient, auth_headers: dict):
+    response = client.post(
+        "/ai/question",
+        headers=auth_headers,
+        json={"question": "   "},
+    )
+    assert response.status_code == 422

@@ -1,25 +1,22 @@
 import api from "../../../services/api";
 
 const parkingSessionService = {
-  // Lấy danh sách toàn bộ phiên đỗ (lọc active ở phía hook)
   getAllSessions: async () => {
-    const response = await api.get("/api/v1/parking-sessions");
-    return response.data;
+    const { data } = await api.get("/parking/search", { params: { status: "active", size: 100 } });
+    return (data.items || []).map((item) => ({
+      id: item.session_id,
+      vehicle: item.vehicle,
+      parking_slot: { slot_number: item.slot_id ? `#${item.slot_id}` : "Chưa xếp" },
+      checkInTime: item.check_in_time,
+      status: item.status,
+    }));
   },
-
-  // Ghi nhận xe vào (backend yêu cầu vehicle_id, không nhận license_plate trực tiếp)
-  checkIn: async (vehicleId) => {
-    const response = await api.post("/api/v1/parking-sessions/check-in", {
-      vehicle_id: vehicleId,
-    });
-    return response.data;
-  },
-
-  // Ghi nhận xe ra
-  checkOut: async (sessionId) => {
-    const response = await api.put(`/api/v1/parking-sessions/${sessionId}/check-out`, {});
-    return response.data;
-  },
+  checkIn: async ({ licensePlate, vehicleTypeId }) => (
+    await api.post("/parking/check-in", { license_plate: licensePlate, vehicle_type_id: vehicleTypeId })
+  ).data,
+  checkOut: async (licensePlate) => (
+    await api.post("/parking/check-out", { license_plate: licensePlate })
+  ).data,
 };
 
 export default parkingSessionService;

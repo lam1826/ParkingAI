@@ -1,56 +1,19 @@
-import { Box, Typography, Paper, Button, Chip } from "@mui/material";
-import { DataGrid, GridToolbar } from "@mui/x-data-grid";
-import AddIcon from "@mui/icons-material/Add";
-import usePriceConfig from "./hooks/usePriceConfig";
+import { useEffect, useState } from "react";
+import CrudPage from "../../components/common/CrudPage";
+import api from "../../services/api";
+import { priceConfigService } from "./services/priceConfigService";
 
 export default function PriceConfigPage() {
-  const { priceConfigs, loading } = usePriceConfig();
-
-  const columns = [
-    { field: "id", headerName: "ID", width: 70 },
-    { field: "name", headerName: "Tên biểu cước", flex: 1, minWidth: 180 },
-    { field: "vehicleTypeName", headerName: "Loại xe", width: 130 },
-    { 
-      field: "hourlyRate", 
-      headerName: "Giá theo giờ (VND)", 
-      width: 150,
-      renderCell: (params) => params.value?.toLocaleString() + " đ" 
-    },
-    { 
-      field: "monthlyRate", 
-      headerName: "Giá vé tháng (VND)", 
-      width: 160,
-      renderCell: (params) => params.value?.toLocaleString() + " đ" 
-    },
-    { 
-      field: "isActive", 
-      headerName: "Trạng thái", 
-      width: 130,
-      renderCell: (params) => (
-        <Chip 
-          label={params.value ? "Áp dụng" : "Ngưng"} 
-          color={params.value ? "success" : "default"} 
-          size="small" 
-        />
-      )
-    },
-  ];
-
-  return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', gap: 2 }}>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Typography variant="h5" fontWeight="bold">Cấu hình Bảng giá & Cước phí</Typography>
-        <Button variant="contained" startIcon={<AddIcon />}>Thêm bảng giá</Button>
-      </Box>
-      <Paper sx={{ width: '100%', flexGrow: 1, minHeight: 400 }}>
-        <DataGrid
-          rows={priceConfigs}
-          columns={columns}
-          loading={loading}
-          slots={{ toolbar: GridToolbar }}
-          sx={{ border: 0 }}
-        />
-      </Paper>
-    </Box>
-  );
+  const [types, setTypes] = useState([]);
+  useEffect(() => { api.get("/api/v1/vehicle-types").then(({ data }) => setTypes(data)); }, []);
+  return <CrudPage title="Cấu hình bảng giá" service={priceConfigService} fields={[
+    { name: "vehicle_type_id", label: "Loại xe", type: "select", required: true,
+      options: types.map((item) => ({ value: item.id, label: item.name })) },
+    { name: "ticket_type", label: "Cách tính", type: "select", required: true,
+      options: [{ value: "HOURLY", label: "Theo giờ" }, { value: "DAILY", label: "Theo ngày" }] },
+    { name: "price", label: "Đơn giá (VND)", type: "number", required: true,
+      formatter: (value) => Number(value || 0).toLocaleString("vi-VN") },
+    { name: "effective_date", label: "Ngày áp dụng", type: "date", required: true },
+    { name: "is_active", label: "Đang áp dụng", type: "boolean" },
+  ]} />;
 }

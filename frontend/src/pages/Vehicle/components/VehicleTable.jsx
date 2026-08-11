@@ -27,13 +27,12 @@ const VehicleTable = ({ vehicles, loading, onAdd, onEdit, onDelete }) => {
         return <Chip label={typeName} size="small" variant="outlined" />;
       },
     },
-    { field: "color", headerName: "Màu sắc", flex: 1, minWidth: 120 },
     {
       field: "customerName",
       headerName: "Chủ sở hữu",
       flex: 1.5,
       minWidth: 180,
-      valueGetter: (params) => params.row.customer?.full_name || "Khách vãng lai",
+      valueGetter: (_value, row) => row.customer?.full_name || "Khách vãng lai",
     },
     {
       field: "actions",

@@ -34,9 +34,11 @@ def update_user(db: Session, db_user: User, user_in: user_schema.UserUpdate) -> 
     update_data = user_in.model_dump(exclude_unset=True)
     
     # Nếu có update mật khẩu thì xử lý băm mật khẩu
-    if "password" in update_data:
+    if update_data.get("password"):
         password = update_data.pop("password")
         update_data["password_hash"] = AuthService.get_password_hash(password)
+    else:
+        update_data.pop("password", None)
         
     for field, value in update_data.items():
         setattr(db_user, field, value)
