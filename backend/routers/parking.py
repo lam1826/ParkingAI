@@ -16,12 +16,13 @@ from schemas.parking import (
 )
 
 # Dependency lấy user hiện tại
-from services.auth_service import get_current_user
+from services.auth_service import RoleChecker, get_current_user
 from models.user import User
 
 router = APIRouter(
     prefix="/parking",
-    tags=["Parking Management"]
+    tags=["Parking Management"],
+    dependencies=[Depends(RoleChecker("staff"))],
 )
 
 

@@ -2,7 +2,6 @@ import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from routers import auth, dashboard, parking, ai_report, report
-from routers.zone import router as zone_router
 
 # Import cấu hình database và toàn bộ Models
 from database import engine
@@ -10,6 +9,8 @@ from models import Base
 
 # Import router cho bảng Role
 from routers.api import api_router
+from core.config import settings
+from middleware.audit import AuditLogMiddleware
 
 # --- KHỞI TẠO APP & METADATA ---
 app = FastAPI(
@@ -21,11 +22,12 @@ app = FastAPI(
 # --- CẤU HÌNH CORS ---
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[origin.strip() for origin in settings.CORS_ORIGINS.split(",") if origin.strip()],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(AuditLogMiddleware)
 
 # --- KHỞI TẠO DATABASE ---
 # Lệnh này sẽ kiểm tra và tạo file SQLite cùng tất cả các bảng nếu chưa tồn tại
@@ -35,8 +37,8 @@ Base.metadata.create_all(bind=engine)
 
 
 # --- ĐĂNG KÝ CÁC ROUTERS ---
-app.include_router(zone_router, prefix="/zones", tags=["Zones"])
 app.include_router(auth.router, prefix="/api/auth", tags=["Auth"])
+app.include_router(auth.oauth_router, prefix="/auth", tags=["Auth"])
 app.include_router(dashboard.router)
 app.include_router(parking.router)
 app.include_router(ai_report.router)

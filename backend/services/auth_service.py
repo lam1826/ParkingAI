@@ -1,5 +1,6 @@
 import datetime
 import bcrypt
+import secrets
 from typing import Dict, Annotated
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
@@ -17,6 +18,7 @@ from models.user import User
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 
 ROLE_HIERARCHY: Dict[str, int] = {
+    "customer": 0,
     "staff": 1,
     "manager": 2,
     "admin": 3
@@ -34,9 +36,12 @@ class AuthService:
     @staticmethod
     def verify_password(plain_password: str, hashed_password: str) -> bool:
         """Kiểm tra mật khẩu chưa mã hóa với hash lưu trong DB."""
-        return bcrypt.checkpw(
-            plain_password.encode("utf-8"), hashed_password.encode("utf-8")
-        )
+        try:
+            return bcrypt.checkpw(
+                plain_password.encode("utf-8"), hashed_password.encode("utf-8")
+            )
+        except (ValueError, TypeError):
+            return False
 
     @staticmethod
     def get_password_hash(password: str) -> str:
@@ -88,6 +93,27 @@ class AuthService:
             
         return user
 
+    @staticmethod
+    def validate_registration_role(role: str, registration_code: str | None) -> None:
+        """Customer registration is public; privileged roles require a server-side code."""
+        required_code = {
+            "manager": settings.MANAGER_REGISTRATION_CODE,
+            "admin": settings.ADMIN_REGISTRATION_CODE,
+        }.get(role)
+
+        if required_code is None:
+            return
+        if not required_code:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Đăng ký vai trò {role} chưa được quản trị viên bật",
+            )
+        if not registration_code or not secrets.compare_digest(registration_code, required_code):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Mã đăng ký không hợp lệ",
+            )
+
 
 # ==========================================
 # 3. FASTAPI DEPENDENCIES (Cấp độ Module)
@@ -128,7 +154,7 @@ def get_current_user(
     # Truy vấn đồng bộ
     user = db.query(User).filter(User.id == user_id).first()
     
-    if user is None:
+    if user is None or not user.is_active:
         raise credentials_exception
         
     return user

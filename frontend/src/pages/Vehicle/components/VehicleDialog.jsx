@@ -15,7 +15,6 @@ const initialForm = {
   license_plate: "",
   vehicle_type_id: "",
   customer_id: "",
-  color: "",
 };
 
 const VehicleDialog = ({ isOpen, onClose, onSave, vehicle, vehicleTypes, customers, submitting }) => {
@@ -27,7 +26,6 @@ const VehicleDialog = ({ isOpen, onClose, onSave, vehicle, vehicleTypes, custome
         license_plate: vehicle.license_plate || "",
         vehicle_type_id: vehicle.vehicle_type_id || vehicle.vehicle_type?.id || "",
         customer_id: vehicle.customer_id || vehicle.customer?.id || "",
-        color: vehicle.color || "",
       });
     } else {
       setForm(initialForm);
@@ -41,7 +39,11 @@ const VehicleDialog = ({ isOpen, onClose, onSave, vehicle, vehicleTypes, custome
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    onSave(form);
+    onSave({
+      license_plate: form.license_plate.trim().toUpperCase(),
+      vehicle_type_id: Number(form.vehicle_type_id),
+      customer_id: form.customer_id === "" ? null : Number(form.customer_id),
+    });
   };
 
   return (
@@ -80,16 +82,6 @@ const VehicleDialog = ({ isOpen, onClose, onSave, vehicle, vehicleTypes, custome
                   </MenuItem>
                 ))}
               </TextField>
-            </Grid>
-            <Grid size={{ xs: 12 }}>
-              <TextField
-                fullWidth
-                size="small"
-                label="Màu sắc"
-                name="color"
-                value={form.color}
-                onChange={handleChange}
-              />
             </Grid>
             <Grid size={{ xs: 12 }}>
               <TextField

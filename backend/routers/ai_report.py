@@ -3,8 +3,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import desc
 from typing import List, Dict, Any
 from datetime import date
-from pydantic import BaseModel, Field
-import traceback  # <--- BỔ SUNG ĐỂ IN CHI TIẾT LỖI
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from database import get_db
 from core.config import settings
@@ -13,26 +12,44 @@ from services.ai_service import AIService
 from models.ai_report import AiReport
 
 # IMPORT ĐÚNG: Lấy hàm get_current_user độc lập từ services.auth_service
-from services.auth_service import get_current_user
+from services.auth_service import RoleChecker, get_current_user
 from models.user import User
 
-router = APIRouter(prefix="/ai", tags=["AI Analytics"])
+router = APIRouter(
+    prefix="/ai",
+    tags=["AI Analytics"],
+    dependencies=[Depends(RoleChecker("staff"))],
+)
 
 # ==========================================
 # SCHEMAS DÀNH RIÊNG CHO REQUEST BODY
 # ==========================================
 class DailyReportRequest(BaseModel):
     target_date: date
-    parking_stats: Dict[str, Any]
+    parking_stats: Dict[str, Any] = Field(min_length=1)
 
 class WeeklyReportRequest(BaseModel):
     start_date: date
     end_date: date
-    weekly_data: List[Dict[str, Any]]
+    weekly_data: List[Dict[str, Any]] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def validate_date_range(self):
+        if self.end_date < self.start_date:
+            raise ValueError("Ngày kết thúc phải từ ngày bắt đầu trở đi")
+        return self
 
 class QuestionRequest(BaseModel):
     question: str = Field(..., min_length=1, description="Câu hỏi của người dùng")
-    parking_stats: Dict[str, Any]
+    parking_stats: Dict[str, Any] = Field(min_length=1)
+
+    @field_validator("question")
+    @classmethod
+    def question_must_not_be_blank(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Câu hỏi không được để trống")
+        return value
 
 class DashboardQuestionRequest(BaseModel):
     question: str = Field(
@@ -42,12 +59,20 @@ class DashboardQuestionRequest(BaseModel):
         json_schema_extra={"example": "Hôm nay bãi đỗ xe kiếm được bao nhiêu tiền?"}
     )
 
+    @field_validator("question")
+    @classmethod
+    def question_must_not_be_blank(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Câu hỏi không được để trống")
+        return value
+
 # BỔ SUNG: SCHEMA CHO API GỢI Ý NHÂN SỰ
 class StaffSuggestionRequest(BaseModel):
     """Input: Lưu lượng, doanh thu, tỷ lệ lấp đầy"""
-    hourly_traffic: List[Dict[str, Any]] = Field(..., description="Dữ liệu lưu lượng xe ra vào theo giờ")
-    revenue: float = Field(..., description="Tổng doanh thu dự kiến hoặc hiện tại")
-    occupancy_rate: float = Field(..., description="Tỷ lệ lấp đầy bãi đỗ xe (VD: 0.85 cho 85%)")
+    hourly_traffic: List[Dict[str, Any]] = Field(..., min_length=1, description="Dữ liệu lưu lượng xe ra vào theo giờ")
+    revenue: float = Field(..., ge=0, description="Tổng doanh thu dự kiến hoặc hiện tại")
+    occupancy_rate: float = Field(..., ge=0, le=100, description="Tỷ lệ lấp đầy bãi đỗ xe từ 0 đến 100%")
 
 
 # ==========================================
@@ -91,19 +116,13 @@ def ask_ai_question(
     current_user: User = Depends(get_current_user)
 ):
     """Hỏi đáp ngôn ngữ tự nhiên về dữ liệu bãi đỗ xe (Client tự gửi dữ liệu)"""
-    try:
-        ai_service = AIService(db, api_key=settings.GEMINI_API_KEY)
-        answer = ai_service.answer_question(
-            question=req.question,
-            parking_stats=req.parking_stats,
-            user_id=current_user.id
-        )
-        return {"message": "Truy vấn thành công", "content": answer}
-    except Exception as e:
-        # <--- BỔ SUNG: In chi tiết lỗi ra Terminal và trả về HTTP 500 rõ ràng
-        print("====== LỖI CRASH TẠI AI_SERVICE ======")
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Lỗi hệ thống AI: {str(e)}")
+    ai_service = AIService(db, api_key=settings.GEMINI_API_KEY)
+    answer = ai_service.answer_question(
+        question=req.question,
+        parking_stats=req.parking_stats,
+        user_id=current_user.id
+    )
+    return {"message": "Truy vấn thành công", "content": answer}
 
 @router.post("/question")
 def ask_ai_question_from_dashboard(

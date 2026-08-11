@@ -28,7 +28,9 @@ class AIService:
         # Khởi tạo Client thay vì dùng genai.configure() cũ
         self.client = genai.Client(api_key=api_key)
         # Sử dụng model chuẩn khuyến nghị hiện tại
-        self.model_name = 'gemini-3.6-flash'
+        # Model is configurable so deployments can upgrade without changing code.
+        from core.config import settings
+        self.model_name = settings.GEMINI_MODEL
 
     def generate_daily_report(self, target_date: date, parking_stats: Dict[str, Any], user_id: int) -> str:
         """

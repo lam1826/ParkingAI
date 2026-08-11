@@ -85,8 +85,9 @@ class ParkingService:
             # Lấy cấu hình giá
             stmt = select(PriceConfig).where(
                 PriceConfig.vehicle_type_id == vehicle_type_id,
-                PriceConfig.is_active == True
-            )
+                PriceConfig.is_active == True,
+                PriceConfig.effective_date <= time_out.date(),
+            ).order_by(PriceConfig.effective_date.desc(), PriceConfig.id.desc()).limit(1)
 
             price = self.db.execute(stmt).scalar_one_or_none()
 
@@ -136,6 +137,7 @@ class ParkingService:
     ) -> Dict[str, Any]:
 
         try:
+            license_plate = license_plate.strip().upper()
             vehicle_type = self.db.execute(
                 select(VehicleType).where(
                     VehicleType.id == vehicle_type_id
@@ -164,6 +166,11 @@ class ParkingService:
                 self.db.flush()
 
             else:
+                if vehicle.vehicle_type_id != vehicle_type_id:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Loại xe không khớp với phương tiện đã đăng ký.",
+                    )
                 active = self.db.execute(
                     select(ParkingSession).where(
                         ParkingSession.vehicle_id == vehicle.id,
@@ -238,6 +245,7 @@ class ParkingService:
         """
 
         try:
+            license_plate = license_plate.strip().upper()
             stmt = (
                 select(ParkingSession, Vehicle)
                 .join(
@@ -567,10 +575,7 @@ class ParkingService:
 
                 staff_info = None
 
-                staff_id = (
-                    getattr(session, "user_id", None)
-                    or getattr(session, "staff_id", None)
-                )
+                staff_id = session.staff_in_id
 
                 if staff_id:
                     staff_info = self.db.get(

@@ -2,6 +2,8 @@ import os
 
 os.environ.setdefault("SECRET_KEY", "test_secret_key_for_pytest_123456789")
 os.environ.setdefault("GEMINI_API_KEY", "test_gemini_api_key_for_pytest_123456789")
+os.environ.setdefault("MANAGER_REGISTRATION_CODE", "manager-test-code")
+os.environ.setdefault("ADMIN_REGISTRATION_CODE", "admin-test-code")
 
 import sys
 from pathlib import Path

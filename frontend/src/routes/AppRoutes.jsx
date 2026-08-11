@@ -1,26 +1,41 @@
 import { Routes, Route, Navigate } from "react-router-dom";
+import { lazy, Suspense } from "react";
+import { Box, CircularProgress } from "@mui/material";
 
 import MainLayout from "../layouts/MainLayout";
 import PrivateRoute from "./PrivateRoute";
 import PermissionRoute from "./PermissionRoute";
 
 // --- Pages ---
-import Dashboard from "../pages/Dashboard/DashboardPage";
-import LoginPage from "../pages/Login/LoginPage";
-import NotFoundPage from "../pages/NotFound/NotFoundPage";
+const Dashboard = lazy(() => import("../pages/Dashboard/DashboardPage"));
+const LoginPage = lazy(() => import("../pages/Login/LoginPage"));
+const RegisterPage = lazy(() => import("../pages/Register/RegisterPage"));
+const AccountPage = lazy(() => import("../pages/Account/AccountPage"));
+const ProfilePage = lazy(() => import("../pages/Profile/ProfilePage"));
+const SettingsPage = lazy(() => import("../pages/Setting/SettingPage"));
+const NotFoundPage = lazy(() => import("../pages/NotFound/NotFoundPage"));
 
 // Các module quản lý (Sprints 3-7)
-import CustomerPage from "../pages/Customer/CustomerPage";
-import VehiclePage from "../pages/Vehicle/VehiclePage";
-import SessionPage from "../pages/ParkingSession/ParkingSessionPage";
-import MonthlyPassPage from "../pages/MonthlyPass/MonthlyPassPage";
-import UserPage from "../pages/User/UserPage";
+const CustomerPage = lazy(() => import("../pages/Customer/CustomerPage"));
+const VehiclePage = lazy(() => import("../pages/Vehicle/VehiclePage"));
+const SessionPage = lazy(() => import("../pages/ParkingSession/ParkingSessionPage"));
+const MonthlyPassPage = lazy(() => import("../pages/MonthlyPass/MonthlyPassPage"));
+const UserPage = lazy(() => import("../pages/User/UserPage"));
+const ZonePage = lazy(() => import("../pages/Zone/ZonePage"));
+const ParkingSlotPage = lazy(() => import("../pages/ParkingSlot/ParkingSlotPage"));
+const VehicleTypePage = lazy(() => import("../pages/VehicleType/VehicleTypePage"));
+const PriceConfigPage = lazy(() => import("../pages/PriceConfig/PriceConfigPage"));
+const RolePage = lazy(() => import("../pages/Role/RolePage"));
+const ReportPage = lazy(() => import("../pages/Report/ReportPage"));
+const AuditLogPage = lazy(() => import("../pages/AuditLog/AuditLogPage"));
 
 const AppRoutes = () => {
   return (
+    <Suspense fallback={<Box sx={{ display: "flex", justifyContent: "center", p: 6 }}><CircularProgress /></Box>}>
     <Routes>
       {/* Public */}
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/register" element={<RegisterPage />} />
 
       {/* Private (Yêu cầu đăng nhập & bọc MainLayout) */}
       <Route
@@ -31,23 +46,28 @@ const AppRoutes = () => {
         }
       >
         {/* Dashboard */}
-        <Route index element={<Dashboard />} />
+        <Route index element={<PermissionRoute minimumRole="staff"><Dashboard /></PermissionRoute>} />
+        <Route path="account" element={<AccountPage />} />
+        <Route path="profile" element={<ProfilePage />} />
+        <Route path="settings" element={<SettingsPage />} />
+        <Route path="dashboard" element={<Navigate to="/" replace />} />
 
         {/* Parking Sessions (Phiên đỗ xe) */}
         <Route
           path="sessions"
           element={
-            <PermissionRoute permission="session:view">
+            <PermissionRoute minimumRole="staff">
               <SessionPage />
             </PermissionRoute>
           }
         />
+        <Route path="parking-sessions" element={<Navigate to="/sessions" replace />} />
 
         {/* Customer (Khách hàng) */}
         <Route
           path="customers"
           element={
-            <PermissionRoute permission="customer:view">
+            <PermissionRoute minimumRole="staff">
               <CustomerPage />
             </PermissionRoute>
           }
@@ -57,7 +77,7 @@ const AppRoutes = () => {
         <Route
           path="vehicles"
           element={
-            <PermissionRoute permission="vehicle:view">
+            <PermissionRoute minimumRole="staff">
               <VehiclePage />
             </PermissionRoute>
           }
@@ -67,7 +87,7 @@ const AppRoutes = () => {
         <Route
           path="monthly-passes"
           element={
-            <PermissionRoute permission="monthlypass:view">
+            <PermissionRoute minimumRole="staff">
               <MonthlyPassPage />
             </PermissionRoute>
           }
@@ -77,11 +97,19 @@ const AppRoutes = () => {
         <Route
           path="users"
           element={
-            <PermissionRoute permission="user:view">
+            <PermissionRoute minimumRole="manager">
               <UserPage />
             </PermissionRoute>
           }
         />
+        <Route path="zones" element={<PermissionRoute minimumRole="staff"><ZonePage /></PermissionRoute>} />
+        <Route path="parking-slots" element={<PermissionRoute minimumRole="staff"><ParkingSlotPage /></PermissionRoute>} />
+        <Route path="vehicle-types" element={<PermissionRoute minimumRole="staff"><VehicleTypePage /></PermissionRoute>} />
+        <Route path="price-configs" element={<PermissionRoute minimumRole="staff"><PriceConfigPage /></PermissionRoute>} />
+        <Route path="reports" element={<PermissionRoute minimumRole="staff"><ReportPage /></PermissionRoute>} />
+        <Route path="audit-logs" element={<PermissionRoute minimumRole="manager"><AuditLogPage /></PermissionRoute>} />
+        <Route path="ai" element={<Navigate to="/" replace />} />
+        <Route path="roles" element={<PermissionRoute minimumRole="admin"><RolePage /></PermissionRoute>} />
       </Route>
 
       {/* Redirect */}
@@ -96,6 +124,7 @@ const AppRoutes = () => {
         element={<NotFoundPage />}
       />
     </Routes>
+    </Suspense>
   );
 };
 

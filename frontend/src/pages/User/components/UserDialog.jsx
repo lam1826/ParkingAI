@@ -5,7 +5,6 @@ const initialForm = {
   username: "",
   password: "", // Chỉ dùng khi tạo mới
   full_name: "",
-  email: "",
   role_id: "",
   is_active: true,
 };
@@ -19,7 +18,6 @@ const UserDialog = ({ isOpen, onClose, onSave, user, roles, submitting }) => {
         username: user.username || "",
         password: "", // Ẩn password khi edit
         full_name: user.full_name || "",
-        email: user.email || "",
         role_id: user.role_id || user.role?.id || "",
         is_active: user.is_active !== undefined ? user.is_active : true,
       });
@@ -43,6 +41,7 @@ const UserDialog = ({ isOpen, onClose, onSave, user, roles, submitting }) => {
     if (user && !submitData.password) {
       delete submitData.password;
     }
+    submitData.role_id = Number(submitData.role_id);
     onSave(submitData);
   };
 
@@ -80,15 +79,6 @@ const UserDialog = ({ isOpen, onClose, onSave, user, roles, submitting }) => {
                 label="Họ và tên"
                 name="full_name"
                 value={form.full_name}
-                onChange={handleChange}
-              />
-            </Grid>
-            <Grid size={{ xs: 12, sm: 6 }}>
-              <TextField
-                fullWidth size="small" type="email"
-                label="Email"
-                name="email"
-                value={form.email}
                 onChange={handleChange}
               />
             </Grid>

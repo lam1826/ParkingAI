@@ -35,7 +35,7 @@ const useVehicle = () => {
       setVehicles(vRes.data || vRes || []);
       setVehicleTypes(vtRes.data || vtRes || []);
       setCustomers(cRes.data || cRes || []);
-    } catch (err) {
+    } catch {
       showNotify("Không thể tải dữ liệu. Vui lòng kiểm tra kết nối!", "error");
     } finally {
       setLoading(false);

@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from database import get_db
 from schemas.dashboard import DashboardResponse
 from services.parking_service import ParkingService
-from services.auth_service import get_current_user
+from services.auth_service import RoleChecker, get_current_user
 from models.user import User
 from schemas.dashboard import AIInsightResponse, RecentSessionItem, RevenueChartItem
 
@@ -13,7 +13,8 @@ from schemas.dashboard import AIInsightResponse, RecentSessionItem, RevenueChart
 
 router = APIRouter(
     prefix="/dashboard",
-    tags=["Dashboard"]
+    tags=["Dashboard"],
+    dependencies=[Depends(RoleChecker("staff"))],
 )
 
 @router.get(

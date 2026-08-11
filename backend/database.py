@@ -1,16 +1,19 @@
 import os
+from pathlib import Path
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, DeclarativeBase
 
 # 1. Định nghĩa đường dẫn tới file database SQLite
 # ĐỔI TÊN THƯ MỤC: Đổi từ "./database" thành "./db_data" để tránh xung đột với tên file database.py
-DATABASE_DIR = "./database"
-DATABASE_FILE = f"{DATABASE_DIR}/parking.db"
-SQLALCHEMY_DATABASE_URL = f"sqlite:///{DATABASE_FILE}"
+BACKEND_DIR = Path(__file__).resolve().parent
+DATABASE_DIR = BACKEND_DIR / "database"
+DATABASE_FILE = DATABASE_DIR / "parking.db"
+SQLALCHEMY_DATABASE_URL = os.getenv(
+    "DATABASE_URL", f"sqlite:///{DATABASE_FILE.as_posix()}"
+)
 
 # Đảm bảo thư mục tồn tại trước khi tạo DB
-if not os.path.exists(DATABASE_DIR):
-    os.makedirs(DATABASE_DIR)
+DATABASE_DIR.mkdir(parents=True, exist_ok=True)
 
 # 2. Tạo Engine
 # check_same_thread=False là bắt buộc khi dùng SQLite với FastAPI

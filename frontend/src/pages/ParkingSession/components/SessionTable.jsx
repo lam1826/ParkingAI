@@ -16,12 +16,12 @@ import LogoutIcon from "@mui/icons-material/Logout";
 import formatDate from "../../../utils/formatDate";
 
 const SessionTable = ({ sessions, loading, onCheckOut }) => {
-  const [selectedId, setSelectedId] = useState(null);
+  const [selectedPlate, setSelectedPlate] = useState(null);
 
   const handleConfirmCheckOut = () => {
-    if (selectedId) {
-      onCheckOut(selectedId);
-      setSelectedId(null);
+    if (selectedPlate) {
+      onCheckOut(selectedPlate);
+      setSelectedPlate(null);
     }
   };
 
@@ -64,7 +64,7 @@ const SessionTable = ({ sessions, loading, onCheckOut }) => {
           color="error"
           size="small"
           startIcon={<LogoutIcon />}
-          onClick={() => setSelectedId(params.row.id)}
+          onClick={() => setSelectedPlate(params.row.vehicle?.license_plate)}
         >
           Check Out
         </Button>
@@ -101,7 +101,7 @@ const SessionTable = ({ sessions, loading, onCheckOut }) => {
       </Card>
 
       {/* Dialog xác nhận cho xe ra */}
-      <Dialog open={Boolean(selectedId)} onClose={() => setSelectedId(null)}>
+      <Dialog open={Boolean(selectedPlate)} onClose={() => setSelectedPlate(null)}>
         <DialogTitle fontWeight="bold">Xác nhận Check-out</DialogTitle>
         <DialogContent>
           <DialogContentText>
@@ -109,7 +109,7 @@ const SessionTable = ({ sessions, loading, onCheckOut }) => {
           </DialogContentText>
         </DialogContent>
         <DialogActions sx={{ p: 2 }}>
-          <Button onClick={() => setSelectedId(null)} variant="outlined">
+          <Button onClick={() => setSelectedPlate(null)} variant="outlined">
             Hủy
           </Button>
           <Button onClick={handleConfirmCheckOut} color="error" variant="contained" autoFocus>

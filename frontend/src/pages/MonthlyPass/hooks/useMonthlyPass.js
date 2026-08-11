@@ -32,7 +32,7 @@ const useMonthlyPass = () => {
       
       // customerService.getCustomers trả về phân trang ở Sprint 4, ta lấy data.items hoặc tương đương
       setCustomers(cRes.data || cRes.items || cRes || []); 
-    } catch (err) {
+    } catch {
       showNotify("Lỗi tải dữ liệu vé tháng!", "error");
     } finally {
       setLoading(false);
@@ -90,7 +90,7 @@ const useMonthlyPass = () => {
       showNotify("Hủy vé tháng thành công!", "success");
       closeDialogs();
       fetchData();
-    } catch (err) {
+    } catch {
       showNotify("Lỗi khi hủy vé tháng", "error");
     }
   };

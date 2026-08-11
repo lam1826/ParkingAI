@@ -1,16 +1,21 @@
+from datetime import date
+from io import BytesIO
 from typing import Annotated, Literal
 from fastapi import APIRouter, Depends, Query, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from database import get_db
 from schemas.report import TrafficReportResponse, RevenueReportResponse
 from services.report_service import TrafficService, RevenueService
-from services.auth_service import get_current_user
+from services.report_export_service import ReportExportService
+from services.auth_service import RoleChecker, get_current_user
 from models.user import User
 
 router = APIRouter(
     prefix="/reports",
-    tags=["Reports"]
+    tags=["Reports"],
+    dependencies=[Depends(RoleChecker("staff"))],
 )
 
 
@@ -58,3 +63,29 @@ def get_revenue_report_endpoint(
     """
     service = RevenueService(db)
     return service.get_revenue_report(filter_type=period)
+
+
+@router.get(
+    "/export/{file_format}",
+    summary="Xuất báo cáo doanh thu và lưu lượng ra Excel hoặc PDF",
+)
+def export_report_endpoint(
+    file_format: Literal["xlsx", "pdf"],
+    period: Literal["day", "week", "month", "year"] = Query("week"),
+    db: Annotated[Session, Depends(get_db)] = None,
+    current_user: Annotated[User, Depends(get_current_user)] = None,
+):
+    service = ReportExportService(db)
+    filename = f"parking-report-{period}-{date.today().isoformat()}.{file_format}"
+    if file_format == "xlsx":
+        content = service.build_excel(period)
+        media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    else:
+        content = service.build_pdf(period)
+        media_type = "application/pdf"
+
+    return StreamingResponse(
+        BytesIO(content),
+        media_type=media_type,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
