@@ -42,9 +42,11 @@ export default function MainLayout() {
   const { user, logout } = useContext(AuthContext);
   const navigate = useNavigate();
   const location = useLocation();
-  
+
   // State quản lý Menu User góc phải trên
   const [anchorEl, setAnchorEl] = useState(null);
+  // State mở/đóng Sidebar trên màn hình nhỏ (mobile)
+  const [mobileOpen, setMobileOpen] = useState(false);
 
   // Danh sách các menu trong Sidebar
   const menuItems = [
@@ -94,7 +96,13 @@ export default function MainLayout() {
         }}
       >
         <Toolbar>
-          <IconButton color="inherit" edge="start" sx={{ mr: 2 }}>
+          {/* Nút mở Sidebar - chỉ hiện trên màn hình nhỏ */}
+          <IconButton
+            color="inherit"
+            edge="start"
+            onClick={() => setMobileOpen(true)}
+            sx={{ mr: 2, display: { xs: "inline-flex", md: "none" } }}
+          >
             <MenuIcon />
           </IconButton>
           <Typography variant="h6" noWrap component="div" sx={{ flexGrow: 1, fontWeight: 'bold' }}>
@@ -103,7 +111,7 @@ export default function MainLayout() {
 
           {/* Góc phải User Profile */}
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <Typography variant="body1">
+            <Typography variant="body1" sx={{ display: { xs: "none", sm: "block" } }}>
               Xin chào, {user?.username || "Admin"}
             </Typography>
             <IconButton color="inherit" onClick={handleMenuOpen}>
@@ -127,61 +135,97 @@ export default function MainLayout() {
         </Toolbar>
       </AppBar>
 
-      {/* 2. SIDEBAR (Drawer) */}
-      <Drawer
-        variant="permanent"
-        sx={{
-          width: drawerWidth,
-          flexShrink: 0,
-          [`& .MuiDrawer-paper`]: { width: drawerWidth, boxSizing: "border-box" },
-        }}
-      >
-        <Toolbar /> {/* Khối Toolbar trống này để đẩy danh sách menu xuống dưới Header */}
-        <Box sx={{ overflow: "auto", mt: 2 }}>
-          <List>
-            {menuItems.map((item) => {
-              // Ẩn menu nếu có yêu cầu role mà user không thỏa mãn (ví dụ giả lập)
-              const roleLevel = { customer: 0, staff: 1, manager: 2, admin: 3 };
-              if (item.role && (roleLevel[String(user?.role).toLowerCase()] || 0) < roleLevel[item.role]) return null;
+      {/* 2. SIDEBAR (Drawer) - permanent trên desktop, trượt tạm thời trên mobile */}
+      {(() => {
+        const drawerContent = (
+          <>
+            <Toolbar /> {/* Khối Toolbar trống này để đẩy danh sách menu xuống dưới Header */}
+            <Box sx={{ overflow: "auto", mt: 2 }}>
+              <List>
+                {menuItems.map((item) => {
+                  // Ẩn menu nếu có yêu cầu role mà user không thỏa mãn (ví dụ giả lập)
+                  const roleLevel = { customer: 0, staff: 1, manager: 2, admin: 3 };
+                  if (item.role && (roleLevel[String(user?.role).toLowerCase()] || 0) < roleLevel[item.role]) return null;
 
-              const isSelected = location.pathname === item.path || (location.pathname.startsWith(item.path) && item.path !== '/');
+                  const isSelected = location.pathname === item.path || (location.pathname.startsWith(item.path) && item.path !== '/');
 
-              return (
-                <ListItem key={item.text} disablePadding sx={{ mb: 1, px: 2 }}>
-                  <ListItemButton
-                    selected={isSelected}
-                    onClick={() => navigate(item.path)}
-                    sx={{
-                      borderRadius: 2,
-                      "&.Mui-selected": {
-                        backgroundColor: "primary.main",
-                        color: "white",
-                        "&:hover": { backgroundColor: "primary.dark" },
-                        "& .MuiListItemIcon-root": { color: "white" }
-                      }
-                    }}
-                  >
-                    <ListItemIcon sx={{ color: isSelected ? "white" : "inherit", minWidth: 40 }}>
-                      {item.icon}
-                    </ListItemIcon>
-                    <ListItemText
-                      primary={item.text}
-                      slotProps={{ primary: { fontWeight: isSelected ? 'bold' : 'normal' } }}
-                    />
-                  </ListItemButton>
-                </ListItem>
-              );
-            })}
-          </List>
-        </Box>
-      </Drawer>
+                  return (
+                    <ListItem key={item.text} disablePadding sx={{ mb: 1, px: 2 }}>
+                      <ListItemButton
+                        selected={isSelected}
+                        onClick={() => { setMobileOpen(false); navigate(item.path); }}
+                        sx={{
+                          borderRadius: 2,
+                          "&.Mui-selected": {
+                            backgroundColor: "primary.main",
+                            color: "white",
+                            "&:hover": { backgroundColor: "primary.dark" },
+                            "& .MuiListItemIcon-root": { color: "white" }
+                          }
+                        }}
+                      >
+                        <ListItemIcon sx={{ color: isSelected ? "white" : "inherit", minWidth: 40 }}>
+                          {item.icon}
+                        </ListItemIcon>
+                        <ListItemText
+                          primary={item.text}
+                          slotProps={{ primary: { fontWeight: isSelected ? 'bold' : 'normal' } }}
+                        />
+                      </ListItemButton>
+                    </ListItem>
+                  );
+                })}
+              </List>
+            </Box>
+          </>
+        );
+
+        return (
+          <>
+            {/* Mobile: drawer trượt, đóng khi chọn menu hoặc bấm ra ngoài */}
+            <Drawer
+              variant="temporary"
+              open={mobileOpen}
+              onClose={() => setMobileOpen(false)}
+              ModalProps={{ keepMounted: true }}
+              sx={{
+                display: { xs: "block", md: "none" },
+                [`& .MuiDrawer-paper`]: { width: drawerWidth, boxSizing: "border-box" },
+              }}
+            >
+              {drawerContent}
+            </Drawer>
+
+            {/* Desktop: drawer cố định */}
+            <Drawer
+              variant="permanent"
+              sx={{
+                display: { xs: "none", md: "block" },
+                width: drawerWidth,
+                flexShrink: 0,
+                [`& .MuiDrawer-paper`]: { width: drawerWidth, boxSizing: "border-box" },
+              }}
+            >
+              {drawerContent}
+            </Drawer>
+          </>
+        );
+      })()}
 
       {/* 3. MAIN CONTENT (Nội dung chính) */}
-      <Box component="main" sx={{ flexGrow: 1, p: 3 }}>
+      <Box
+        component="main"
+        sx={{
+          flexGrow: 1,
+          p: { xs: 1.5, sm: 2, md: 3 },
+          width: { xs: "100%", md: `calc(100% - ${drawerWidth}px)` },
+          minWidth: 0, // cho phép bảng/biểu đồ co lại thay vì tràn ngang
+        }}
+      >
         <Toolbar /> {/* Để đẩy nội dung xuống dưới Header */}
-        
+
         {/* ĐÂY LÀ NƠI CÁC TRANG (Dashboard, Users,...) SẼ ĐƯỢC RENDER VÀO */}
-        <Outlet /> 
+        <Outlet />
       </Box>
       {(["staff", "manager", "admin"].includes(String(user?.role).toLowerCase())) && <AIChatbot />}
     </Box>

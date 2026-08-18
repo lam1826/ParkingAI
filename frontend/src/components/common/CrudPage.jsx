@@ -67,7 +67,10 @@ export default function CrudPage({ title, fields, service, canEdit = true }) {
       notify("Xóa thành công.");
       await load();
     } catch (error) {
-      notify(error.response?.data?.detail || "Không thể xóa dữ liệu đang được sử dụng.", "error");
+      const message = error.response?.status === 409
+        ? "Không thể xóa: bản ghi đang được dữ liệu khác tham chiếu. Hãy xóa/chuyển dữ liệu con trước, hoặc tắt 'Đang hoạt động' thay vì xóa."
+        : (error.response?.data?.detail || "Không thể xóa dữ liệu đang được sử dụng.");
+      notify(message, "error");
     }
   };
 
@@ -93,14 +96,19 @@ export default function CrudPage({ title, fields, service, canEdit = true }) {
 
   return (
     <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
-      <Stack direction="row" justifyContent="space-between" alignItems="center">
+      <Stack
+        direction={{ xs: "column", sm: "row" }}
+        justifyContent="space-between"
+        alignItems={{ xs: "flex-start", sm: "center" }}
+        spacing={1}
+      >
         <Typography variant="h5" fontWeight="bold">{title}</Typography>
         <Stack direction="row" spacing={1}>
           <Button startIcon={<RefreshIcon />} onClick={load}>Làm mới</Button>
           {canEdit && <Button variant="contained" startIcon={<AddIcon />} onClick={startCreate}>Thêm mới</Button>}
         </Stack>
       </Stack>
-      <Box sx={{ height: 560, width: "100%" }}>
+      <Box sx={{ height: { xs: 460, md: 560 }, width: "100%" }}>
         <DataGrid rows={rows} columns={columns} loading={loading} disableRowSelectionOnClick
           pageSizeOptions={[10, 25, 50]} slots={{ toolbar: GridToolbar }} />
       </Box>

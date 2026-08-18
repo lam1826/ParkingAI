@@ -42,9 +42,13 @@ export default function ParkingSessionPage() {
   } = useParkingSession();
 
   return (
-    <Box sx={{ p: 3 }}>
+    <Box sx={{ p: { xs: 0.5, sm: 1.5, md: 3 } }}>
       {/* Header */}
-      <Stack direction="row" sx={{ justifyContent: "space-between", alignItems: "center", mb: 3 }}>
+      <Stack
+        direction={{ xs: "column", sm: "row" }}
+        spacing={1}
+        sx={{ justifyContent: "space-between", alignItems: { xs: "flex-start", sm: "center" }, mb: 3 }}
+      >
         <Typography variant="h5" fontWeight="bold">
           Quản lý Xe Vào / Ra
         </Typography>
@@ -76,7 +80,7 @@ export default function ParkingSessionPage() {
       />
 
       {/* Bộ lọc lịch sử gửi xe */}
-      <Stack direction="row" spacing={2} sx={{ mb: 2 }}>
+      <Stack direction={{ xs: "column", sm: "row" }} spacing={2} sx={{ mb: 2 }}>
         <TextField
           select
           size="small"
