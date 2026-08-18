@@ -1,0 +1,16 @@
+{
+  "name": "parking-ai",
+  "private": true,
+  "scripts": {
+    "frontend": "cd frontend && npm run dev",
+    "backend": "cd backend && uvicorn main:app --reload",
+    "dev": "concurrently \"npm run backend\" \"npm run frontend\""
+  },
+  "devDependencies": {
+    "concurrently": "^9.0.0"
+  },
+  "dependencies": {
+    "@mui/x-data-grid": "^9.10.1",
+    "recharts": "^3.10.1"
+  }
+}
