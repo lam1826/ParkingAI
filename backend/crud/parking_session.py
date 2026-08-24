@@ -5,6 +5,7 @@ from datetime import datetime
 from core.clock import business_now
 from models.parking_session import ParkingSession
 from models.parking_slot import ParkingSlot
+from models.zone import Zone
 from schemas import parking_session as session_schema
 
 
@@ -53,6 +54,9 @@ def claim_parking_slot(db: Session, slot_id: int) -> bool:
             ParkingSlot.id == slot_id,
             ParkingSlot.is_occupied == False,  # noqa: E712
             ParkingSlot.is_active == True,  # noqa: E712
+            ParkingSlot.zone_id.in_(
+                select(Zone.id).where(Zone.is_active == True)  # noqa: E712
+            ),
         )
         .values(is_occupied=True)
     )
