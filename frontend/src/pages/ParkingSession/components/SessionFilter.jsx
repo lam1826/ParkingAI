@@ -69,7 +69,7 @@ const SessionFilter = ({ filters, onSearch, onReset }) => {
                 type="date"
                 label="Từ ngày"
                 name="startDate"
-                InputLabelProps={{ shrink: true }}
+                slotProps={{ inputLabel: { shrink: true } }}
                 value={form.startDate}
                 onChange={handleChange}
               />
@@ -82,7 +82,7 @@ const SessionFilter = ({ filters, onSearch, onReset }) => {
                 type="date"
                 label="Đến ngày"
                 name="endDate"
-                InputLabelProps={{ shrink: true }}
+                slotProps={{ inputLabel: { shrink: true } }}
                 value={form.endDate}
                 onChange={handleChange}
               />

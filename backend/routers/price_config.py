@@ -24,15 +24,20 @@ def read_price_config(id: int, db: Session = Depends(get_db)):
 @router.post("", response_model=price_config_schema.PriceConfigResponse, status_code=status.HTTP_201_CREATED)
 def create_price_config(config_in: price_config_schema.PriceConfigCreate, db: Session = Depends(get_db)):
     """Tạo cấu hình giá mới"""
-    # Chỉ cho phép tồn tại 1 bảng giá active cho mỗi loại xe tại một thời điểm
+    # Bất biến: mỗi loại xe chỉ có tối đa MỘT bảng giá active tại một thời điểm
     if config_in.is_active:
-        active_config = crud_price_config.get_active_price_by_vehicle_type(db, vehicle_type_id=config_in.vehicle_type_id)
+        active_config = crud_price_config.get_active_price_by_vehicle_type(
+            db, vehicle_type_id=config_in.vehicle_type_id
+        )
         if active_config:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST, 
-                detail="There is already an active price configuration for this vehicle type. Please deactivate it first."
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"Loại xe này đã có bảng giá đang áp dụng (ID {active_config.id}). "
+                    "Hãy tắt bảng giá đó trước khi kích hoạt bảng giá mới."
+                ),
             )
-    
+
     return crud_price_config.create_price_config(db=db, config_in=config_in)
 
 @router.put("/{id}", response_model=price_config_schema.PriceConfigResponse)
@@ -41,19 +46,28 @@ def update_price_config(id: int, config_in: price_config_schema.PriceConfigUpdat
     db_config = crud_price_config.get_price_config(db, config_id=id)
     if not db_config:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Price config not found")
-    
-    # Validation như lúc POST nếu đổi trạng thái thành active
-    if config_in.is_active is True and config_in.is_active != db_config.is_active:
-        active_config = crud_price_config.get_active_price_by_vehicle_type(
-            db, 
-            vehicle_type_id=config_in.vehicle_type_id if config_in.vehicle_type_id else db_config.vehicle_type_id
+
+    # Validate TRẠNG THÁI SAU MERGE, không chỉ transition false->true: một bảng
+    # giá đang active đổi vehicle_type_id (payload không gửi is_active, hoặc gửi
+    # is_active=true không đổi) vẫn phải bị chặn nếu loại xe đích đã có bảng giá
+    # active khác — nếu không sẽ tạo hai bảng giá active cùng loại xe.
+    update_data = config_in.model_dump(exclude_unset=True)
+    merged_vehicle_type_id = update_data.get("vehicle_type_id", db_config.vehicle_type_id)
+    merged_is_active = update_data.get("is_active", db_config.is_active)
+
+    if merged_is_active:
+        conflict = crud_price_config.get_active_price_by_vehicle_type(
+            db, vehicle_type_id=merged_vehicle_type_id, exclude_id=id
         )
-        if active_config and active_config.id != id:
+        if conflict:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST, 
-                detail="Another active price configuration exists for this vehicle type."
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"Loại xe này đã có bảng giá đang áp dụng khác (ID {conflict.id}). "
+                    "Hãy tắt bảng giá đó trước khi kích hoạt bảng giá này cho loại xe đó."
+                ),
             )
-            
+
     return crud_price_config.update_price_config(db=db, db_config=db_config, config_in=config_in)
 
 @router.delete("/{id}", status_code=status.HTTP_204_NO_CONTENT)

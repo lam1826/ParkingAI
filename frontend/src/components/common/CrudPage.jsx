@@ -10,6 +10,25 @@ import DeleteIcon from "@mui/icons-material/Delete";
 import EditIcon from "@mui/icons-material/Edit";
 import RefreshIcon from "@mui/icons-material/Refresh";
 
+// Chuẩn hóa lỗi API thành chuỗi đọc được: FastAPI 422 trả detail dạng mảng object,
+// nếu render thẳng vào Alert sẽ hỏng. Ưu tiên msg của từng lỗi, kèm tên field nếu có.
+export function extractErrorMessage(error, fallback = "Đã xảy ra lỗi.") {
+  const detail = error?.response?.data?.detail;
+  if (typeof detail === "string" && detail.trim()) return detail;
+  if (Array.isArray(detail)) {
+    const parts = detail
+      .map((item) => {
+        if (typeof item === "string") return item;
+        const field = Array.isArray(item?.loc) ? item.loc[item.loc.length - 1] : null;
+        const msg = item?.msg || "";
+        return field && msg ? `${field}: ${msg}` : msg;
+      })
+      .filter(Boolean);
+    if (parts.length) return parts.join("; ");
+  }
+  return fallback;
+}
+
 export default function CrudPage({ title, fields, service, canEdit = true }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -25,7 +44,7 @@ export default function CrudPage({ title, fields, service, canEdit = true }) {
       const data = await service.getAll();
       setRows(Array.isArray(data) ? data : data.items || data.data || []);
     } catch (error) {
-      notify(error.response?.data?.detail || "Không thể tải dữ liệu.", "error");
+      notify(extractErrorMessage(error, "Không thể tải dữ liệu."), "error");
     } finally {
       setLoading(false);
     }
@@ -44,6 +63,16 @@ export default function CrudPage({ title, fields, service, canEdit = true }) {
     setOpen(true);
   };
   const save = async () => {
+    // Nút Lưu không chạy qua native <form onSubmit> nên thuộc tính required của
+    // TextField không tự chặn — phải kiểm tra required tường minh trước khi gọi API.
+    const missing = fields.filter(
+      (field) => field.required && field.type !== "boolean"
+        && (form[field.name] === "" || form[field.name] == null)
+    );
+    if (missing.length) {
+      notify(`Vui lòng nhập: ${missing.map((field) => field.label).join(", ")}.`, "error");
+      return;
+    }
     try {
       const payload = {};
       fields.forEach((field) => {
@@ -57,7 +86,7 @@ export default function CrudPage({ title, fields, service, canEdit = true }) {
       notify(editing ? "Cập nhật thành công." : "Thêm mới thành công.");
       await load();
     } catch (error) {
-      notify(error.response?.data?.detail || "Không thể lưu dữ liệu.", "error");
+      notify(extractErrorMessage(error, "Không thể lưu dữ liệu."), "error");
     }
   };
   const remove = async (row) => {
@@ -69,7 +98,7 @@ export default function CrudPage({ title, fields, service, canEdit = true }) {
     } catch (error) {
       const message = error.response?.status === 409
         ? "Không thể xóa: bản ghi đang được dữ liệu khác tham chiếu. Hãy xóa/chuyển dữ liệu con trước, hoặc tắt 'Đang hoạt động' thay vì xóa."
-        : (error.response?.data?.detail || "Không thể xóa dữ liệu đang được sử dụng.");
+        : extractErrorMessage(error, "Không thể xóa dữ liệu đang được sử dụng.");
       notify(message, "error");
     }
   };
@@ -120,8 +149,10 @@ export default function CrudPage({ title, fields, service, canEdit = true }) {
             <FormControlLabel key={field.name} control={<Checkbox checked={Boolean(form[field.name])}
               onChange={(event) => setForm({ ...form, [field.name]: event.target.checked })} />} label={field.label} />
           ) : (
+            // Input date native luôn vẽ sẵn khung dd/mm/yyyy nên label phải shrink cố định
             <TextField key={field.name} select={field.type === "select"} type={field.type || "text"}
               label={field.label} required={field.required} value={form[field.name] ?? ""}
+              slotProps={field.type === "date" ? { inputLabel: { shrink: true } } : undefined}
               onChange={(event) => setForm({ ...form, [field.name]: event.target.value })}>
               {(field.options || []).map((option) => <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>)}
             </TextField>

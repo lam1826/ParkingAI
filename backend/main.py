@@ -6,7 +6,7 @@ from sqlalchemy.exc import IntegrityError
 from routers import auth, dashboard, parking, ai_report, report
 
 # Import cấu hình database và toàn bộ Models
-from database import engine
+from database import engine, run_sqlite_migrations
 from models import Base
 
 # Import router cho bảng Role
@@ -48,7 +48,9 @@ async def integrity_error_handler(request: Request, exc: IntegrityError):
     )
 
 # --- KHỞI TẠO DATABASE ---
-# Lệnh này sẽ kiểm tra và tạo file SQLite cùng tất cả các bảng nếu chưa tồn tại
+# Migration additive cho DB đã tồn tại (create_all không ALTER bảng cũ),
+# sau đó tạo các bảng còn thiếu nếu là DB mới.
+run_sqlite_migrations(engine)
 Base.metadata.create_all(bind=engine)
 
 

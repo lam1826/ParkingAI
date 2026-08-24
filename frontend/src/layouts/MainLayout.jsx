@@ -35,6 +35,7 @@ import SmartToyIcon from "@mui/icons-material/SmartToy";
 
 import { AuthContext } from "../context/AuthContext";
 import AIChatbot from "../components/ai/AIChatbot";
+import ErrorBoundary from "../components/common/ErrorBoundary";
 
 const drawerWidth = 260; // Độ rộng của Sidebar
 
@@ -224,8 +225,12 @@ export default function MainLayout() {
       >
         <Toolbar /> {/* Để đẩy nội dung xuống dưới Header */}
 
-        {/* ĐÂY LÀ NƠI CÁC TRANG (Dashboard, Users,...) SẼ ĐƯỢC RENDER VÀO */}
-        <Outlet />
+        {/* ĐÂY LÀ NƠI CÁC TRANG (Dashboard, Users,...) SẼ ĐƯỢC RENDER VÀO.
+            Bọc ErrorBoundary (key theo pathname để tự reset khi đổi trang):
+            một trang lỗi vẫn giữ nguyên Header/Sidebar. */}
+        <ErrorBoundary key={location.pathname}>
+          <Outlet />
+        </ErrorBoundary>
       </Box>
       {(["staff", "manager", "admin"].includes(String(user?.role).toLowerCase())) && <AIChatbot />}
     </Box>
