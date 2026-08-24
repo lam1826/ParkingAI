@@ -20,6 +20,7 @@ import CloseIcon from "@mui/icons-material/Close";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutlined";
 import SendRoundedIcon from "@mui/icons-material/SendRounded";
 import api from "../../services/api";
+import { requestDailyReport, requestWeeklyReport } from "../../services/aiReportService";
 
 const STORAGE_KEY = "parking_ai_chat_messages";
 const welcomeMessage = {
@@ -33,13 +34,6 @@ const aiActions = [
   { id: "weekly", label: "Báo cáo tuần" },
   { id: "staff", label: "Gợi ý nhân sự" },
 ];
-
-function formatLocalDate(value) {
-  const year = value.getFullYear();
-  const month = String(value.getMonth() + 1).padStart(2, "0");
-  const day = String(value.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
 
 const pageContexts = [
   { match: "/sessions", label: "Phiên đỗ xe", prompts: ["Có bao nhiêu xe đang trong bãi?", "Khung giờ nào đông nhất hôm nay?"] },
@@ -143,17 +137,9 @@ export default function AIChatbot() {
       // (luồng: Database -> Aggregation -> Prompt -> AI), client chỉ gửi tham số.
       let response;
       if (action === "daily") {
-        response = await api.post("/ai/daily-report", {
-          target_date: formatLocalDate(new Date()),
-        });
+        response = await requestDailyReport(api);
       } else if (action === "weekly") {
-        const end = new Date();
-        const start = new Date();
-        start.setDate(end.getDate() - 6);
-        response = await api.post("/ai/weekly-report", {
-          start_date: formatLocalDate(start),
-          end_date: formatLocalDate(end),
-        });
+        response = await requestWeeklyReport(api);
       } else {
         response = await api.post("/ai/staff-suggestion", {});
       }

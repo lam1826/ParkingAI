@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session, selectinload
 from sqlalchemy import select, and_
-from datetime import date
+from core.clock import business_today
 from models.monthly_pass import MonthlyPass
 from schemas import monthly_pass as monthly_pass_schema
 
@@ -19,7 +19,7 @@ def get_active_pass_by_vehicle(
 
     exclude_pass_id: bỏ qua chính vé đang được cập nhật (dùng khi PUT).
     """
-    today = date.today()
+    today = business_today()
     stmt = select(MonthlyPass).where(
         and_(
             MonthlyPass.vehicle_id == vehicle_id,

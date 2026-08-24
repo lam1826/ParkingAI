@@ -2,6 +2,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import select, and_, update
 from sqlalchemy.exc import IntegrityError
 from datetime import datetime
+from core.clock import business_now
 from models.parking_session import ParkingSession
 from models.parking_slot import ParkingSlot
 from schemas import parking_session as session_schema
@@ -11,11 +12,12 @@ def server_now() -> datetime:
     """Đồng hồ server dùng chung cho check-in VÀ check-out — điểm lấy
     thời gian DUY NHẤT của mỗi giao dịch.
 
-    Giữ naive datetime.now() theo quy ước hiện tại của toàn bộ DB (timezone
-    không thuộc phạm vi đợt này). Tách thành hàm để test freeze được thời gian
-    bằng monkeypatch mà không sửa đồng hồ hệ thống; service/router phải gọi
-    qua module (crud_session.server_now()) để monkeypatch có hiệu lực."""
-    return datetime.now()
+    Trả về giờ nghiệp vụ Asia/Ho_Chi_Minh dạng naive (Đợt 10A — độc lập với
+    timezone hệ điều hành host, xem backend/core/clock.py). Tách thành hàm
+    để test freeze được thời gian bằng monkeypatch mà không sửa đồng hồ hệ
+    thống; service/router phải gọi qua module (crud_session.server_now())
+    để monkeypatch có hiệu lực."""
+    return business_now()
 
 
 def claim_session_for_checkout(db: Session, session_id: str) -> bool:

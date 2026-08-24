@@ -1,10 +1,11 @@
-from datetime import datetime, timedelta, time
+from datetime import datetime, timedelta
 from typing import Dict, Any, Literal
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy import select, func, desc
 from sqlalchemy.exc import SQLAlchemyError
 
+from core.clock import business_now, day_bounds, week_bounds, month_bounds, year_bounds
 from models.parking_session import ParkingSession
 from models.vehicle import Vehicle
 from models.vehicle_type import VehicleType
@@ -19,22 +20,33 @@ class ReportService:
     def get_revenue_report(self, filter_type: Literal["day", "week", "month", "year"]) -> Dict[str, Any]:
         """Thống kê doanh thu theo ngày, tuần, tháng hoặc năm."""
         try:
-            now = datetime.now()
-            
+            now = business_now()
+            today = now.date()
+
+            # Interval nửa mở [start, end_exclusive) — không dùng 23:59:59,
+            # cộng .999999 thủ công hay BETWEEN inclusive cả hai đầu. Đây
+            # cũng là điểm sửa bug đã biết: "year" trước đây dùng mốc cứng
+            # datetime(year,12,31,23,59,59) THIẾU .999999 nên bỏ sót giao
+            # dịch trong giây cuối năm; half-open loại bỏ hoàn toàn lớp bug
+            # này cho cả 4 kỳ thay vì vá riêng lẻ từng kỳ.
             if filter_type == "day":
-                start_date = datetime.combine(now.date(), time.min)
-                end_date = datetime.combine(now.date(), time.max)
+                start_date, end_exclusive = day_bounds(today)
             elif filter_type == "week":
-                start_date = datetime.combine(now.date() - timedelta(days=now.weekday()), time.min)
-                end_date = datetime.combine(now.date() + timedelta(days=6 - now.weekday()), time.max)
+                start_date, end_exclusive = week_bounds(today)
             elif filter_type == "month":
-                start_date = datetime(now.year, now.month, 1, 0, 0, 0)
-                end_date = (datetime(now.year + 1, 1, 1, 0, 0, 0) - timedelta(microseconds=1)) if now.month == 12 else (datetime(now.year, now.month + 1, 1, 0, 0, 0) - timedelta(microseconds=1))
+                start_date, end_exclusive = month_bounds(today)
             elif filter_type == "year":
-                start_date = datetime(now.year, 1, 1, 0, 0, 0)
-                end_date = datetime(now.year, 12, 31, 23, 59, 59)
+                start_date, end_exclusive = year_bounds(today)
             else:
                 raise HTTPException(status_code=400, detail="Bộ lọc không hợp lệ (day, week, month, year).")
+
+            # Giữ nguyên CONTRACT response hiện tại: "end_date" là thời điểm
+            # cuối cùng THUỘC kỳ báo cáo (không phải mốc loại trừ) — với
+            # day/week/month giá trị này giống hệt trước khi sửa (time.max /
+            # trừ 1 microsecond đều cho đúng 23:59:59.999999); với year giá
+            # trị nay ĐÚNG (có .999999), khác giá trị cũ THIẾU microsecond —
+            # đây chính là bản sửa bug được yêu cầu tường minh.
+            end_date = end_exclusive - timedelta(microseconds=1)
 
             # Thống kê tổng lượt, doanh thu, phí trung bình
             stmt_stats = select(
@@ -44,7 +56,7 @@ class ReportService:
             ).where(
                 ParkingSession.status == "completed",
                 ParkingSession.check_out_time >= start_date,
-                ParkingSession.check_out_time <= end_date
+                ParkingSession.check_out_time < end_exclusive
             )
             stats = self.db.execute(stmt_stats).first()
 
@@ -57,9 +69,9 @@ class ReportService:
              .where(
                 ParkingSession.status == "completed",
                 ParkingSession.check_out_time >= start_date,
-                ParkingSession.check_out_time <= end_date
+                ParkingSession.check_out_time < end_exclusive
             ).group_by(VehicleType.name).order_by(desc("count")).limit(1)
-            
+
             vtype_res = self.db.execute(stmt_vtype).first()
 
             return {
