@@ -44,10 +44,13 @@ class ParkingService:
     ) -> Optional[ParkingSlot]:
 
         try:
-            stmt = select(ParkingSlot).where(
+            stmt = select(ParkingSlot).join(
+                Zone, ParkingSlot.zone_id == Zone.id
+            ).where(
                 ParkingSlot.vehicle_type_id == vehicle_type_id,
                 ParkingSlot.is_occupied == False,
-                ParkingSlot.is_active == True
+                ParkingSlot.is_active == True,
+                Zone.is_active == True,
             )
 
             if zone_id:
@@ -199,10 +202,10 @@ class ParkingService:
                     select(ParkingSlot).where(ParkingSlot.id == parking_slot_id)
                 ).scalar_one_or_none()
 
-                if slot is None or not slot.is_active:
+                if slot is None or not slot.is_active or not slot.zone.is_active:
                     raise HTTPException(
                         status_code=404,
-                        detail="Vị trí đỗ không tồn tại hoặc đang bảo trì."
+                        detail="Vị trí đỗ hoặc khu vực không tồn tại hoặc đang bảo trì."
                     )
 
                 if slot.is_occupied:
@@ -484,7 +487,11 @@ class ParkingService:
                     ParkingSlot.is_occupied,
                     func.count(ParkingSlot.id)
                 )
-                .where(ParkingSlot.is_active == True)
+                .join(Zone, ParkingSlot.zone_id == Zone.id)
+                .where(
+                    ParkingSlot.is_active == True,
+                    Zone.is_active == True,
+                )
                 .group_by(ParkingSlot.is_occupied)
             ).all()
 
@@ -607,13 +614,16 @@ class ParkingService:
 
         try:
             # Lấy tất cả slot đang hoạt động
-            stmt_slots = select(ParkingSlot).where(
-                ParkingSlot.is_active == True
+            stmt_slots = select(ParkingSlot).join(
+                Zone, ParkingSlot.zone_id == Zone.id
+            ).where(
+                ParkingSlot.is_active == True,
+                Zone.is_active == True,
             )
             slots = self.db.execute(stmt_slots).scalars().all()
 
             # Lấy danh sách khu vực
-            stmt_zones = select(Zone)
+            stmt_zones = select(Zone).where(Zone.is_active == True)
             zones = self.db.execute(stmt_zones).scalars().all()
 
             zone_map = {z.id: z.name for z in zones}
@@ -873,15 +883,21 @@ class ParkingService:
 
         # 5. Tỷ lệ lấp đầy
         total_slots = self.db.execute(
-            select(func.count(ParkingSlot.id)).where(
-                ParkingSlot.is_active == True
+            select(func.count(ParkingSlot.id))
+            .join(Zone, Zone.id == ParkingSlot.zone_id)
+            .where(
+                ParkingSlot.is_active == True,
+                Zone.is_active == True,
             )
         ).scalar() or 0
 
         occupied_slots = self.db.execute(
-            select(func.count(ParkingSlot.id)).where(
+            select(func.count(ParkingSlot.id))
+            .join(Zone, Zone.id == ParkingSlot.zone_id)
+            .where(
                 ParkingSlot.is_active == True,
-                ParkingSlot.is_occupied == True
+                ParkingSlot.is_occupied == True,
+                Zone.is_active == True,
             )
         ).scalar() or 0
 
@@ -940,7 +956,12 @@ class ParkingService:
 
             # Lấy tổng số slot
             total_slots = self.db.execute(
-                select(func.count(ParkingSlot.id)).where(ParkingSlot.is_active == True)
+                select(func.count(ParkingSlot.id))
+                .join(Zone, Zone.id == ParkingSlot.zone_id)
+                .where(
+                    ParkingSlot.is_active == True,
+                    Zone.is_active == True,
+                )
             ).scalar() or 1
 
             occupancy = (current_inside / total_slots) * 100

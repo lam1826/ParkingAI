@@ -1,7 +1,7 @@
 from typing import List
 from datetime import datetime
 
-from sqlalchemy import String, Integer, Boolean
+from sqlalchemy import String, Integer, Boolean, Index
 from sqlalchemy.sql import func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -17,5 +17,16 @@ class Zone(Base):
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
 
+    __table_args__ = (
+        Index(
+            "uq_zones_name_normalized",
+            func.unicode_casefold(name),
+            unique=True,
+        ),
+    )
+
     # Quan hệ 1-N: Một khu vực (Zone) bao gồm nhiều vị trí đỗ (Parking Slots)
-    parking_slots: Mapped[List["ParkingSlot"]] = relationship(back_populates="zone")
+    parking_slots: Mapped[List["ParkingSlot"]] = relationship(
+        back_populates="zone",
+        passive_deletes=True,
+    )

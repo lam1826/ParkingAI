@@ -18,6 +18,7 @@ import TableRowsIcon from "@mui/icons-material/TableRows";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import CrudPage from "../../components/common/CrudPage";
 import api from "../../services/api";
+import { getParkingSlotVisualStatus } from "../../utils/parkingSlotStatus";
 import { parkingSlotService } from "./parkingSlotService";
 
 const slotColors = {
@@ -25,11 +26,6 @@ const slotColors = {
   occupied: { background: "#ffebee", border: "#e53935", text: "#b71c1c", label: "Đang có xe" },
   inactive: { background: "#eceff1", border: "#90a4ae", text: "#455a64", label: "Bảo trì / ngừng dùng" },
 };
-
-function getSlotStatus(slot) {
-  if (!slot.is_active) return "inactive";
-  return slot.is_occupied ? "occupied" : "available";
-}
 
 export default function ParkingSlotPage() {
   const [view, setView] = useState("map");
@@ -68,12 +64,15 @@ export default function ParkingSlotPage() {
   const enrichedSlots = useMemo(() => {
     const zoneMap = new Map(zones.map((item) => [item.id, item]));
     const typeMap = new Map(types.map((item) => [item.id, item]));
-    return slots.map((slot) => ({
-      ...slot,
-      zone: zoneMap.get(slot.zone_id),
-      vehicleType: typeMap.get(slot.vehicle_type_id),
-      visualStatus: getSlotStatus(slot),
-    }));
+    return slots.map((slot) => {
+      const zone = zoneMap.get(slot.zone_id);
+      return {
+        ...slot,
+        zone,
+        vehicleType: typeMap.get(slot.vehicle_type_id),
+        visualStatus: getParkingSlotVisualStatus(slot, zone),
+      };
+    });
   }, [slots, types, zones]);
 
   const filteredSlots = useMemo(() => enrichedSlots.filter((slot) => (
@@ -113,7 +112,6 @@ export default function ParkingSlotPage() {
       required: true,
       options: types.map((item) => ({ value: item.id, label: item.name })),
     },
-    { name: "is_occupied", label: "Đang có xe", type: "boolean", defaultValue: false },
     { name: "is_active", label: "Đang hoạt động", type: "boolean" },
   ];
 
