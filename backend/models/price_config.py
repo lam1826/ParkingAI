@@ -1,6 +1,6 @@
 from datetime import datetime, date
 
-from sqlalchemy import String, Float, Boolean, Date, ForeignKey
+from sqlalchemy import String, Float, Boolean, Date, ForeignKey, Index, text
 from sqlalchemy.sql import func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -8,6 +8,21 @@ from database import Base
 
 class PriceConfig(Base):
     __tablename__ = "price_configs"
+
+    # Backstop ở tầng DB cho bất biến nghiệp vụ: mỗi loại xe chỉ có tối đa MỘT
+    # bảng giá active (không phân biệt ticket_type). Partial index nên nhiều
+    # bản ghi inactive cùng loại xe vẫn được phép. Router đã chặn trước và trả
+    # 409; index này bắt các đường ghi khác (script seed, sửa DB tay, hai
+    # request đồng thời) — IntegrityError được main.py chuyển thành 409.
+    # Tên index phải khớp câu lệnh trong database.py::run_sqlite_migrations.
+    __table_args__ = (
+        Index(
+            "uq_price_config_one_active_per_vehicle_type",
+            "vehicle_type_id",
+            unique=True,
+            sqlite_where=text("is_active = 1"),
+        ),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     vehicle_type_id: Mapped[int] = mapped_column(ForeignKey("vehicle_types.id"))

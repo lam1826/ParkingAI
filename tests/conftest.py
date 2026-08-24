@@ -1,5 +1,13 @@
 import os
 
+# BẮT BUỘC đứng TRƯỚC mọi import backend (main/database):
+# database.py tạo engine ở module level từ DATABASE_URL, và main.py chạy
+# run_sqlite_migrations() + create_all() ngay khi được import. Nếu không ép
+# URL sang in-memory tại đây, chạy pytest bình thường sẽ migrate/ghi lên
+# backend/database/parking.db THẬT. Dùng gán trực tiếp (không setdefault)
+# để kể cả khi shell bên ngoài lỡ đặt DATABASE_URL trỏ DB thật, test vẫn an toàn.
+os.environ["DATABASE_URL"] = "sqlite:///:memory:"
+
 os.environ.setdefault("SECRET_KEY", "test_secret_key_for_pytest_123456789")
 os.environ.setdefault("GEMINI_API_KEY", "test_gemini_api_key_for_pytest_123456789")
 os.environ.setdefault("MANAGER_REGISTRATION_CODE", "manager-test-code")

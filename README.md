@@ -58,8 +58,19 @@ npm.cmd run dev
 ```powershell
 .\.venv\Scripts\python.exe -m pytest -q
 Set-Location frontend
+npm.cmd test
 npm.cmd run lint
 npm.cmd run build
 ```
+
+Hoặc chạy toàn bộ các bước kiểm tra từ thư mục gốc:
+
+```powershell
+.\scripts\verify.ps1
+```
+
+`pytest.ini` giới hạn việc thu thập test vào thư mục `tests/`, vì bộ hồ sơ bàn giao có chứa một
+bản sao mã nguồn để lưu minh chứng. GitHub Actions cũng tự chạy lại backend test, frontend test,
+ESLint và production build trên mọi lần push hoặc pull request.
 
 Chi tiết kiến trúc, prompt và minh chứng dùng AI trong SDLC nằm tại [docs/AI_SDLC.md](docs/AI_SDLC.md).

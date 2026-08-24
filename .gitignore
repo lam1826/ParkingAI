@@ -9,6 +9,10 @@ backend/venv/
 .venv/
 __pycache__/
 *.py[cod]
+.pytest_cache/
+htmlcov/
+.coverage
+*.db
 backend/.env
 
 # VSCode
@@ -20,3 +24,9 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Microsoft Office temporary files
+~$*.docx
+
+# Ban sao/backup nguon khong thuoc version control
+frontend/src.zip

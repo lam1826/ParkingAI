@@ -4,7 +4,13 @@ from datetime import datetime
 
 
 class CheckInRequest(BaseModel):
-    """Schema nhận dữ liệu yêu cầu Check-in."""
+    """Schema nhận dữ liệu yêu cầu Check-in.
+
+    extra="forbid": thời gian vào, phí, trạng thái, nhân viên và vé tháng hoàn
+    toàn do server quyết định — client gửi các field đó (hoặc field lạ) nhận
+    422 thay vì bị âm thầm bỏ qua."""
+    model_config = ConfigDict(extra="forbid")
+
     license_plate: str = Field(
         ..., min_length=4, max_length=15, description="Biển số xe"
     )
@@ -26,7 +32,13 @@ class CheckInRequest(BaseModel):
 
 
 class CheckOutRequest(BaseModel):
-    """Schema validate dữ liệu đầu vào cho yêu cầu Check-out."""
+    """Schema validate dữ liệu đầu vào cho yêu cầu Check-out.
+
+    extra="forbid": thời gian ra, phí, trạng thái và nhân viên xử lý hoàn toàn
+    do server quyết định — client cố gửi các field đó (hoặc field lạ) phải
+    nhận 422 thay vì bị âm thầm bỏ qua."""
+    model_config = ConfigDict(extra="forbid")
+
     license_plate: str = Field(
         ..., min_length=4, max_length=15,
         description="Biển số xe cần rời bãi"

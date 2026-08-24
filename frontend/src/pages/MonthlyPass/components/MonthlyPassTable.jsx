@@ -7,43 +7,48 @@ import formatDate from "../../../utils/formatDate";
 import dayjs from "dayjs";
 
 const MonthlyPassTable = ({ passes, loading, onAdd, onEdit, onDelete }) => {
+  // Lưu ý: MUI DataGrid v9 — valueGetter/valueFormatter nhận (value, row) thay vì params
   const columns = [
-    { field: "pass_code", headerName: "Mã thẻ", width: 120, renderCell: (p) => <strong>{p.value}</strong> },
+    { field: "pass_code", headerName: "Mã thẻ", width: 120, renderCell: ({ value }) => <strong>{value || "—"}</strong> },
     {
       field: "license_plate",
       headerName: "Biển số xe",
       flex: 1,
       minWidth: 130,
-      valueGetter: (params) => params.row.vehicle?.license_plate || "N/A",
+      valueGetter: (_value, row) => row.vehicle?.license_plate || "N/A",
     },
     {
       field: "customerName",
       headerName: "Chủ sở hữu",
       flex: 1.5,
       minWidth: 180,
-      valueGetter: (params) => params.row.customer?.full_name || "N/A",
+      valueGetter: (_value, row) => row.customer?.full_name || "N/A",
     },
     {
       field: "start_date",
       headerName: "Ngày bắt đầu",
       flex: 1,
       minWidth: 120,
-      valueFormatter: (params) => formatDate(params.value, "DD/MM/YYYY"),
+      valueFormatter: (value) => (value ? formatDate(value) : "--"),
     },
     {
       field: "end_date",
       headerName: "Ngày hết hạn",
       flex: 1,
       minWidth: 120,
-      valueFormatter: (params) => formatDate(params.value, "DD/MM/YYYY"),
+      valueFormatter: (value) => (value ? formatDate(value) : "--"),
     },
     {
       field: "status",
       headerName: "Trạng thái",
       flex: 1,
       minWidth: 130,
-      renderCell: (params) => {
-        const isExpired = dayjs().isAfter(dayjs(params.row.end_date));
+      renderCell: ({ row }) => {
+        if (!row.is_active) {
+          return <Chip label="Ngừng hoạt động" color="default" size="small" />;
+        }
+        // Vé còn hiệu lực đến HẾT ngày end_date (23:59:59), khớp cách backend tính phí
+        const isExpired = dayjs().isAfter(dayjs(row.end_date).endOf("day"));
         return (
           <Chip
             label={isExpired ? "Hết hạn" : "Đang hoạt động"}

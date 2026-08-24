@@ -2,7 +2,7 @@ import uuid
 from typing import Optional
 from datetime import datetime
 
-from sqlalchemy import String, Float, ForeignKey, DateTime
+from sqlalchemy import String, Float, ForeignKey, DateTime, Index, text
 from sqlalchemy.sql import func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -10,6 +10,28 @@ from database import Base
 
 class ParkingSession(Base):
     __tablename__ = "parking_sessions"
+
+    # Backstop ở tầng DB cho hai bất biến check-in (Đợt 3):
+    # - Một phương tiện chỉ có tối đa MỘT phiên active.
+    # - Một vị trí đỗ (non-null) chỉ có tối đa MỘT phiên active.
+    # Partial index nên lịch sử phiên completed không bị giới hạn. Application
+    # đã kiểm tra trước và trả 409; index này bắt race giữa hai request đồng
+    # thời và các đường ghi ngoài API. Tên index phải khớp câu lệnh trong
+    # database.py::run_sqlite_migrations.
+    __table_args__ = (
+        Index(
+            "uq_parking_session_one_active_per_vehicle",
+            "vehicle_id",
+            unique=True,
+            sqlite_where=text("status = 'active'"),
+        ),
+        Index(
+            "uq_parking_session_one_active_per_slot",
+            "parking_slot_id",
+            unique=True,
+            sqlite_where=text("status = 'active' AND parking_slot_id IS NOT NULL"),
+        ),
+    )
 
     # Sử dụng UUID để tránh đoán mã vé. default sinh UUID tự động khi tạo bản ghi
     # mới (trước đây thiếu default nên insert sẽ ghi NULL vào cột khóa chính).

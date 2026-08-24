@@ -200,15 +200,14 @@ def test_crud_check_out_server_calculates_fee(
     price_config,
 ):
     """7. Kiểm thử đường check-out phụ /api/v1/parking-sessions/{id}/check-out:
-    phí do SERVER tính từ bảng giá (bỏ qua phí client gửi lên) và vị trí được giải phóng."""
-    # Đặt giờ vào 30 phút trước theo giờ local (đồng bộ với datetime.now() của service)
+    phí do SERVER tính từ bảng giá; body rỗng; vị trí được giải phóng."""
+    # Đặt giờ vào 30 phút trước theo giờ local (đồng bộ với server_now của service)
     parking_session.check_in_time = datetime.datetime.now() - datetime.timedelta(minutes=30)
     db_session.commit()
 
-    # Client cố tình gửi phí gian lận 0 đồng -> server phải bỏ qua
     response = client.put(
         f"/api/v1/parking-sessions/{parking_session.id}/check-out",
-        json={"parking_fee": 0.0},
+        json={},
         headers=auth_headers,
     )
 
@@ -222,24 +221,31 @@ def test_crud_check_out_server_calculates_fee(
     assert parking_slot.is_occupied is False
 
 
-def test_crud_check_out_already_completed(
+def test_crud_check_out_is_idempotent(
     client: TestClient,
     auth_headers: dict,
     db_session: Session,
     parking_session: ParkingSession,
     price_config,
 ):
-    """8. Kiểm thử check-out hai lần trên cùng một phiên -> lần 2 bị từ chối (không tính phí 2 lần)."""
+    """8. PUT check-out là IDEMPOTENT: các lần gọi lại trả 200 với đúng dữ liệu
+    đã persist — không tính lại phí, không đổi thời gian/nhân viên."""
     first = client.put(
         f"/api/v1/parking-sessions/{parking_session.id}/check-out",
         json={},
         headers=auth_headers,
     )
     assert first.status_code == 200
+    first_data = first.json()
 
     second = client.put(
         f"/api/v1/parking-sessions/{parking_session.id}/check-out",
         json={},
         headers=auth_headers,
     )
-    assert second.status_code == 400
+    assert second.status_code == 200
+    second_data = second.json()
+
+    assert second_data["parking_fee"] == first_data["parking_fee"]
+    assert second_data["check_out_time"] == first_data["check_out_time"]
+    assert second_data["status"] == "completed"
