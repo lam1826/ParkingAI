@@ -5,14 +5,11 @@ import {
   Stack,
 } from "@mui/material";
 import RefreshIcon from "@mui/icons-material/Refresh";
+import { formatBusinessLongDate } from "../../../utils/businessDate";
 
 const DashboardHeader = ({ onRefresh, loading }) => {
-  const today = new Date().toLocaleDateString("vi-VN", {
-    weekday: "long",
-    day: "2-digit",
-    month: "long",
-    year: "numeric",
-  });
+  // Ngày nghiệp vụ theo Asia/Ho_Chi_Minh, không theo timezone máy người dùng.
+  const today = formatBusinessLongDate();
 
   return (
     <Box

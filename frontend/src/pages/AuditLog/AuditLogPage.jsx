@@ -13,6 +13,7 @@ import {
 import RefreshIcon from "@mui/icons-material/Refresh";
 import { DataGrid, GridToolbar } from "@mui/x-data-grid";
 import api from "../../services/api";
+import formatMetadataTimestamp from "../../utils/formatMetadataTimestamp";
 
 const actionLabels = {
   CREATE: "Tạo mới",
@@ -52,7 +53,9 @@ export default function AuditLogPage() {
 
   const columns = [
     { field: "id", headerName: "ID", width: 75 },
-    { field: "created_at", headerName: "Thời gian", width: 175, valueFormatter: (value) => new Date(value).toLocaleString("vi-VN") },
+    // created_at do SQLite func.now() sinh -> UTC-naive, phải diễn giải là
+    // UTC trước khi hiển thị theo giờ VN (xem utils/formatMetadataTimestamp.js).
+    { field: "created_at", headerName: "Thời gian", width: 175, valueFormatter: (value) => formatMetadataTimestamp(value) },
     { field: "username", headerName: "Tài khoản", minWidth: 140, flex: 1 },
     { field: "action", headerName: "Hành động", width: 135, renderCell: ({ value }) => <Chip size="small" label={actionLabels[value] || value} /> },
     { field: "resource", headerName: "Đối tượng", minWidth: 140, flex: 1 },

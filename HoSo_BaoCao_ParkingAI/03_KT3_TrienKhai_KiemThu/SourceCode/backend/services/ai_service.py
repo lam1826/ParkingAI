@@ -18,6 +18,14 @@ class AIService:
     AIService chịu trách nhiệm giao tiếp với mô hình AI (Google Gemini)
     thông qua SDK mới (google.genai) để phân tích dữ liệu bãi đỗ xe,
     tạo báo cáo tự động và hỗ trợ truy vấn ngôn ngữ tự nhiên.
+
+    BACKLOG (P3, maintainability — KHÔNG thuộc phạm vi Đợt 10C):
+    năm phương thức bên dưới lặp lại cùng một khối
+    `client.models.generate_content(...)` -> `response.text.strip()` ->
+    `save_ai_report(...)`. Có thể gom vào một private seam dùng chung, ví dụ
+    `_generate_text(prompt: str) -> str`, để mọi thay đổi contract phía
+    provider chỉ phải sửa một chỗ. Chưa refactor vì không cần thiết cho tính
+    đúng đắn của đợt migration này.
     """
 
     def __init__(self, db: Session, api_key: str):
@@ -67,13 +75,16 @@ DỮ LIỆU ĐẦU VÀO CHO NGÀY {target_date.strftime('%Y-%m-%d')}:
 
             final_prompt = f"{system_prompt}\n\n{user_prompt}"
 
-            # Cú pháp gọi API mới qua client.models.generate_content
+            # Cú pháp gọi API mới qua client.models.generate_content.
+            # Chính sách migration Đợt 10C (xem docs/AI_SDLC.md §3): các
+            # legacy sampling parameter (temperature, top_p, top_k,
+            # candidate_count, thinking_budget) đã bị loại khỏi luồng hiện
+            # tại của gemini-3.7-flash. Dự án CHỌN không truyền `config` ở
+            # cả năm luồng để dùng thinking level mặc định `medium` — đây là
+            # lựa chọn của dự án, không phải provider cấm mọi `config`.
             response = self.client.models.generate_content(
                 model=self.model_name,
                 contents=final_prompt,
-                config={
-                    "temperature": 0.2,
-                }
             )
 
             report_text = response.text.strip()
@@ -118,9 +129,6 @@ DỮ LIỆU TUẦN TỪ {start_date.strftime('%Y-%m-%d')} ĐẾN {end_date.strft
             response = self.client.models.generate_content(
                 model=self.model_name,
                 contents=final_prompt,
-                config={
-                    "temperature": 0.2,
-                }
             )
 
             report_text = response.text.strip()
@@ -169,9 +177,6 @@ CÂU HỎI:
             response = self.client.models.generate_content(
                 model=self.model_name,
                 contents=final_prompt,
-                config={
-                    "temperature": 0.0,
-                }
             )
 
             answer = response.text.strip()
@@ -223,9 +228,6 @@ CÂU HỎI:
             response = self.client.models.generate_content(
                 model=self.model_name,
                 contents=final_prompt,
-                config={
-                    "temperature": 0.0,
-                }
             )
 
             answer = response.text.strip()
@@ -284,9 +286,6 @@ DỮ LIỆU ĐẦU VÀO ĐỂ PHÂN TÍCH:
             response = self.client.models.generate_content(
                 model=self.model_name,
                 contents=final_prompt,
-                config={
-                    "temperature": 0.0,
-                }
             )
 
             schedule_result = response.text.strip()

@@ -32,7 +32,15 @@ Các thực thể chính: `Zone`, `ParkingSlot`, `VehicleType`, `Vehicle`, `Cust
 
 ### Nguyên tắc prompt
 
-Prompt luôn truyền dữ liệu có cấu trúc JSON, yêu cầu chỉ trả lời từ dữ liệu được cung cấp, nhiệt độ thấp và quy định câu trả lời khi thiếu dữ liệu. Tên model đặt bằng `GEMINI_MODEL` để có thể nâng cấp mà không sửa mã.
+Prompt luôn truyền dữ liệu có cấu trúc JSON, yêu cầu chỉ trả lời từ dữ liệu được cung cấp và quy định câu trả lời khi thiếu dữ liệu. Tên model đặt bằng `GEMINI_MODEL` để có thể nâng cấp mà không sửa mã.
+
+Từ `gemini-3.7-flash`, việc ràng buộc tính xác định của câu trả lời do prompt đảm nhiệm hoàn toàn, không còn dùng "nhiệt độ thấp".
+
+Theo migration guide chính thức, các **legacy sampling parameter** đã bị loại khỏi luồng hiện tại của model này: `temperature`, `top_p`, `top_k`, `candidate_count`, `thinking_budget` (trong đó `thinking_budget` có hướng thay thế bằng `thinking_level`). Các configuration được hỗ trợ khác **vẫn có thể tồn tại** — migration guide không cấm toàn bộ `config`.
+
+**Chính sách migration hiện tại của dự án:** năm luồng gọi AI (`generate_daily_report`, `generate_weekly_report`, `answer_question`, `ask_dashboard_question`, `suggest_staff_schedule`) **chọn không truyền `config`** vào `generate_content()`, để model chạy ở thinking level mặc định `medium`. Đây là lựa chọn của dự án cho đợt migration này, không phải ràng buộc bắt buộc từ phía provider.
+
+Nguồn: <https://ai.google.dev/gemini-api/docs/latest-model> và <https://ai.google.dev/gemini-api/docs/models/gemini-3.7-flash>.
 
 ### Prompt báo cáo mẫu
 
@@ -117,7 +125,13 @@ Khi demo: tạo dữ liệu khu vực → loại xe → vị trí → bảng gi�
 - Giao diện: nút **Gợi ý nhân sự** gọi thẳng `/ai/staff-suggestion`.
 - Test: `test_ai_staff_suggestion_success`, `test_ai_staff_suggestion_server_side_aggregation` và ca lưu lượng rỗng.
 
-## 7. Kết quả xác minh ngày 18/08/2026
+## 7. Kết quả xác minh
+
+### 7.1. Bằng chứng LỊCH SỬ — ngày 18/08/2026 (model `gemini-3.6-flash`)
+
+> Mục này là bằng chứng lịch sử, giữ nguyên đúng số liệu và model **thực tế
+> đã chạy tại thời điểm đó**. Không cập nhật theo model mới — xem 7.2 cho
+> trạng thái hiện hành.
 
 | Hạng mục | Kết quả |
 | --- | --- |
@@ -125,8 +139,24 @@ Khi demo: tạo dữ liệu khu vực → loại xe → vị trí → bảng gi�
 | Riêng AI | `17 passed` |
 | Frontend ESLint | Đạt, không có lỗi |
 | Frontend production build | Đạt, Vite build thành công |
-| Kết nối Gemini thật | Đạt; khóa API hợp lệ, model trả về nội dung |
-| Model cấu hình | `gemini-3.6-flash` (đặt qua biến `GEMINI_MODEL`, khớp `backend/core/config.py`) |
+| Kết nối Gemini thật | Đạt — **với `gemini-3.6-flash`**; khóa API hợp lệ, model trả về nội dung |
+| Model cấu hình lúc đó | `gemini-3.6-flash` (đặt qua biến `GEMINI_MODEL`) |
+
+### 7.2. Đợt 10C — nâng cấp lên `gemini-3.7-flash` (ngày 25/08/2026)
+
+| Hạng mục | Kết quả |
+| --- | --- |
+| Model đích | `gemini-3.7-flash` (đặt qua `GEMINI_MODEL`, khớp `backend/core/config.py`) |
+| Riêng AI (`tests/test_ai.py`) | `24 passed` (17 cũ + 7 test regression mới) |
+| Toàn bộ backend | `196 passed` |
+| Frontend test / ESLint / production build | Đạt |
+| Phương thức kiểm thử | **Hoàn toàn bằng mock** (`services.ai_service.genai.Client` được patch ở mọi test) |
+| Gọi provider live trong đợt này | **Không** — không có request nào tới Gemini |
+| Kết nối Gemini 3.7 live | **CHƯA XÁC MINH** — chưa từng chạy thật với model này |
+
+> ⚠️ Bằng chứng "Kết nối Gemini thật: Đạt" ở mục 7.1 **chỉ áp dụng cho
+> `gemini-3.6-flash`** và **không** chứng nhận `gemini-3.7-flash`. Việc xác
+> minh kết nối live với model mới là hạng mục riêng, chưa thực hiện.
 
 Lệnh tái hiện:
 

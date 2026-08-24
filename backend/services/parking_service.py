@@ -1,5 +1,5 @@
 import math
-from datetime import datetime, time, timedelta
+from datetime import datetime, timedelta
 from typing import Optional, Any, Dict
 
 from fastapi import HTTPException, status
@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import select, func, extract, desc, asc
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
+from core.clock import business_today, day_bounds
 from crud import parking_session as crud_parking_session
 from crud.parking_session import claim_parking_slot, map_check_in_integrity_error
 
@@ -459,22 +460,21 @@ class ParkingService:
     def get_parking_statistics(self, target_date=None) -> Dict[str, Any]:
         """Thống kê hoạt động trong 1 ngày (mặc định: hôm nay)."""
         try:
-            today = target_date or datetime.now().date()
+            today = target_date or business_today()
 
-            start_day = datetime.combine(today, time.min)
-            end_day = datetime.combine(today, time.max)
+            start_day, end_day = day_bounds(today)
 
             total_vehicles = self.db.execute(
                 select(func.count(ParkingSession.id)).where(
                     ParkingSession.check_in_time >= start_day,
-                    ParkingSession.check_in_time <= end_day
+                    ParkingSession.check_in_time < end_day
                 )
             ).scalar() or 0
 
             total_revenue = self.db.execute(
                 select(func.sum(ParkingSession.parking_fee)).where(
                     ParkingSession.check_out_time >= start_day,
-                    ParkingSession.check_out_time <= end_day,
+                    ParkingSession.check_out_time < end_day,
                     ParkingSession.status == "completed"
                 )
             ).scalar() or 0.0
@@ -504,7 +504,7 @@ class ParkingService:
                 )
                 .where(
                     ParkingSession.check_in_time >= start_day,
-                    ParkingSession.check_in_time <= end_day
+                    ParkingSession.check_in_time < end_day
                 )
                 .group_by("hour")
                 .order_by(desc("count"))
@@ -543,8 +543,8 @@ class ParkingService:
         trước khi gửi cho AI (AI không tự truy vấn dữ liệu).
         """
         try:
-            range_start = datetime.combine(start_date, time.min)
-            range_end = datetime.combine(end_date, time.max)
+            range_start, _ = day_bounds(start_date)
+            _, range_end = day_bounds(end_date)
 
             entries_stmt = (
                 select(
@@ -553,7 +553,7 @@ class ParkingService:
                 )
                 .where(
                     ParkingSession.check_in_time >= range_start,
-                    ParkingSession.check_in_time <= range_end,
+                    ParkingSession.check_in_time < range_end,
                 )
                 .group_by("day")
             )
@@ -568,7 +568,7 @@ class ParkingService:
                 .where(
                     ParkingSession.status == "completed",
                     ParkingSession.check_out_time >= range_start,
-                    ParkingSession.check_out_time <= range_end,
+                    ParkingSession.check_out_time < range_end,
                 )
                 .group_by("day")
             )
@@ -835,15 +835,14 @@ class ParkingService:
         """
         Thống kê tổng quan dữ liệu phục vụ Dashboard trong ngày.
         """
-        today = datetime.now().date()
-        start_of_day = datetime.combine(today, time.min)
-        end_of_day = datetime.combine(today, time.max)
+        today = business_today()
+        start_of_day, end_of_day = day_bounds(today)
 
         # 1. Tổng số xe vào bãi hôm nay
         total_vehicles_today = self.db.execute(
             select(func.count(ParkingSession.id)).where(
                 ParkingSession.check_in_time >= start_of_day,
-                ParkingSession.check_in_time <= end_of_day
+                ParkingSession.check_in_time < end_of_day
             )
         ).scalar() or 0
 
@@ -851,7 +850,7 @@ class ParkingService:
         total_revenue_today = self.db.execute(
             select(func.sum(ParkingSession.parking_fee)).where(
                 ParkingSession.check_out_time >= start_of_day,
-                ParkingSession.check_out_time <= end_of_day,
+                ParkingSession.check_out_time < end_of_day,
                 ParkingSession.status == "completed"
             )
         ).scalar() or 0.0
@@ -867,7 +866,7 @@ class ParkingService:
         vehicles_checked_out_today = self.db.execute(
             select(func.count(ParkingSession.id)).where(
                 ParkingSession.check_out_time >= start_of_day,
-                ParkingSession.check_out_time <= end_of_day,
+                ParkingSession.check_out_time < end_of_day,
                 ParkingSession.status == "completed"
             )
         ).scalar() or 0
@@ -899,7 +898,7 @@ class ParkingService:
             )
             .where(
                 ParkingSession.check_in_time >= start_of_day,
-                ParkingSession.check_in_time <= end_of_day
+                ParkingSession.check_in_time < end_of_day
             )
             .group_by("hour_val")
             .order_by(desc("count_val"))
@@ -932,12 +931,8 @@ class ParkingService:
         Phân tích và đưa ra gợi ý thông minh dựa trên dữ liệu bãi đỗ xe hiện tại.
         """
         try:
-            # Bạn có thể tích hợp gọi Gemini API trực tiếp tại đây, 
+            # Bạn có thể tích hợp gọi Gemini API trực tiếp tại đây,
             # hoặc trả về một phân tích tổng hợp thông minh dựa trên số liệu thực tế từ DB.
-            today = datetime.now().date()
-            start_of_day = datetime.combine(today, time.min)
-            end_of_day = datetime.combine(today, time.max)
-
             # Lấy số xe đang trong bãi hiện tại
             current_inside = self.db.execute(
                 select(func.count(ParkingSession.id)).where(ParkingSession.status == "active")
@@ -1013,8 +1008,8 @@ class ParkingService:
         phục vụ biểu đồ doanh thu trên Dashboard.
         """
         try:
-            today = datetime.now().date()
-            start_date = datetime.combine(today - timedelta(days=6), time.min)
+            today = business_today()
+            start_date, _ = day_bounds(today - timedelta(days=6))
 
             stmt = (
                 select(

@@ -20,6 +20,7 @@ from sqlalchemy import create_engine, event, select
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import sessionmaker
 
+from core.clock import business_now
 from crud import parking_session as crud_session_module
 from database import Base, run_sqlite_migrations
 from models.customer import Customer
@@ -267,6 +268,11 @@ class CheckoutEnv:
 
 @pytest.fixture()
 def env(tmp_path):
+    # Đợt 10A: MỘT reference instant naive business-local cho toàn bộ fixture
+    # này — effective_date của bảng giá và check_in_time của session đều dẫn
+    # xuất từ đây, không trộn `date.today()` (host-local) với
+    # `datetime.now()` rời rạc.
+    reference_now = business_now()
     db_file = tmp_path / "checkout_race.db"
     engine = create_engine(
         f"sqlite:///{db_file.as_posix()}", connect_args={"check_same_thread": False}
@@ -292,14 +298,14 @@ def env(tmp_path):
     slot = ParkingSlot(zone_id=zone.id, vehicle_type_id=vt.id, slot_name="CO-1",
                        is_occupied=True, is_active=True)
     price = PriceConfig(vehicle_type_id=vt.id, ticket_type="HOURLY", price=25000.0,
-                        effective_date=datetime.date.today() - datetime.timedelta(days=1),
+                        effective_date=(reference_now - datetime.timedelta(days=1)).date(),
                         is_active=True)
     vehicle = Vehicle(license_plate="80A-00001", vehicle_type_id=vt.id)
     db.add_all([slot, price, vehicle])
     db.commit()
     session = ParkingSession(
         vehicle_id=vehicle.id, parking_slot_id=slot.id,
-        check_in_time=datetime.datetime.now() - datetime.timedelta(hours=3),
+        check_in_time=reference_now - datetime.timedelta(hours=3),
         status="active", staff_in_id=staff_a.id,
     )
     db.add(session)
@@ -473,7 +479,7 @@ def test_checkout_session_without_slot(env):
     db.commit()
     session = ParkingSession(
         vehicle_id=vehicle.id, parking_slot_id=None,
-        check_in_time=datetime.datetime.now() - datetime.timedelta(hours=1),
+        check_in_time=business_now() - datetime.timedelta(hours=1),
         status="active", staff_in_id=env.staff_a,
     )
     db.add(session)
@@ -498,21 +504,22 @@ def test_checkout_session_without_slot(env):
 
 def test_checkout_monthly_pass_still_free_via_put(
     client, auth_headers, db_session, customer, vehicle_type,
-    parking_slot, test_user,
+    parking_slot, test_user, business_reference_now,
 ):
     vehicle = Vehicle(license_plate="80C-PASS1", vehicle_type_id=vehicle_type.id,
                       customer_id=customer.id)
     db_session.add(vehicle)
     db_session.commit()
+    reference_day = business_reference_now.date()
     db_session.add(MonthlyPass(
         customer_id=customer.id, vehicle_id=vehicle.id,
-        start_date=datetime.date.today() - datetime.timedelta(days=5),
-        end_date=datetime.date.today() + datetime.timedelta(days=25),
+        start_date=reference_day - datetime.timedelta(days=5),
+        end_date=reference_day + datetime.timedelta(days=25),
         is_active=True,
     ))
     session = ParkingSession(
         vehicle_id=vehicle.id, parking_slot_id=parking_slot.id,
-        check_in_time=datetime.datetime.now() - datetime.timedelta(hours=2),
+        check_in_time=business_reference_now - datetime.timedelta(hours=2),
         status="active", staff_in_id=test_user.id,
     )
     parking_slot.is_occupied = True

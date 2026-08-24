@@ -44,6 +44,39 @@ from models.price_config import PriceConfig
 
 SQLALCHEMY_DATABASE_URL = "sqlite:///:memory:"
 
+# ===========================================================================
+# Đợt 10A — Reference instant dùng chung cho fixture/test phụ thuộc thời gian
+# ===========================================================================
+#
+# Trước đây conftest/test_fee dựng thời gian bằng
+# `datetime.now(datetime.timezone.utc)` (AWARE UTC) trong khi `price_config`
+# và `monthly_pass` dùng `date.today()` (ngày HOST-LOCAL). Hai hệ quy chiếu
+# trộn lẫn khiến suite FAIL nguyên khối trong khung giờ VN 00:00–06:59 —
+# lúc đó ngày UTC vẫn còn là hôm trước, nên `time_out.date()` (UTC) lớn hơn
+# `effective_date` (VN) một ngày và query bảng giá không khớp -> 404.
+#
+# Cách sửa: MỘT reference instant NAIVE BUSINESS-LOCAL duy nhất cho mỗi
+# test/fixture (`business_reference_now`), và mọi giá trị dẫn xuất
+# (`effective_date`, `start_date`/`end_date`, `time_in`/`time_out`,
+# `check_in_time`) đều tính từ chính reference đó — không gọi đồng hồ nhiều
+# lần, không trộn aware-UTC với host-local.
+#
+# `business_reference_now` mặc định lấy `business_now()` (giờ VN thật, độc
+# lập timezone host). Test nào cần cố định thời điểm chỉ cần override
+# fixture này — xem `test_fee.py::test_fee_suite_is_independent_of_vietnam_
+# early_morning_window`, cố định 00:30 giờ VN để chứng minh suite không còn
+# phụ thuộc khung 00:00–06:59.
+
+from core.clock import business_now
+
+
+@pytest.fixture(scope="function")
+def business_reference_now() -> datetime.datetime:
+    """Một mốc thời gian NAIVE business-local (Asia/Ho_Chi_Minh) dùng chung
+    cho toàn bộ fixture/test trong một test case. Override fixture này để
+    ghim test vào một thời điểm cụ thể."""
+    return business_now()
+
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL,
     connect_args={"check_same_thread": False},
@@ -121,13 +154,20 @@ def vehicle_type(db_session: Session) -> VehicleType:
 
 
 @pytest.fixture(scope="function")
-def price_config(db_session: Session, vehicle_type: VehicleType) -> PriceConfig:
+def price_config(
+    db_session: Session,
+    vehicle_type: VehicleType,
+    business_reference_now: datetime.datetime,
+) -> PriceConfig:
     pc = PriceConfig(
         vehicle_type_id=vehicle_type.id,
         is_active=True,
         ticket_type="HOURLY",
         price=25000.0,
-        effective_date=datetime.date.today(),
+        # Lùi 1 ngày so với reference: bảng giá phải đã có hiệu lực TRƯỚC
+        # mọi time_out dẫn xuất từ reference, kể cả khi test lùi/tiến vài
+        # giờ quanh mốc đó.
+        effective_date=(business_reference_now - datetime.timedelta(days=1)).date(),
     )
     db_session.add(pc)
     db_session.commit()
@@ -182,12 +222,15 @@ def parking_session(
     db_session: Session,
     test_user: User,
     vehicle: Vehicle,
-    parking_slot: ParkingSlot
+    parking_slot: ParkingSlot,
+    business_reference_now: datetime.datetime,
 ) -> ParkingSession:
     session = ParkingSession(
         vehicle_id=vehicle.id,
         parking_slot_id=parking_slot.id,
-        check_in_time=datetime.datetime.now(datetime.timezone.utc),
+        # NAIVE business-local, cùng hệ quy chiếu với check_in_time/
+        # check_out_time thật do server_now() ghi (xem backend/core/clock.py).
+        check_in_time=business_reference_now,
         status="active",
         staff_in_id=test_user.id,
     )

@@ -1,10 +1,10 @@
-from datetime import date
 from io import BytesIO
 from typing import Annotated, Literal
 from fastapi import APIRouter, Depends, Query, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
+from core.clock import business_today
 from database import get_db
 from schemas.report import TrafficReportResponse, RevenueReportResponse
 from services.report_service import TrafficService, RevenueService
@@ -76,7 +76,7 @@ def export_report_endpoint(
     current_user: Annotated[User, Depends(get_current_user)] = None,
 ):
     service = ReportExportService(db)
-    filename = f"parking-report-{period}-{date.today().isoformat()}.{file_format}"
+    filename = f"parking-report-{period}-{business_today().isoformat()}.{file_format}"
     if file_format == "xlsx":
         content = service.build_excel(period)
         media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"

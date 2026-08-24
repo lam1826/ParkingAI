@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Alert, Box, Button, CircularProgress, Paper, Stack, TextField, Typography } from "@mui/material";
 import AutoAwesomeIcon from "@mui/icons-material/AutoAwesome";
 import api from "../../services/api";
+import { requestDailyReport, requestWeeklyReport } from "../../services/aiReportService";
 
 export default function AIPage() {
   const [question, setQuestion] = useState("");
@@ -18,17 +19,10 @@ export default function AIPage() {
         const { data } = await api.post("/ai/question", { question });
         setResult(data.content);
       } else if (action === "daily") {
-        const { data } = await api.post("/ai/daily-report", {
-          target_date: new Date().toISOString().slice(0, 10),
-        });
+        const { data } = await requestDailyReport(api);
         setResult(data.content);
       } else if (action === "weekly") {
-        const end = new Date();
-        const start = new Date(); start.setDate(end.getDate() - 6);
-        const { data } = await api.post("/ai/weekly-report", {
-          start_date: start.toISOString().slice(0, 10),
-          end_date: end.toISOString().slice(0, 10),
-        });
+        const { data } = await requestWeeklyReport(api);
         setResult(data.content);
       } else {
         const { data } = await api.post("/ai/staff-suggestion", {});

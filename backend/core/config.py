@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     GEMINI_API_KEY: str = ""
-    GEMINI_MODEL: str = "gemini-3.6-flash"
+    GEMINI_MODEL: str = "gemini-3.7-flash"
     CORS_ORIGINS: str = "http://localhost:5173,http://127.0.0.1:5173"
     MANAGER_REGISTRATION_CODE: str = ""
     ADMIN_REGISTRATION_CODE: str = ""
