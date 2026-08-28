@@ -18,10 +18,15 @@ class Settings(BaseSettings):
     # phải bật AI một cách tường minh sau khi đã duyệt dữ liệu/chi phí.
     AI_ENABLED: bool = False
     GEMINI_API_KEY: str = ""
-    GEMINI_MODEL: str = "gemini-3.7-flash"
+    GEMINI_MODEL: str = "gemini-3.6-flash"
+    AI_PROVIDER_TIMEOUT_MS: int = 85_000
     CORS_ORIGINS: str = "http://localhost:5173,http://127.0.0.1:5173"
     MANAGER_REGISTRATION_CODE: str = ""
     ADMIN_REGISTRATION_CODE: str = ""
+    AUTH_LOGIN_MAX_FAILURES: int = 10
+    AUTH_LOGIN_WINDOW_SECONDS: int = 300
+    AUTH_REGISTER_MAX_ATTEMPTS: int = 5
+    AUTH_REGISTER_WINDOW_SECONDS: int = 3600
     
     # Chỉ định đọc từ file .env ở thư mục gốc
     model_config = SettingsConfigDict(

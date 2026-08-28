@@ -1,4 +1,5 @@
 import re
+import logging
 from collections.abc import Generator
 
 import jwt
@@ -7,15 +8,22 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 
 from core.config import settings
+from core.client_ip import get_client_ip
 from database import SessionLocal, get_db
 from models.audit_log import AuditLog
 
 
 MUTATING_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+AUTH_PATHS = {"/api/auth/login", "/auth/login", "/api/auth/register"}
+logger = logging.getLogger(__name__)
 
 
 def _classify_action(method: str, path: str) -> str:
     normalized_path = path.rstrip("/") or "/"
+    if normalized_path in {"/api/auth/login", "/auth/login"}:
+        return "LOGIN"
+    if normalized_path == "/api/auth/register":
+        return "REGISTER"
     if normalized_path in {
         "/parking/check-in",
         "/api/v1/parking-sessions/check-in",
@@ -63,18 +71,20 @@ class AuditLogMiddleware(BaseHTTPMiddleware):
             return response
 
         authorization = request.headers.get("authorization", "")
-        if not authorization.lower().startswith("bearer "):
-            return response
-
-        try:
-            payload = jwt.decode(
-                authorization.split(" ", 1)[1],
-                settings.SECRET_KEY,
-                algorithms=[settings.ALGORITHM],
-            )
-            user_id = int(payload["sub"])
-            username = str(payload.get("username") or f"user-{user_id}")
-        except (InvalidTokenError, KeyError, TypeError, ValueError):
+        user_id = None
+        username = "anonymous"
+        if authorization.lower().startswith("bearer "):
+            try:
+                payload = jwt.decode(
+                    authorization.split(" ", 1)[1],
+                    settings.SECRET_KEY,
+                    algorithms=[settings.ALGORITHM],
+                )
+                user_id = int(payload["sub"])
+                username = str(payload.get("username") or f"user-{user_id}")
+            except (InvalidTokenError, KeyError, TypeError, ValueError):
+                return response
+        elif request.url.path not in AUTH_PATHS:
             return response
 
         resource, resource_id = _extract_resource(request.url.path)
@@ -97,12 +107,17 @@ class AuditLogMiddleware(BaseHTTPMiddleware):
                 path=request.url.path[:255],
                 status_code=response.status_code,
                 success=200 <= response.status_code < 400,
-                ip_address=request.client.host if request.client else None,
+                ip_address=get_client_ip(request),
             ))
             db.commit()
         except Exception:
             if db is not None:
                 db.rollback()
+            logger.exception(
+                "Unable to persist audit metadata for %s %s",
+                request.method,
+                request.url.path,
+            )
         finally:
             if generator is not None:
                 generator.close()

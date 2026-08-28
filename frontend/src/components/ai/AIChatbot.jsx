@@ -20,7 +20,7 @@ import CloseIcon from "@mui/icons-material/Close";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutlined";
 import SendRoundedIcon from "@mui/icons-material/SendRounded";
 import api from "../../services/api";
-import { requestDailyReport, requestWeeklyReport } from "../../services/aiReportService";
+import { requestAI, requestDailyReport, requestWeeklyReport } from "../../services/aiReportService";
 
 const STORAGE_KEY = "parking_ai_chat_messages";
 const welcomeMessage = {
@@ -103,7 +103,7 @@ export default function AIChatbot() {
 
     try {
       const contextualQuestion = `Ngữ cảnh giao diện hiện tại: ${pageContext.label}. Câu hỏi: ${text}`;
-      const { data } = await api.post("/ai/question", { question: contextualQuestion });
+      const { data } = await requestAI(api, "/ai/question", { question: contextualQuestion });
       setMessages((current) => [
         ...current,
         { id: `assistant-${Date.now()}`, role: "assistant", content: data.content || "AI chưa trả về nội dung." },
@@ -141,7 +141,7 @@ export default function AIChatbot() {
       } else if (action === "weekly") {
         response = await requestWeeklyReport(api);
       } else {
-        response = await api.post("/ai/staff-suggestion", {});
+        response = await requestAI(api, "/ai/staff-suggestion", {});
       }
 
       setMessages((current) => [

@@ -145,6 +145,68 @@ def test_admin_cannot_delete_canonical_role(
     assert "vai trò hệ thống" in response.json()["detail"].lower()
 
 
+def test_last_active_admin_cannot_deactivate_self(
+    client: TestClient,
+    db_session: Session,
+    admin_user: User,
+):
+    response = client.put(
+        f"/api/v1/users/{admin_user.id}",
+        headers=make_headers(admin_user),
+        json={"is_active": False},
+    )
+
+    assert response.status_code == 409
+    assert "admin hoạt động cuối cùng" in response.json()["detail"].lower()
+    db_session.refresh(admin_user)
+    assert admin_user.is_active is True
+
+
+def test_last_active_admin_cannot_demote_self(
+    client: TestClient,
+    db_session: Session,
+    admin_user: User,
+):
+    manager_role = Role(name="manager", description="Quản lý")
+    db_session.add(manager_role)
+    db_session.commit()
+
+    response = client.put(
+        f"/api/v1/users/{admin_user.id}",
+        headers=make_headers(admin_user),
+        json={"role_id": manager_role.id},
+    )
+
+    assert response.status_code == 409
+    db_session.refresh(admin_user)
+    assert admin_user.role_id != manager_role.id
+
+
+def test_admin_can_deactivate_self_when_another_active_admin_exists(
+    client: TestClient,
+    db_session: Session,
+    admin_user: User,
+):
+    second_admin = User(
+        username="second_admin",
+        password_hash=bcrypt.hashpw(b"password123", bcrypt.gensalt()).decode("utf-8"),
+        full_name="Second Admin",
+        role_id=admin_user.role_id,
+        is_active=True,
+    )
+    db_session.add(second_admin)
+    db_session.commit()
+
+    response = client.put(
+        f"/api/v1/users/{admin_user.id}",
+        headers=make_headers(admin_user),
+        json={"is_active": False},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["is_active"] is False
+
+
 def test_legacy_custom_role_does_not_break_role_list_serialization(
     client: TestClient,
     db_session: Session,

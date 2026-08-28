@@ -371,11 +371,11 @@ def test_ai_staff_suggestion_server_side_aggregation(
 
 
 # ===========================================================================
-# Đợt 10C — Nâng cấp Gemini 3.6 Flash -> Gemini 3.7 Flash
+# Contract model Gemini hiện tại
 # ===========================================================================
 #
 # Theo migration guide chính thức, các legacy sampling parameter đã bị loại
-# khỏi luồng hiện tại của gemini-3.7-flash. Các configuration được hỗ trợ
+# khỏi luồng model hiện tại. Các configuration được hỗ trợ
 # khác VẪN CÓ THỂ tồn tại — guide không cấm toàn bộ `config`.
 #
 # CHÍNH SÁCH MIGRATION HIỆN TẠI CỦA DỰ ÁN (thứ mà các test dưới đây khóa
@@ -388,7 +388,7 @@ def test_ai_staff_suggestion_server_side_aggregation(
 # Toàn bộ test dưới đây dùng mock `services.ai_service.genai.Client` như các
 # test sẵn có — TUYỆT ĐỐI không gọi provider thật.
 
-EXPECTED_MODEL = "gemini-3.7-flash"
+EXPECTED_MODEL = "gemini-3.6-flash"
 
 # Legacy sampling parameter đã bị loại khỏi luồng hiện tại của model.
 LEGACY_SAMPLING_PARAMS = (
@@ -452,11 +452,11 @@ def _assert_matches_current_migration_policy(call_kwargs: dict, path: str) -> No
 
 @pytest.mark.parametrize(("path", "payload"), AI_ENDPOINT_CASES)
 @patch("services.ai_service.genai.Client")
-def test_ai_calls_follow_current_gemini_37_migration_policy(
+def test_ai_calls_follow_current_gemini_migration_policy(
     mock_genai_client, client: TestClient, auth_headers: dict, path: str, payload: dict,
 ):
     """16. Regression Đợt 10C: cả 5 luồng AI phải gọi đúng model
-    `gemini-3.7-flash` và tuân thủ chính sách migration hiện tại của dự án
+    model production đã cấu hình và tuân thủ chính sách migration hiện tại
     (không truyền legacy sampling parameter, không truyền `config`)."""
     mock_instance = MagicMock()
     mock_response = MagicMock()
@@ -515,8 +515,8 @@ def test_ai_report_still_persisted_after_model_upgrade(
     assert "Báo cáo mock cần được lưu." in contents
 
 
-def test_gemini_model_setting_default_is_37_flash():
-    """18. Regression Đợt 10C: default trong config phải là gemini-3.7-flash.
+def test_gemini_model_setting_default_is_stable_flash():
+    """Default phải là model đã qua production smoke test ổn định.
 
     Đọc thẳng class default (không phải giá trị runtime) để test không phụ
     thuộc biến môi trường / file .env của từng máy."""

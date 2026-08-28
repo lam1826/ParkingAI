@@ -16,6 +16,8 @@ def test_production_monitor_is_read_only_and_checks_release_security_and_cors() 
     assert "access-control-allow-origin" in workflow.lower()
     assert "content-security-policy" in workflow.lower()
     assert "strict-transport-security" in workflow.lower()
+    assert "%{time_total}" in workflow
+    assert "Readiness latency exceeded" in workflow
     assert "issues: write" in workflow
     assert "Production monitor failed" in workflow
     assert "needs.public-contract.result" in workflow

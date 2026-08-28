@@ -106,6 +106,17 @@ def test_delivery_targets_fly_after_verified_main_ci():
     assert "docker/build-push-action" not in workflow
 
 
+def test_manual_delivery_requires_successful_ci_for_exact_release_sha():
+    workflow = (
+        Path(__file__).parents[1] / ".github" / "workflows" / "delivery.yml"
+    ).read_text(encoding="utf-8")
+
+    assert "actions: read" in workflow
+    assert "Require successful CI for manual release" in workflow
+    assert "actions/workflows/ci.yml/runs" in workflow
+    assert "head_sha=$RELEASE_SHA" in workflow
+
+
 def test_delivery_waits_for_release_propagation_and_reports_cors_failure():
     workflow = (
         Path(__file__).parents[1] / ".github" / "workflows" / "delivery.yml"
@@ -127,13 +138,36 @@ def test_fly_config_runs_migrations_and_keeps_one_machine_warm():
     assert config["primary_region"] == "sin"
     assert config["build"]["dockerfile"] == "Dockerfile"
     assert config["deploy"]["release_command"] == (
-        "alembic -c alembic.ini upgrade head"
+        "sh -c 'alembic -c alembic.ini upgrade head && "
+        "python production_release_gate.py'"
     )
     assert config["http_service"]["force_https"] is True
     assert config["http_service"]["min_machines_running"] == 1
     assert config["http_service"]["checks"][0]["path"] == "/ready"
     assert "DATABASE_URL" not in raw
     assert "SECRET_KEY" not in raw
+
+
+def test_production_release_gate_runs_deep_readiness_then_exact_revision(monkeypatch):
+    import production_release_gate
+
+    calls = []
+    monkeypatch.setattr(
+        production_release_gate,
+        "check_postgres_readiness",
+        lambda engine, *, deep: calls.append(("readiness", engine, deep)),
+    )
+    monkeypatch.setattr(
+        production_release_gate,
+        "assert_postgres_release_revision",
+        lambda engine: calls.append(("revision", engine)),
+    )
+
+    assert production_release_gate.main() == 0
+    assert calls == [
+        ("readiness", production_release_gate.engine, True),
+        ("revision", production_release_gate.engine),
+    ]
 
 
 def test_blue_green_release_contract_is_locked_and_digest_only():

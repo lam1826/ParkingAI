@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Alert, Box, Button, CircularProgress, Paper, Stack, TextField, Typography } from "@mui/material";
 import AutoAwesomeIcon from "@mui/icons-material/AutoAwesome";
 import api from "../../services/api";
-import { requestDailyReport, requestWeeklyReport } from "../../services/aiReportService";
+import { requestAI, requestDailyReport, requestWeeklyReport } from "../../services/aiReportService";
 
 export default function AIPage() {
   const [question, setQuestion] = useState("");
@@ -16,7 +16,7 @@ export default function AIPage() {
       // Backend tự tổng hợp dữ liệu thật từ database trước khi gửi cho AI
       // (luồng: Database -> Aggregation -> Prompt -> AI), client chỉ gửi tham số.
       if (action === "question") {
-        const { data } = await api.post("/ai/question", { question });
+        const { data } = await requestAI(api, "/ai/question", { question });
         setResult(data.content);
       } else if (action === "daily") {
         const { data } = await requestDailyReport(api);
@@ -25,7 +25,7 @@ export default function AIPage() {
         const { data } = await requestWeeklyReport(api);
         setResult(data.content);
       } else {
-        const { data } = await api.post("/ai/staff-suggestion", {});
+        const { data } = await requestAI(api, "/ai/staff-suggestion", {});
         setResult(data.content);
       }
     } catch (requestError) {

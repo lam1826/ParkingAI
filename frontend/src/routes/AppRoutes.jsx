@@ -110,7 +110,7 @@ const AppRoutes = () => {
         <Route path="reports" element={<PermissionRoute minimumRole="staff"><ReportPage /></PermissionRoute>} />
         <Route path="audit-logs" element={<PermissionRoute minimumRole="manager"><AuditLogPage /></PermissionRoute>} />
         <Route path="ai" element={<PermissionRoute minimumRole="staff"><AIPage /></PermissionRoute>} />
-        <Route path="roles" element={<PermissionRoute minimumRole="admin"><RolePage /></PermissionRoute>} />
+        <Route path="roles" element={<PermissionRoute minimumRole="manager"><RolePage /></PermissionRoute>} />
       </Route>
 
       {/* Redirect */}

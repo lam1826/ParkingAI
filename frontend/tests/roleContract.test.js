@@ -26,3 +26,18 @@ test("trang vai trò là danh mục hệ thống chỉ đọc", async () => {
   assert.match(source, /canEdit=\{false\}/);
   assert.match(source, /Vai trò hệ thống/);
 });
+
+
+test("manager nhìn thấy và mở được danh mục vai trò giống contract backend", async () => {
+  const routes = await readFile(
+    new URL("../src/routes/AppRoutes.jsx", import.meta.url),
+    "utf8",
+  );
+  const layout = await readFile(
+    new URL("../src/layouts/MainLayout.jsx", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(routes, /path="roles"[^\n]+minimumRole="manager"/);
+  assert.match(layout, /text: "Vai trò"[^\n]+role: "manager"/);
+});

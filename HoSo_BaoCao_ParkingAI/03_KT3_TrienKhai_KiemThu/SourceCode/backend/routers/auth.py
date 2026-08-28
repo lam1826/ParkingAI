@@ -1,5 +1,5 @@
 from typing import Annotated
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session  # Sử dụng Session đồng bộ
@@ -17,6 +17,7 @@ from schemas.auth import (
     UpdateProfileRequest,
 )
 from services.auth_service import AuthService, get_current_user
+from core.auth_rate_limit import enforce_login_rate_limit, enforce_registration_rate_limit
 
 router = APIRouter(
     tags=["Authentication"]
@@ -34,10 +35,12 @@ oauth_router = APIRouter(tags=["Authentication"])
     summary="Đăng ký tài khoản",
 )
 def register(
+    request: Request,
     body: RegisterRequest,
     db: Annotated[Session, Depends(get_db)],
 ):
     """Khách hàng đăng ký công khai; manager/admin cần mã do hệ thống cấp."""
+    enforce_registration_rate_limit(request, db)
     auth_service = AuthService()
     auth_service.validate_registration_role(body.role, body.registration_code)
 
@@ -89,12 +92,14 @@ def register(
 
 @router.post("/login", response_model=TokenResponse, summary="Đăng nhập hệ thống lấy JWT Token")
 def login(  # Bỏ async vì hàm service xử lý đồng bộ
+    request: Request,
     body: LoginRequest,
     db: Annotated[Session, Depends(get_db)]  # Dùng Session đồng bộ
 ):
     """
     Xác thực tài khoản qua JSON body (username & password), trả về Access Token.
     """
+    enforce_login_rate_limit(request, db)
     if not body.username.strip() or not body.password.strip():
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -123,10 +128,12 @@ def login(  # Bỏ async vì hàm service xử lý đồng bộ
 
 @oauth_router.post("/login", response_model=TokenResponse, summary="Đăng nhập OAuth2")
 def oauth_login(
+    request: Request,
     form: Annotated[OAuth2PasswordRequestForm, Depends()],
     db: Annotated[Session, Depends(get_db)],
 ):
     """Endpoint form chuẩn OAuth2 dành cho Swagger và các client cũ."""
+    enforce_login_rate_limit(request, db)
     auth_service = AuthService()
     user = auth_service.authenticate_user(
         db=db,

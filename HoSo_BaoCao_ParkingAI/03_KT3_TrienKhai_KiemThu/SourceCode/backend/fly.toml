@@ -10,7 +10,7 @@ primary_region = 'sin'
   dockerfile = 'Dockerfile'
 
 [deploy]
-  release_command = 'alembic -c alembic.ini upgrade head'
+  release_command = "sh -c 'alembic -c alembic.ini upgrade head && python production_release_gate.py'"
 
 [http_service]
   internal_port = 8000

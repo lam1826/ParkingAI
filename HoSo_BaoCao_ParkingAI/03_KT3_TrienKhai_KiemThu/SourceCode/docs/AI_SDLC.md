@@ -34,13 +34,15 @@ Các thực thể chính: `Zone`, `ParkingSlot`, `VehicleType`, `Vehicle`, `Cust
 
 Prompt luôn truyền dữ liệu có cấu trúc JSON, yêu cầu chỉ trả lời từ dữ liệu được cung cấp và quy định câu trả lời khi thiếu dữ liệu. Tên model đặt bằng `GEMINI_MODEL` để có thể nâng cấp mà không sửa mã.
 
-Từ `gemini-3.7-flash`, việc ràng buộc tính xác định của câu trả lời do prompt đảm nhiệm hoàn toàn, không còn dùng "nhiệt độ thấp".
+Model production hiện tại là `gemini-3.6-flash`; việc ràng buộc tính xác định của câu trả lời do prompt đảm nhiệm, không dùng "nhiệt độ thấp".
 
 Theo migration guide chính thức, các **legacy sampling parameter** đã bị loại khỏi luồng hiện tại của model này: `temperature`, `top_p`, `top_k`, `candidate_count`, `thinking_budget` (trong đó `thinking_budget` có hướng thay thế bằng `thinking_level`). Các configuration được hỗ trợ khác **vẫn có thể tồn tại** — migration guide không cấm toàn bộ `config`.
 
 **Chính sách migration hiện tại của dự án:** năm luồng gọi AI (`generate_daily_report`, `generate_weekly_report`, `answer_question`, `ask_dashboard_question`, `suggest_staff_schedule`) **chọn không truyền `config`** vào `generate_content()`, để model chạy ở thinking level mặc định `medium`. Đây là lựa chọn của dự án cho đợt migration này, không phải ràng buộc bắt buộc từ phía provider.
 
-Nguồn: <https://ai.google.dev/gemini-api/docs/latest-model> và <https://ai.google.dev/gemini-api/docs/models/gemini-3.7-flash>.
+Ngân sách timeout hiện tại là 85 giây ở SDK backend và 90 giây ở các request AI frontend; request API thông thường vẫn giữ timeout 10 giây.
+
+Nguồn: <https://ai.google.dev/gemini-api/docs/latest-model> và <https://ai.google.dev/gemini-api/docs/models>.
 
 ### Prompt báo cáo mẫu
 
@@ -175,7 +177,7 @@ Khi demo: tạo dữ liệu khu vực → loại xe → vị trí → bảng gi�
 
 | Hạng mục | Kết quả |
 | --- | --- |
-| Model đích | `gemini-3.7-flash` (đặt qua `GEMINI_MODEL`, khớp `backend/core/config.py`) |
+| Model đích | `gemini-3.7-flash` (đặt qua `GEMINI_MODEL`, khớp `backend/core/config.py` tại thời điểm nâng cấp) |
 | Riêng AI (`tests/test_ai.py`) | `24 passed` (17 cũ + 7 test regression mới) |
 | Toàn bộ backend | `196 passed` |
 | Frontend test / ESLint / production build | Đạt |
@@ -211,6 +213,15 @@ trước và sau toàn bộ suite; verification thất bại nếu có bất k�
 | Cảnh báo Starlette TestClient | **Đã xử lý** bằng `httpx2==2.12.0`; test chạy với `DeprecationWarning` là lỗi vẫn đạt |
 | Cảnh báo SQLite adapter | **Đã xử lý** — raw SQL trong test truyền chuỗi ISO tường minh thay vì dựa vào date/datetime adapter mặc định đã deprecated |
 | Gemini 3.7 Flash live | **Provider đã nhận request nhưng chưa đạt nội dung thành công** — hai smoke request không chứa dữ liệu thật tới `gemini-3.7-flash` đều được ứng dụng ánh xạ thành `503` do provider tạm không khả dụng/đạt giới hạn; không retry thêm |
+
+### 7.5. Ổn định production — ngày 29/08/2026
+
+Sau khi production ghi nhận `gemini-3.7-flash` phản hồi không ổn định (một
+lần `503` sau khoảng 70 giây, một lần thành công sau khoảng 80 giây), smoke
+request cùng khóa trên `gemini-3.6-flash` phản hồi thành công nhanh. Vì vậy
+default được đưa về `gemini-3.6-flash`. SDK backend có deadline 85 giây và
+frontend chờ tối đa 90 giây để backend luôn có cơ hội trả lỗi 503/504 có cấu
+trúc trước khi trình duyệt tự ngắt kết nối.
 
 Nghiệm thu browser dùng database và profile Chrome tạm trong `.pytest-tmp`; hai
 database local thật không được dùng. Smoke prompt Gemini chỉ yêu cầu trả một token

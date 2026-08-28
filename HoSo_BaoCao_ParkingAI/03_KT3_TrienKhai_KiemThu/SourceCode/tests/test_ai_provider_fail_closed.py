@@ -48,6 +48,25 @@ AI_FLOW_CASES = [
 ]
 
 
+@patch("services.ai_service.genai.Client")
+def test_provider_client_has_timeout_shorter_than_browser_timeout(
+    provider_factory: MagicMock,
+    client: TestClient,
+    ai_auth_headers: dict[str, str],
+) -> None:
+    provider_factory.return_value.models.generate_content.return_value.text = "ok"
+
+    response = client.post(
+        "/ai/ask",
+        json={"question": "Tình hình?", "parking_stats": {"total": 1}},
+        headers=ai_auth_headers,
+    )
+
+    assert response.status_code == 200
+    http_options = provider_factory.call_args.kwargs["http_options"]
+    assert http_options.timeout == 85_000
+
+
 @pytest.mark.parametrize(("path", "payload"), AI_FLOW_CASES)
 @patch("services.ai_service.genai.Client")
 def test_all_ai_flows_map_provider_timeout_to_504(

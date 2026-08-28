@@ -25,12 +25,16 @@ jobs:
           probe_dir="$(mktemp -d)"
           trap 'rm -rf "$probe_dir"' EXIT
 
-          curl --fail --silent --show-error --max-time 10 \
+          ready_seconds="$(curl --fail --silent --show-error --max-time 10 \
+            --write-out '%{time_total}' \
             --dump-header "$probe_dir/api-headers.txt" \
             https://api.parkingai.am/ready \
-            --output "$probe_dir/ready.json"
+            --output "$probe_dir/ready.json")"
           python -c \
             'import json; assert json.load(open("'"$probe_dir"'/ready.json", encoding="utf-8"))["status"] == "ready"'
+          python -c \
+            'import sys; seconds=float(sys.argv[1]); assert seconds <= 3.0, f"Readiness latency exceeded 3s: {seconds:.3f}s"' \
+            "$ready_seconds"
 
           curl --fail --silent --show-error --max-time 10 \
             https://api.parkingai.am/ \

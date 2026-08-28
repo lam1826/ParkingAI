@@ -18,14 +18,19 @@ import { businessDateDaysAgo, toBusinessDateString } from "../utils/businessDate
 
 export const AI_DAILY_REPORT_URL = "/ai/daily-report";
 export const AI_WEEKLY_REPORT_URL = "/ai/weekly-report";
+export const AI_REQUEST_TIMEOUT_MS = 90_000;
 const WEEKLY_WINDOW_DAYS = 6;
+
+export function requestAI(apiClient, url, payload) {
+  return apiClient.post(url, payload, { timeout: AI_REQUEST_TIMEOUT_MS });
+}
 
 /**
  * Gửi request sinh báo cáo ngày qua `apiClient`. `target_date` tính từ đúng
  * một instant `now`.
  */
 export function requestDailyReport(apiClient, now = new Date()) {
-  return apiClient.post(AI_DAILY_REPORT_URL, {
+  return requestAI(apiClient, AI_DAILY_REPORT_URL, {
     target_date: toBusinessDateString(now),
   });
 }
@@ -36,7 +41,7 @@ export function requestDailyReport(apiClient, now = new Date()) {
  * thứ hai bên trong hàm này).
  */
 export function requestWeeklyReport(apiClient, now = new Date()) {
-  return apiClient.post(AI_WEEKLY_REPORT_URL, {
+  return requestAI(apiClient, AI_WEEKLY_REPORT_URL, {
     start_date: businessDateDaysAgo(WEEKLY_WINDOW_DAYS, now),
     end_date: toBusinessDateString(now),
   });

@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { requestDailyReport, requestWeeklyReport } from "../src/services/aiReportService.js";
+import {
+  AI_REQUEST_TIMEOUT_MS,
+  requestAI,
+  requestDailyReport,
+  requestWeeklyReport,
+} from "../src/services/aiReportService.js";
 
 // Đợt 10A — bổ sung theo yêu cầu: chuyển từ test đọc source bằng regex sang
 // BEHAVIORAL test thật. Gọi thẳng module service/action thuần
@@ -20,12 +25,21 @@ function fakeApiClient() {
   const calls = [];
   return {
     calls,
-    post(url, payload) {
-      calls.push({ url, payload });
+    post(url, payload, config) {
+      calls.push({ url, payload, config });
       return Promise.resolve({ data: { content: "stub" } });
     },
   };
 }
+
+test("mọi AI request dùng timeout riêng 90 giây thay vì timeout API chung 10 giây", async () => {
+  const client = fakeApiClient();
+
+  await requestAI(client, "/ai/question", { question: "Tình hình hôm nay?" });
+
+  assert.equal(AI_REQUEST_TIMEOUT_MS, 90_000);
+  assert.deepEqual(client.calls[0].config, { timeout: AI_REQUEST_TIMEOUT_MS });
+});
 
 test("requestDailyReport: gọi đúng /ai/daily-report với target_date theo giờ VN của `now`", async () => {
   const now = new Date("2026-03-10T10:00:00Z"); // VN 2026-03-10 17:00

@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 from typing import List
@@ -13,6 +14,56 @@ from services.auth_service import RoleChecker
 
 # Không cần khai báo prefix ở đây vì sẽ được gộp ở main.py
 router = APIRouter()
+
+_ADMIN_INVARIANT_LOCK_KEY = 7_100_421
+
+
+def _ensure_active_admin_remains(
+    db: Session,
+    db_user: User,
+    user_in: user_schema.UserUpdate,
+) -> None:
+    """Serialize admin demotions/deactivations and preserve one active admin."""
+    update_data = user_in.model_dump(exclude_unset=True)
+    if not ({"is_active", "role_id"} & update_data.keys()):
+        return
+
+    # PostgreSQL advisory locks serialize all transactions that may reduce the
+    # active-admin set. SQLite is only used by the single-process test suite.
+    if db.get_bind().dialect.name == "postgresql":
+        db.execute(
+            text("SELECT pg_advisory_xact_lock(:lock_key)"),
+            {"lock_key": _ADMIN_INVARIANT_LOCK_KEY},
+        )
+
+    db.refresh(db_user)
+    current_role_name = db.execute(
+        select(Role.name).where(Role.id == db_user.role_id)
+    ).scalar_one()
+    next_role_id = update_data.get("role_id", db_user.role_id)
+    next_role_name = db.execute(
+        select(Role.name).where(Role.id == next_role_id)
+    ).scalar_one()
+    next_is_active = update_data.get("is_active", db_user.is_active)
+
+    removes_active_admin = (
+        db_user.is_active
+        and current_role_name == "admin"
+        and not (next_is_active and next_role_name == "admin")
+    )
+    if not removes_active_admin:
+        return
+
+    active_admin_count = db.execute(
+        select(func.count(User.id))
+        .join(Role, User.role_id == Role.id)
+        .where(User.is_active.is_(True), Role.name == "admin")
+    ).scalar_one()
+    if active_admin_count <= 1:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Không thể vô hiệu hóa hoặc đổi vai trò của admin hoạt động cuối cùng",
+        )
 
 @router.get("", response_model=List[user_schema.UserResponse])
 def read_users(
@@ -69,6 +120,8 @@ def update_user(id: int, user_in: user_schema.UserUpdate, db: Session = Depends(
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Tên đăng nhập đã tồn tại")
     if user_in.role_id is not None and not db.get(Role, user_in.role_id):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vai trò không tồn tại")
+
+    _ensure_active_admin_remains(db, db_user, user_in)
 
     try:
         return crud_user.update_user(db=db, db_user=db_user, user_in=user_in)

@@ -67,7 +67,7 @@ export default function MainLayout() {
     { text: "AI Analytics", icon: <SmartToyIcon />, path: "/ai", role: "staff" },
     { text: "Tài Khoản", icon: <PeopleIcon />, path: "/users", role: "manager" },
     { text: "Nhật ký hoạt động", icon: <HistoryIcon />, path: "/audit-logs", role: "manager" },
-    { text: "Vai trò", icon: <AdminPanelSettingsIcon />, path: "/roles", role: "admin" },
+    { text: "Vai trò", icon: <AdminPanelSettingsIcon />, path: "/roles", role: "manager" },
   ];
 
   const handleMenuOpen = (event) => {

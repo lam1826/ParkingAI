@@ -7,6 +7,7 @@ import httpx
 import requests
 from google import genai
 from google.genai import errors as genai_errors
+from google.genai import types as genai_types
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
 from core.config import settings
@@ -173,7 +174,12 @@ class AIService:
 
         self.db = db
         # Khởi tạo Client thay vì dùng genai.configure() cũ
-        self.client = genai.Client(api_key=api_key)
+        self.client = genai.Client(
+            api_key=api_key,
+            http_options=genai_types.HttpOptions(
+                timeout=settings.AI_PROVIDER_TIMEOUT_MS,
+            ),
+        )
         # Model cấu hình được để nâng cấp không cần sửa code.
         self.model_name = settings.GEMINI_MODEL
 
@@ -181,7 +187,7 @@ class AIService:
         """Một seam duy nhất cho provider; test luôn mock client tại đây.
 
         Dự án chủ động không truyền ``config``/sampling parameters cho
-        gemini-3.7-flash và dùng thinking level mặc định của model.
+        model được cấu hình và dùng thinking level mặc định của model.
         """
         try:
             response = self.client.models.generate_content(
@@ -224,7 +230,7 @@ DỮ LIỆU ĐẦU VÀO CHO NGÀY {target_date.strftime('%Y-%m-%d')}:
             # Chính sách migration Đợt 10C (xem docs/AI_SDLC.md §3): các
             # legacy sampling parameter (temperature, top_p, top_k,
             # candidate_count, thinking_budget) đã bị loại khỏi luồng hiện
-            # tại của gemini-3.7-flash. Dự án CHỌN không truyền `config` ở
+            # của model hiện tại. Dự án CHỌN không truyền `config` ở
             # cả năm luồng để dùng thinking level mặc định `medium` — đây là
             # lựa chọn của dự án, không phải provider cấm mọi `config`.
             report_text = self._generate_text(final_prompt)

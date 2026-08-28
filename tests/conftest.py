@@ -13,6 +13,7 @@ os.environ.setdefault("SECRET_KEY", "test_secret_key_for_pytest_123456789")
 # test key giả này để kiểm tra contract sau lớp kill switch.
 os.environ["GEMINI_API_KEY"] = "test_gemini_api_key_for_pytest_123456789"
 os.environ["AI_ENABLED"] = "true"
+os.environ["GEMINI_MODEL"] = "gemini-3.6-flash"
 os.environ.setdefault("MANAGER_REGISTRATION_CODE", "manager-test-code")
 os.environ.setdefault("ADMIN_REGISTRATION_CODE", "admin-test-code")
 

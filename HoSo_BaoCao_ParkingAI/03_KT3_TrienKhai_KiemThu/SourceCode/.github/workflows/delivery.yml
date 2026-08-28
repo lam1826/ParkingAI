@@ -13,6 +13,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: parkingai-fly-production
@@ -61,6 +62,25 @@ jobs:
         run: |
           git fetch origin main --no-tags
           git merge-base --is-ancestor "$RELEASE_SHA" origin/main
+
+      - name: Require successful CI for manual release
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_SHA: ${{ steps.resolve.outputs.sha }}
+        run: |
+          runs_url="$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$RELEASE_SHA&status=completed&per_page=100"
+          curl --fail --silent --show-error \
+            --header "Authorization: Bearer $GH_TOKEN" \
+            --header "Accept: application/vnd.github+json" \
+            "$runs_url" >/tmp/parkingai-ci-runs.json
+          successful_runs="$(jq --arg sha "$RELEASE_SHA" \
+            '[.workflow_runs[] | select(.head_sha == $sha and .head_branch == "main" and .event == "push" and .conclusion == "success")] | length' \
+            /tmp/parkingai-ci-runs.json)"
+          if [ "$successful_runs" -lt 1 ]; then
+            echo "::error::No successful main push CI run exists for $RELEASE_SHA"
+            exit 1
+          fi
 
       - name: Set up Node.js
         uses: actions/setup-node@v4

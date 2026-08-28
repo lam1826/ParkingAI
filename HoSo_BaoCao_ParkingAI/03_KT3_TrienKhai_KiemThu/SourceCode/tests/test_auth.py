@@ -4,7 +4,9 @@ from sqlalchemy.orm import Session
 
 from models.user import User
 from models.role import Role
+from models.audit_log import AuditLog
 from services.auth_service import AuthService
+from core.config import settings
 
 
 def test_login_success(client: TestClient, test_user: User):
@@ -35,6 +37,77 @@ def test_login_wrong_password(client: TestClient, test_user: User):
 
     assert response.status_code == 401
     assert response.json()["detail"] == "Sai tên đăng nhập hoặc mật khẩu"
+
+
+def test_failed_anonymous_login_is_audited_without_credentials(
+    client: TestClient,
+    db_session: Session,
+    test_user: User,
+):
+    response = client.post(
+        "/api/auth/login",
+        headers={"Fly-Client-IP": "203.0.113.8"},
+        json={"username": test_user.username, "password": "not-the-password"},
+    )
+
+    assert response.status_code == 401
+    audit = db_session.query(AuditLog).filter(AuditLog.path == "/api/auth/login").one()
+    assert audit.action == "LOGIN"
+    assert audit.username == "anonymous"
+    assert audit.user_id is None
+    assert audit.ip_address == "203.0.113.8"
+    assert audit.success is False
+
+
+def test_login_rate_limit_blocks_brute_force_by_fly_client_ip(
+    client: TestClient,
+    test_user: User,
+    monkeypatch,
+):
+    monkeypatch.setattr(settings, "AUTH_LOGIN_MAX_FAILURES", 2)
+    headers = {"Fly-Client-IP": "203.0.113.9"}
+
+    for _ in range(2):
+        failed = client.post(
+            "/api/auth/login",
+            headers=headers,
+            json={"username": test_user.username, "password": "wrong-password"},
+        )
+        assert failed.status_code == 401
+
+    blocked = client.post(
+        "/api/auth/login",
+        headers=headers,
+        json={"username": test_user.username, "password": "password123"},
+    )
+
+    assert blocked.status_code == 429
+    assert blocked.headers["retry-after"] == str(settings.AUTH_LOGIN_WINDOW_SECONDS)
+
+
+def test_registration_rate_limit_counts_successful_account_creation(
+    client: TestClient,
+    monkeypatch,
+):
+    monkeypatch.setattr(settings, "AUTH_REGISTER_MAX_ATTEMPTS", 1)
+    headers = {"Fly-Client-IP": "203.0.113.10"}
+    payload = {
+        "username": "rate_limited_customer",
+        "password": "password123",
+        "full_name": "Khách giới hạn",
+        "role": "customer",
+    }
+
+    created = client.post("/api/auth/register", headers=headers, json=payload)
+    blocked = client.post(
+        "/api/auth/register",
+        headers=headers,
+        json={**payload, "username": "another_customer"},
+    )
+
+    assert created.status_code == 201
+    assert blocked.status_code == 429
+    assert blocked.headers["retry-after"] == str(settings.AUTH_REGISTER_WINDOW_SECONDS)
 
 
 def test_login_wrong_username(client: TestClient, test_user: User):
