@@ -29,7 +29,6 @@ class month_bucket(_TimeBucket):
 _SQLITE_FORMATS = {
     hour_bucket: "%H",
     day_bucket: "%Y-%m-%d",
-    week_bucket: "%G-%V",
     month_bucket: "%Y-%m",
 }
 _POSTGRES_FORMATS = {
@@ -46,8 +45,21 @@ def _argument(element, compiler, **kwargs) -> str:
 
 @compiles(_TimeBucket, "sqlite")
 def _compile_sqlite(element, compiler, **kwargs):
+    argument = _argument(element, compiler, **kwargs)
+    if isinstance(element, week_bucket):
+        # SQLite only added %G/%V in 3.46.0. Python 3.12 runners and many
+        # supported deployments still bundle an older SQLite where those
+        # format tokens return NULL. Move to the ISO week's Thursday using
+        # long-supported date modifiers, then derive the ISO year/week.
+        iso_thursday = f"date({argument}, '-3 days', 'weekday 4')"
+        return (
+            f"strftime('%Y', {iso_thursday}) || '-' || "
+            f"printf('%02d', "
+            f"(CAST(strftime('%j', {iso_thursday}) AS INTEGER) - 1) / 7 + 1"
+            f")"
+        )
     format_string = _SQLITE_FORMATS[type(element)]
-    return f"strftime('{format_string}', {_argument(element, compiler, **kwargs)})"
+    return f"strftime('{format_string}', {argument})"
 
 
 @compiles(_TimeBucket, "postgresql")

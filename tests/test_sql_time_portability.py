@@ -13,7 +13,12 @@ def test_time_buckets_compile_to_sqlite_strftime():
     timestamp = column("check_in_time")
     assert "strftime('%H'" in _sql(hour_bucket(timestamp), dialect)
     assert "strftime('%Y-%m-%d'" in _sql(day_bucket(timestamp), dialect)
-    assert "strftime('%G-%V'" in _sql(week_bucket(timestamp), dialect)
+    week_sql = _sql(week_bucket(timestamp), dialect)
+    assert "%G" not in week_sql
+    assert "%V" not in week_sql
+    assert "date(check_in_time, '-3 days', 'weekday 4')" in week_sql
+    assert "strftime('%Y'" in week_sql
+    assert "strftime('%j'" in week_sql
     assert "strftime('%Y-%m'" in _sql(month_bucket(timestamp), dialect)
 
 
