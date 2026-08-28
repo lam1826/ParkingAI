@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     AUTH_LOGIN_WINDOW_SECONDS: int = 300
     AUTH_REGISTER_MAX_ATTEMPTS: int = 5
     AUTH_REGISTER_WINDOW_SECONDS: int = 3600
+    READINESS_CACHE_SECONDS: float = 5.0
     
     # Chỉ định đọc từ file .env ở thư mục gốc
     model_config = SettingsConfigDict(

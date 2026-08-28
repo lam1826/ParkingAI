@@ -1,5 +1,7 @@
 import logging
 import os
+from threading import Lock
+from time import monotonic
 
 import uvicorn
 from fastapi import FastAPI, Request
@@ -21,6 +23,9 @@ from middleware.security_headers import SecurityHeadersMiddleware
 
 logger = logging.getLogger(__name__)
 RELEASE_ID = os.getenv("RELEASE_ID", "development")
+_readiness_lock = Lock()
+_readiness_cached_engine = None
+_readiness_ok_until = 0.0
 
 # --- KHỞI TẠO APP & METADATA ---
 app = FastAPI(
@@ -127,16 +132,31 @@ def home():
 @app.get("/ready", tags=["Health Check"])
 def readiness():
     """Read-only database/schema readiness; liveness remains available at ``/``."""
-    try:
-        check_database_readiness(engine, deep=False)
-    except Exception as exc:
-        logger.warning("Database readiness failed: %s", exc)
-        return JSONResponse(
-            status_code=503,
-            content={
-                "status": "not_ready",
-                "detail": "Database/schema chưa sẵn sàng",
-            },
+    global _readiness_cached_engine, _readiness_ok_until
+
+    if _readiness_cached_engine is engine and monotonic() < _readiness_ok_until:
+        return {"status": "ready"}
+
+    with _readiness_lock:
+        if _readiness_cached_engine is engine and monotonic() < _readiness_ok_until:
+            return {"status": "ready"}
+        try:
+            check_database_readiness(engine, deep=False)
+        except Exception as exc:
+            if _readiness_cached_engine is engine:
+                _readiness_ok_until = 0.0
+            logger.warning("Database readiness failed: %s", exc)
+            return JSONResponse(
+                status_code=503,
+                content={
+                    "status": "not_ready",
+                    "detail": "Database/schema chưa sẵn sàng",
+                },
+            )
+        _readiness_cached_engine = engine
+        _readiness_ok_until = monotonic() + max(
+            0.0,
+            settings.READINESS_CACHE_SECONDS,
         )
     return {"status": "ready"}
 

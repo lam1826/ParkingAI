@@ -313,6 +313,20 @@ def test_http_readiness_uses_lightweight_schema_probe() -> None:
     readiness_check.assert_called_once_with(main.engine, deep=False)
 
 
+def test_http_readiness_coalesces_recent_successful_schema_probes() -> None:
+    """A concurrent health burst must not fan out catalog scans to Supabase."""
+    import main
+
+    main._readiness_ok_until = 0.0
+    with patch("main.check_database_readiness") as readiness_check:
+        first = TestClient(main.app).get("/ready")
+        second = TestClient(main.app).get("/ready")
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    readiness_check.assert_called_once_with(main.engine, deep=False)
+
+
 @pytest.mark.parametrize(
     ("is_occupied", "has_active_session"),
     [
