@@ -1,10 +1,11 @@
 import datetime
 import bcrypt
+import jwt
 import secrets
 from typing import Annotated
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
-from jose import jwt, JWTError
+from jwt.exceptions import InvalidTokenError
 from sqlalchemy.orm import Session  # Sửa từ AsyncSession thành Session đồng bộ
 
 from core.config import settings
@@ -138,7 +139,7 @@ def get_current_user(
         if user_id_str is None:
             raise credentials_exception
             
-    except JWTError:
+    except InvalidTokenError:
         raise credentials_exception
         
     try:

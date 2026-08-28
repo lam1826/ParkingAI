@@ -8,10 +8,9 @@ cffi==2.1.0
 charset-normalizer==3.4.9
 click==8.4.2
 colorama==0.4.6
-cryptography==49.0.0
+cryptography==50.0.1
 distro==1.9.0
 dnspython==2.8.0
-ecdsa==0.19.2
 email-validator==2.3.0
 fastapi==0.141.1
 google-auth==2.56.2
@@ -37,11 +36,11 @@ pydantic==2.13.4
 pydantic-settings==2.14.2
 pydantic_core==2.46.4
 Pygments==2.20.0
+PyJWT==2.13.0
 pytest==9.1.1
 psycopg==3.3.4
 psycopg-binary==3.3.4
 python-dotenv==1.2.2
-python-jose==3.5.0
 python-multipart==0.0.32
 PyYAML==6.0.3
 requests==2.34.2

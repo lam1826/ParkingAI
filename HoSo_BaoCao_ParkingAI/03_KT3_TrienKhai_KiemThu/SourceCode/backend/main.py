@@ -17,6 +17,7 @@ from core.errors import is_known_database_business_conflict
 from database import engine
 from db_rollout import check_database_readiness
 from middleware.audit import AuditLogMiddleware
+from middleware.security_headers import SecurityHeadersMiddleware
 
 logger = logging.getLogger(__name__)
 RELEASE_ID = os.getenv("RELEASE_ID", "development")
@@ -37,6 +38,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.add_middleware(AuditLogMiddleware)
+app.add_middleware(SecurityHeadersMiddleware)
 
 
 @app.exception_handler(ExactVndRangeError)

@@ -152,4 +152,10 @@ Kiến trúc production dùng Cloudflare Pages cho frontend, Fly.io cho API,
 Supabase PostgreSQL cho dữ liệu và GitHub Actions để triển khai Fly theo SHA
 đã vượt CI. Domain public là `parkingai.am` và `api.parkingai.am`; runbook
 bootstrap/rollback nằm tại
-[docs/PRODUCTION_DEPLOYMENT.md](docs/PRODUCTION_DEPLOYMENT.md).
+[docs/PRODUCTION_DEPLOYMENT.md](docs/PRODUCTION_DEPLOYMENT.md). Kế hoạch UAT
+người dùng thật và ma trận quyền nằm tại
+[docs/UAT_PRODUCTION.md](docs/UAT_PRODUCTION.md); nghiên cứu backup/PITR,
+cảnh báo và giới hạn plan nằm tại
+[docs/PRODUCTION_READINESS_RESEARCH.md](docs/PRODUCTION_READINESS_RESEARCH.md).
+Đánh giá độc lập Standards và compatibility cho 14 PR dependency nằm tại
+[docs/DEPENDENCY_PR_REVIEW.md](docs/DEPENDENCY_PR_REVIEW.md).

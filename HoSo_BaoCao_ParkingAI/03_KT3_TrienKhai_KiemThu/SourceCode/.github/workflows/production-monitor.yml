@@ -1,0 +1,118 @@
+name: Production Monitor
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: parkingai-production-monitor
+  cancel-in-progress: true
+
+jobs:
+  public-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify public production contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          probe_dir="$(mktemp -d)"
+          trap 'rm -rf "$probe_dir"' EXIT
+
+          curl --fail --silent --show-error --max-time 10 \
+            --dump-header "$probe_dir/api-headers.txt" \
+            https://api.parkingai.am/ready \
+            --output "$probe_dir/ready.json"
+          python -c \
+            'import json; assert json.load(open("'"$probe_dir"'/ready.json", encoding="utf-8"))["status"] == "ready"'
+
+          curl --fail --silent --show-error --max-time 10 \
+            https://api.parkingai.am/ \
+            --output "$probe_dir/root.json"
+          python -c \
+            'import json; value=json.load(open("'"$probe_dir"'/root.json", encoding="utf-8"))["release_id"]; assert value != "development" and len(value) == 40'
+
+          curl --fail --silent --show-error --max-time 10 \
+            --dump-header "$probe_dir/frontend-headers.txt" \
+            https://parkingai.am/ \
+            --output "$probe_dir/index.html"
+          grep -q '/brand-mark.svg' "$probe_dir/index.html"
+
+          tr -d '\r' <"$probe_dir/api-headers.txt" >"$probe_dir/api-normalized.txt"
+          tr -d '\r' <"$probe_dir/frontend-headers.txt" >"$probe_dir/frontend-normalized.txt"
+          grep -Eiq '^strict-transport-security: max-age=31536000; includeSubDomains$' "$probe_dir/api-normalized.txt"
+          grep -Eiq '^x-content-type-options: nosniff$' "$probe_dir/api-normalized.txt"
+          grep -Eiq '^strict-transport-security: max-age=31536000; includeSubDomains$' "$probe_dir/frontend-normalized.txt"
+          grep -Eiq '^content-security-policy: .*frame-ancestors '\''none'\''' "$probe_dir/frontend-normalized.txt"
+          grep -Eiq '^content-security-policy: .*object-src '\''none'\''' "$probe_dir/frontend-normalized.txt"
+
+          curl --fail --silent --show-error --max-time 10 \
+            --request OPTIONS \
+            --header 'Origin: https://parkingai.am' \
+            --header 'Access-Control-Request-Method: GET' \
+            --dump-header "$probe_dir/cors.txt" \
+            --output /dev/null \
+            https://api.parkingai.am/api/v1/zones
+          tr -d '\r' <"$probe_dir/cors.txt" >"$probe_dir/cors-normalized.txt"
+          grep -Eiq '^access-control-allow-origin: https://parkingai\.am$' "$probe_dir/cors-normalized.txt"
+
+          curl --fail --silent --show-error --max-time 10 \
+            --request OPTIONS \
+            --header 'Origin: https://evil.example' \
+            --header 'Access-Control-Request-Method: GET' \
+            --dump-header "$probe_dir/evil-cors.txt" \
+            --output /dev/null \
+            https://api.parkingai.am/api/v1/zones
+          if tr -d '\r' <"$probe_dir/evil-cors.txt" | \
+            grep -Eiq '^access-control-allow-origin:'; then
+            echo "Unexpected CORS access for an untrusted origin" >&2
+            exit 1
+          fi
+
+  alert:
+    needs: public-contract
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    env:
+      GH_TOKEN: ${{ github.token }}
+      MONITOR_RESULT: ${{ needs.public-contract.result }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - name: Open or recover production monitor alert
+        shell: bash
+        run: |
+          set -euo pipefail
+          title="Production monitor failed"
+          issue_number="$(
+            gh issue list \
+              --repo "$GITHUB_REPOSITORY" \
+              --state open \
+              --search '"Production monitor failed" in:title' \
+              --json number,title \
+              --jq '.[] | select(.title == "Production monitor failed") | .number' \
+              | head -n 1
+          )"
+
+          if [ "$MONITOR_RESULT" != "success" ]; then
+            if [ -z "$issue_number" ]; then
+              gh issue create \
+                --repo "$GITHUB_REPOSITORY" \
+                --title "$title" \
+                --body "The read-only production contract monitor failed. Run: $RUN_URL"
+            fi
+            exit 0
+          fi
+
+          if [ -n "$issue_number" ]; then
+            gh issue close "$issue_number" \
+              --repo "$GITHUB_REPOSITORY" \
+              --reason completed \
+              --comment "Production monitor recovered. Run: $RUN_URL"
+          fi

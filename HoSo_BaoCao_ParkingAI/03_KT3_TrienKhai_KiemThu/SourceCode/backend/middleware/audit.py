@@ -1,7 +1,8 @@
 import re
 from collections.abc import Generator
 
-from jose import JWTError, jwt
+import jwt
+from jwt.exceptions import InvalidTokenError
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 
@@ -73,7 +74,7 @@ class AuditLogMiddleware(BaseHTTPMiddleware):
             )
             user_id = int(payload["sub"])
             username = str(payload.get("username") or f"user-{user_id}")
-        except (JWTError, KeyError, TypeError, ValueError):
+        except (InvalidTokenError, KeyError, TypeError, ValueError):
             return response
 
         resource, resource_id = _extract_resource(request.url.path)
