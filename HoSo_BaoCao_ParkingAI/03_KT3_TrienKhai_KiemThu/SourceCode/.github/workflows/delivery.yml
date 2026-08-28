@@ -126,13 +126,26 @@ jobs:
             "$ready_url" >/tmp/parkingai-ready.json
           python -c \
             'import json; assert json.load(open("/tmp/parkingai-ready.json", encoding="utf-8"))["status"] == "ready"'
+          echo "Readiness verified: ready"
 
-          curl --fail --silent --show-error \
-            --retry 6 --retry-delay 5 --retry-all-errors \
-            "$root_url" >/tmp/parkingai-root.json
-          ACTUAL_RELEASE="$(python -c \
-            'import json; print(json.load(open("/tmp/parkingai-root.json", encoding="utf-8"))["release_id"])')"
-          test "$ACTUAL_RELEASE" = "$RELEASE_SHA"
+          ACTUAL_RELEASE=""
+          for attempt in $(seq 1 12); do
+            curl --fail --silent --show-error \
+              --retry 3 --retry-delay 2 --retry-all-errors \
+              "$root_url" >/tmp/parkingai-root.json
+            ACTUAL_RELEASE="$(python -c \
+              'import json; print(json.load(open("/tmp/parkingai-root.json", encoding="utf-8"))["release_id"])')"
+            if [ "$ACTUAL_RELEASE" = "$RELEASE_SHA" ]; then
+              break
+            fi
+            echo "Waiting for release propagation ($attempt/12): got $ACTUAL_RELEASE"
+            sleep 5
+          done
+          if [ "$ACTUAL_RELEASE" != "$RELEASE_SHA" ]; then
+            echo "::error::Release verification failed: expected $RELEASE_SHA, got $ACTUAL_RELEASE"
+            exit 1
+          fi
+          echo "Release verified: $ACTUAL_RELEASE"
 
           curl --fail --silent --show-error \
             --request OPTIONS \
@@ -141,8 +154,14 @@ jobs:
             --dump-header /tmp/parkingai-cors.txt \
             --output /dev/null \
             "$PUBLIC_API_URL/api/v1/zones"
-          grep -Eiq '^access-control-allow-origin: https://parkingai\.am\r?$' \
-            /tmp/parkingai-cors.txt
+          if ! grep -Eiq '^access-control-allow-origin: https://parkingai\.am\r?$' \
+            /tmp/parkingai-cors.txt; then
+            echo "::error::CORS verification failed for https://parkingai.am"
+            tr -d '\r' </tmp/parkingai-cors.txt \
+              | grep -Ei '^(HTTP/|access-control-)' || true
+            exit 1
+          fi
+          echo "CORS verified: https://parkingai.am"
 
       - name: Record Fly deployment status
         env:

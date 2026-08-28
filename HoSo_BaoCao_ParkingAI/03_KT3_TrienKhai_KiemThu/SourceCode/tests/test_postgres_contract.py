@@ -106,6 +106,16 @@ def test_delivery_targets_fly_after_verified_main_ci():
     assert "docker/build-push-action" not in workflow
 
 
+def test_delivery_waits_for_release_propagation_and_reports_cors_failure():
+    workflow = (
+        Path(__file__).parents[1] / ".github" / "workflows" / "delivery.yml"
+    ).read_text(encoding="utf-8")
+    assert "for attempt in $(seq 1 12)" in workflow
+    assert "::error::Release verification failed" in workflow
+    assert "::error::CORS verification failed" in workflow
+    assert "Release verified:" in workflow
+
+
 def test_fly_config_runs_migrations_and_keeps_one_machine_warm():
     path = Path(__file__).parents[1] / "backend" / "fly.toml"
     raw = path.read_text(encoding="utf-8")
