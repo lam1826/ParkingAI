@@ -1,10 +1,9 @@
 import api from "../../../services/api";
+import { requestAllOffsetPages } from "../../../services/paginatedLookup";
+import { requestMonthlyPassDeactivation } from "./monthlyPassCancellation";
 
 const monthlyPassService = {
-  getAll: async () => {
-    const response = await api.get("/api/v1/monthly-passes");
-    return response.data;
-  },
+  getAll: async () => requestAllOffsetPages(api, "/api/v1/monthly-passes"),
 
   create: async (data) => {
     const response = await api.post("/api/v1/monthly-passes", data);
@@ -15,6 +14,8 @@ const monthlyPassService = {
     const response = await api.put(`/api/v1/monthly-passes/${id}`, data);
     return response.data;
   },
+
+  deactivate: async (id) => requestMonthlyPassDeactivation(api, id),
 
   delete: async (id) => {
     const response = await api.delete(`/api/v1/monthly-passes/${id}`);

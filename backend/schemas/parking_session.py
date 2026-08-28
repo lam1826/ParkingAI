@@ -8,7 +8,7 @@ class ParkingSessionBase(BaseModel):
     parking_slot_id: Optional[int] = None
     check_in_time: datetime
     check_out_time: Optional[datetime] = None
-    parking_fee: Optional[float] = 0.0
+    parking_fee: Optional[int] = 0
     status: str = "active"  # Các trạng thái: active (đang đỗ), completed (đã ra), cancelled (hủy)
 
 # Schema cho POST (Khi xe vào bãi): check_in_time hoàn toàn do SERVER quyết

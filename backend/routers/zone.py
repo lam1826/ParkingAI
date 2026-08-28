@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 from typing import List
 
@@ -10,7 +10,11 @@ from crud import parking_slot as crud_slot
 router = APIRouter()
 
 @router.get("", response_model=List[zone_schema.ZoneResponse])
-def read_zones(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+def read_zones(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=100),
+    db: Session = Depends(get_db),
+):
     """Lấy danh sách các khu vực đỗ xe"""
     return crud_zone.get_zones(db, skip=skip, limit=limit)
 

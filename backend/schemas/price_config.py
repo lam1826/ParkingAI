@@ -1,12 +1,13 @@
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictInt, model_validator
 from typing import Literal, Optional
 from datetime import date
+from core.money import MAX_EXACT_VND
 
 # Schema gốc (khớp với models/price_config.py và cách ParkingService.calculate_fee sử dụng)
 class PriceConfigBase(BaseModel):
     vehicle_type_id: int
     ticket_type: Literal["HOURLY", "DAILY"]
-    price: float = Field(..., ge=0)
+    price: StrictInt = Field(..., ge=0, le=MAX_EXACT_VND)
     effective_date: date       # Ngày bắt đầu áp dụng
     is_active: bool = True     # Trạng thái áp dụng
 
@@ -18,7 +19,7 @@ class PriceConfigCreate(PriceConfigBase):
 class PriceConfigUpdate(BaseModel):
     vehicle_type_id: Optional[int] = None
     ticket_type: Optional[Literal["HOURLY", "DAILY"]] = None
-    price: Optional[float] = Field(default=None, ge=0)
+    price: Optional[StrictInt] = Field(default=None, ge=0, le=MAX_EXACT_VND)
     effective_date: Optional[date] = None
     is_active: Optional[bool] = None
 

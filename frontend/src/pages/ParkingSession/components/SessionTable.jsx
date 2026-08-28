@@ -15,14 +15,24 @@ import {
 import { DataGrid } from "@mui/x-data-grid";
 import LogoutIcon from "@mui/icons-material/Logout";
 import formatDate from "../../../utils/formatDate";
+import { formatParkingFee } from "../../../utils/formatCurrency";
 
-const SessionTable = ({ sessions, loading, onCheckOut, title = "Danh sách phiên gửi xe" }) => {
-  const [selectedPlate, setSelectedPlate] = useState(null);
+const SessionTable = ({
+  sessions,
+  total,
+  loading,
+  page,
+  pageSize,
+  onPaginationModelChange,
+  onCheckOut,
+  title = "Danh sách phiên gửi xe",
+}) => {
+  const [selectedSession, setSelectedSession] = useState(null);
 
   const handleConfirmCheckOut = () => {
-    if (selectedPlate) {
-      onCheckOut(selectedPlate);
-      setSelectedPlate(null);
+    if (selectedSession) {
+      onCheckOut(selectedSession.id);
+      setSelectedSession(null);
     }
   };
 
@@ -67,8 +77,7 @@ const SessionTable = ({ sessions, loading, onCheckOut, title = "Danh sách phiê
       headerName: "Phí (VNĐ)",
       flex: 0.8,
       minWidth: 110,
-      valueFormatter: (value) =>
-        value ? new Intl.NumberFormat("vi-VN").format(value) : "—",
+      valueFormatter: (value) => formatParkingFee(value),
     },
     {
       field: "status",
@@ -95,7 +104,7 @@ const SessionTable = ({ sessions, loading, onCheckOut, title = "Danh sách phiê
             color="error"
             size="small"
             startIcon={<LogoutIcon />}
-            onClick={() => setSelectedPlate(params.row.vehicle?.license_plate)}
+            onClick={() => setSelectedSession(params.row)}
           >
             Check Out
           </Button>
@@ -115,10 +124,11 @@ const SessionTable = ({ sessions, loading, onCheckOut, title = "Danh sách phiê
               rows={sessions}
               columns={columns}
               loading={loading}
-              pageSizeOptions={[5, 10, 20]}
-              initialState={{
-                pagination: { paginationModel: { pageSize: 10 } },
-              }}
+              rowCount={total}
+              paginationMode="server"
+              paginationModel={{ page, pageSize }}
+              onPaginationModelChange={onPaginationModelChange}
+              pageSizeOptions={[10, 25, 50, 100]}
               disableRowSelectionOnClick
               sx={{
                 border: "none",
@@ -132,7 +142,7 @@ const SessionTable = ({ sessions, loading, onCheckOut, title = "Danh sách phiê
       </Card>
 
       {/* Dialog xác nhận cho xe ra */}
-      <Dialog open={Boolean(selectedPlate)} onClose={() => setSelectedPlate(null)}>
+      <Dialog open={Boolean(selectedSession)} onClose={() => setSelectedSession(null)}>
         <DialogTitle fontWeight="bold">Xác nhận Check-out</DialogTitle>
         <DialogContent>
           <DialogContentText>
@@ -140,7 +150,7 @@ const SessionTable = ({ sessions, loading, onCheckOut, title = "Danh sách phiê
           </DialogContentText>
         </DialogContent>
         <DialogActions sx={{ p: 2 }}>
-          <Button onClick={() => setSelectedPlate(null)} variant="outlined">
+          <Button onClick={() => setSelectedSession(null)} variant="outlined">
             Hủy
           </Button>
           <Button onClick={handleConfirmCheckOut} color="error" variant="contained" autoFocus>

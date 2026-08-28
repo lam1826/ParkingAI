@@ -14,6 +14,9 @@ class Settings(BaseSettings):
     SECRET_KEY: str
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    # Fail closed: có API key vẫn chưa đủ để gọi provider. Mỗi môi trường
+    # phải bật AI một cách tường minh sau khi đã duyệt dữ liệu/chi phí.
+    AI_ENABLED: bool = False
     GEMINI_API_KEY: str = ""
     GEMINI_MODEL: str = "gemini-3.7-flash"
     CORS_ORIGINS: str = "http://localhost:5173,http://127.0.0.1:5173"

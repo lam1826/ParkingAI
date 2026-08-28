@@ -1,15 +1,18 @@
 import os
 
 # BẮT BUỘC đứng TRƯỚC mọi import backend (main/database):
-# database.py tạo engine ở module level từ DATABASE_URL, và main.py chạy
-# run_sqlite_migrations() + create_all() ngay khi được import. Nếu không ép
-# URL sang in-memory tại đây, chạy pytest bình thường sẽ migrate/ghi lên
-# backend/database/parking.db THẬT. Dùng gán trực tiếp (không setdefault)
-# để kể cả khi shell bên ngoài lỡ đặt DATABASE_URL trỏ DB thật, test vẫn an toàn.
+# database.py tạo engine ở module level từ DATABASE_URL. Dù main.py không còn
+# tự migration khi import, test vẫn ép URL sang in-memory để mọi code mở session
+# sau này tuyệt đối không thể chạm backend/database/parking.db THẬT. Dùng gán
+# trực tiếp (không setdefault) để cả shell ngoài đặt nhầm URL thật cũng bị ghi đè.
 os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 
 os.environ.setdefault("SECRET_KEY", "test_secret_key_for_pytest_123456789")
-os.environ.setdefault("GEMINI_API_KEY", "test_gemini_api_key_for_pytest_123456789")
+# Ghi đè trực tiếp giống DATABASE_URL: shell bên ngoài không được phép đưa
+# API key thật vào pytest. Các AI test dùng mock client và chỉ bật cờ bằng
+# test key giả này để kiểm tra contract sau lớp kill switch.
+os.environ["GEMINI_API_KEY"] = "test_gemini_api_key_for_pytest_123456789"
+os.environ["AI_ENABLED"] = "true"
 os.environ.setdefault("MANAGER_REGISTRATION_CODE", "manager-test-code")
 os.environ.setdefault("ADMIN_REGISTRATION_CODE", "admin-test-code")
 
@@ -23,6 +26,7 @@ if str(backend_path) not in sys.path:
 import bcrypt
 import datetime
 from typing import Generator
+from unittest.mock import MagicMock
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -68,6 +72,34 @@ SQLALCHEMY_DATABASE_URL = "sqlite:///:memory:"
 # phụ thuộc khung 00:00–06:59.
 
 from core.clock import business_now
+
+
+@pytest.fixture(scope="function", autouse=True)
+def forbid_live_ai_provider(monkeypatch):
+    """Fail closed if any pytest path forgets to replace Gemini explicitly.
+
+    A fake API key is insufficient protection: constructing the real SDK
+    client can still make a future valid request reach the network.  This
+    process-wide provider seam therefore raises before client construction.
+    Tests that intentionally exercise AI must use ``mock_ai_provider_client``
+    or an explicit ``patch('services.ai_service.genai.Client')``.
+    """
+
+    def blocked_provider_client(*args, **kwargs):
+        raise AssertionError(
+            "Live AI provider access is forbidden during pytest; "
+            "use mock_ai_provider_client or patch services.ai_service.genai.Client"
+        )
+
+    monkeypatch.setattr("services.ai_service.genai.Client", blocked_provider_client)
+
+
+@pytest.fixture(scope="function")
+def mock_ai_provider_client(forbid_live_ai_provider, monkeypatch) -> MagicMock:
+    """Explicit opt-in to a controlled provider mock; never permits network."""
+    provider_factory = MagicMock(name="mock_ai_provider_client")
+    monkeypatch.setattr("services.ai_service.genai.Client", provider_factory)
+    return provider_factory
 
 
 @pytest.fixture(scope="function")
@@ -163,7 +195,7 @@ def price_config(
         vehicle_type_id=vehicle_type.id,
         is_active=True,
         ticket_type="HOURLY",
-        price=25000.0,
+        price=25000,
         # Lùi 1 ngày so với reference: bảng giá phải đã có hiệu lực TRƯỚC
         # mọi time_out dẫn xuất từ reference, kể cả khi test lùi/tiến vài
         # giờ quanh mốc đó.
@@ -223,6 +255,7 @@ def parking_session(
     test_user: User,
     vehicle: Vehicle,
     parking_slot: ParkingSlot,
+    price_config: PriceConfig,
     business_reference_now: datetime.datetime,
 ) -> ParkingSession:
     session = ParkingSession(

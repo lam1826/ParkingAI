@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from datetime import date
 from html import escape
 from io import BytesIO
 from pathlib import Path
+import re
 from typing import Any, Dict, Iterable, Literal
 
 from openpyxl import Workbook
@@ -17,7 +19,14 @@ from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 from sqlalchemy.orm import Session
 
+from core.clock import business_today
 from services.report_service import ReportService
+
+
+_XML_ILLEGAL_CHARACTERS = re.compile(
+    r"[\x00-\x08\x0B\x0C\x0E-\x1F\uD800-\uDFFF\uFFFE\uFFFF]"
+)
+_MAX_EXACT_EXCEL_INTEGER = 999_999_999_999_999
 
 
 class ReportExportService:
@@ -26,11 +35,41 @@ class ReportExportService:
     def __init__(self, db: Session):
         self.report_service = ReportService(db)
 
-    def _get_data(self, period: Literal["day", "week", "month", "year"]) -> Dict[str, Any]:
+    def _get_data(
+        self,
+        period: Literal["day", "week", "month", "year"],
+        anchor_date: date | None = None,
+    ) -> Dict[str, Any]:
+        resolved_anchor = anchor_date or business_today()
         return {
-            "summary": self.report_service.get_revenue_report(period),
-            "traffic": self.report_service.get_traffic_report(),
+            "summary": self.report_service.get_revenue_report(
+                period, anchor_date=resolved_anchor
+            ),
+            "traffic": self.report_service.get_traffic_report(
+                period, anchor_date=resolved_anchor
+            ),
         }
+
+    @staticmethod
+    def _excel_safe_text(value: Any) -> Any:
+        """Return XML-safe text that cannot become a spreadsheet formula."""
+        if isinstance(value, str):
+            value = _XML_ILLEGAL_CHARACTERS.sub("", value)
+            if value.startswith(("=", "+", "-", "@", "\t", "\r")):
+                return "'" + value
+        return value
+
+    @classmethod
+    def _excel_safe_value(cls, value: Any, *, monetary: bool = False) -> Any:
+        """Keep large money exact despite Excel's 15-digit numeric limit."""
+        if (
+            monetary
+            and isinstance(value, (int, float))
+            and not isinstance(value, bool)
+            and abs(value) > _MAX_EXACT_EXCEL_INTEGER
+        ):
+            value = str(value)
+        return cls._excel_safe_text(value)
 
     @staticmethod
     def _style_header(row: Iterable) -> None:
@@ -40,8 +79,12 @@ class ReportExportService:
             cell.font = Font(color="FFFFFF", bold=True)
             cell.alignment = Alignment(horizontal="center")
 
-    def build_excel(self, period: Literal["day", "week", "month", "year"]) -> bytes:
-        data = self._get_data(period)
+    def build_excel(
+        self,
+        period: Literal["day", "week", "month", "year"],
+        anchor_date: date | None = None,
+    ) -> bytes:
+        data = self._get_data(period, anchor_date=anchor_date)
         summary = data["summary"]
         workbook = Workbook()
         sheet = workbook.active
@@ -54,16 +97,19 @@ class ReportExportService:
         sheet.append(["Chỉ số", "Giá trị"])
         self._style_header(sheet[2])
         rows = [
-            ("Kỳ báo cáo", summary["filter_type"]),
-            ("Từ ngày", summary["start_date"].strftime("%d/%m/%Y %H:%M")),
-            ("Đến ngày", summary["end_date"].strftime("%d/%m/%Y %H:%M")),
-            ("Tổng lượt xe", summary["total_trips"]),
-            ("Tổng doanh thu", summary["total_revenue"]),
-            ("Phí trung bình", summary["average_fee"]),
-            ("Loại xe phổ biến", summary["most_frequent_vehicle_type"]),
+            ("Kỳ báo cáo", summary["filter_type"], False),
+            ("Từ ngày", summary["start_date"].strftime("%d/%m/%Y %H:%M"), False),
+            ("Đến ngày", summary["end_date"].strftime("%d/%m/%Y %H:%M"), False),
+            ("Tổng lượt xe", summary["total_trips"], False),
+            ("Tổng doanh thu", summary["total_revenue"], True),
+            ("Phí trung bình", summary["average_fee"], True),
+            ("Loại xe phổ biến", summary["most_frequent_vehicle_type"], False),
         ]
-        for row in rows:
-            sheet.append(row)
+        for label, value, monetary in rows:
+            sheet.append((
+                self._excel_safe_text(label),
+                self._excel_safe_value(value, monetary=monetary),
+            ))
         sheet["B7"].number_format = '#,##0 "₫"'
         sheet["B8"].number_format = '#,##0 "₫"'
         sheet.column_dimensions["A"].width = 24
@@ -80,7 +126,10 @@ class ReportExportService:
             traffic_sheet.append(["Thời gian", "Tổng lượt xe"])
             self._style_header(traffic_sheet[1])
             for item in data["traffic"][key]:
-                traffic_sheet.append([item["time_label"], item["total_vehicles"]])
+                traffic_sheet.append([
+                    self._excel_safe_text(item["time_label"]),
+                    item["total_vehicles"],
+                ])
             traffic_sheet.column_dimensions["A"].width = 24
             traffic_sheet.column_dimensions["B"].width = 18
             traffic_sheet.freeze_panes = "A2"
@@ -104,8 +153,12 @@ class ReportExportService:
                 return font_name
         return "Helvetica"
 
-    def build_pdf(self, period: Literal["day", "week", "month", "year"]) -> bytes:
-        data = self._get_data(period)
+    def build_pdf(
+        self,
+        period: Literal["day", "week", "month", "year"],
+        anchor_date: date | None = None,
+    ) -> bytes:
+        data = self._get_data(period, anchor_date=anchor_date)
         summary = data["summary"]
         output = BytesIO()
         font_name = self._register_unicode_font()

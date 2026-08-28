@@ -10,6 +10,9 @@ Cách 2 - truyền thẳng qua tham số dòng lệnh (hữu ích nếu terminal
 
 An toàn khi chạy nhiều lần: nếu role "admin" hoặc username đã tồn tại,
 script sẽ báo và không tạo trùng.
+
+Script không tạo/migration bảng. Hãy chạy ``db_rollout.py`` và xác minh
+``GET /ready`` trước; schema thiếu hoặc stale sẽ bị từ chối fail-closed.
 """
 
 import argparse
@@ -17,12 +20,10 @@ import sys
 
 import bcrypt
 
-from database import SessionLocal, Base, engine
+from database import SessionLocal, engine
+from db_rollout import check_database_readiness
 from models.role import Role
 from models.user import User
-
-# Đảm bảo đã có đủ bảng trong DB trước khi thao tác
-Base.metadata.create_all(bind=engine)
 
 
 def get_password_hash(password: str) -> str:
@@ -51,6 +52,15 @@ def main() -> None:
     parser.add_argument("--password", help="Password (nếu không truyền sẽ hỏi qua terminal)")
     parser.add_argument("--full-name", dest="full_name", help="Họ tên hiển thị")
     args = parser.parse_args()
+
+    try:
+        check_database_readiness(engine, deep=True)
+    except Exception as exc:
+        print(
+            "[LỖI] Database chưa sẵn sàng. Hãy chạy db_rollout.py trên "
+            f"đúng file trước khi tạo admin: {exc}"
+        )
+        sys.exit(1)
 
     db = SessionLocal()
     try:

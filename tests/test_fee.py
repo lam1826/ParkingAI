@@ -62,7 +62,8 @@ def test_calculate_fee_by_hour(
         time_out=time_out
     )
 
-    assert fee >= price_config.price * 2
+    assert fee == 50000
+    assert type(fee) is int
 
 
 def test_calculate_fee_by_day(
@@ -80,7 +81,7 @@ def test_calculate_fee_by_day(
         vehicle_type_id=vehicle_type.id,
         is_active=True,
         ticket_type="DAILY",
-        price=120000.0,
+        price=120000,
         # Phải có hiệu lực trước cả time_in (lùi 25 giờ) -> lùi 2 ngày.
         effective_date=(business_reference_now - datetime.timedelta(days=2)).date(),
     )
@@ -95,7 +96,8 @@ def test_calculate_fee_by_day(
     )
 
     # 25 giờ -> làm tròn lên 2 ngày
-    assert fee == 120000.0 * 2
+    assert fee == 240000
+    assert type(fee) is int
 
 
 def test_calculate_fee_monthly_pass(
@@ -135,10 +137,12 @@ def test_calculate_fee_monthly_pass(
         vehicle_id=vehicle.id,
         vehicle_type_id=vehicle_type.id,
         time_in=time_in,
-        time_out=time_out
+        time_out=time_out,
+        monthly_pass_id=monthly_pass.id,
     )
 
-    assert fee == 0.0
+    assert fee == 0
+    assert type(fee) is int
 
 
 def test_calculate_fee_zero_price(
@@ -154,7 +158,7 @@ def test_calculate_fee_zero_price(
         vehicle_type_id=vehicle_type.id,
         is_active=True,
         ticket_type="HOURLY",
-        price=0.0,
+        price=0,
         effective_date=(business_reference_now - datetime.timedelta(days=1)).date(),
     )
     db_session.add(free_price_config)
@@ -171,7 +175,8 @@ def test_calculate_fee_zero_price(
         time_out=time_out
     )
 
-    assert fee == 0.0
+    assert fee == 0
+    assert type(fee) is int
 
 
 def test_calculate_fee_invalid_time_range(
@@ -279,7 +284,8 @@ def test_calculate_fee_zero_duration(
         time_out=time_in
     )
 
-    assert fee == 0.0
+    assert fee == 0
+    assert type(fee) is int
 
 
 def test_calculate_fee_unconfigured_price(
@@ -367,13 +373,14 @@ def test_monthly_pass_starting_on_reference_day_is_active_at_pinned_reference(
     db_session.commit()
     db_session.refresh(vehicle)
 
-    db_session.add(MonthlyPass(
+    monthly_pass = MonthlyPass(
         customer_id=customer.id,
         vehicle_id=vehicle.id,
         start_date=reference_day,
         end_date=reference_day + datetime.timedelta(days=30),
         is_active=True,
-    ))
+    )
+    db_session.add(monthly_pass)
     db_session.commit()
 
     fee = ParkingService(db_session).calculate_fee(
@@ -381,9 +388,10 @@ def test_monthly_pass_starting_on_reference_day_is_active_at_pinned_reference(
         vehicle_type_id=vehicle_type.id,
         time_in=reference - datetime.timedelta(hours=2),
         time_out=reference,
+        monthly_pass_id=monthly_pass.id,
     )
 
-    assert fee == 0.0, (
+    assert fee == 0, (
         f"Vé tháng bắt đầu đúng ngày VN {reference_day} phải có hiệu lực lúc "
         f"00:30 cùng ngày -> phí 0; thực tế={fee}"
     )

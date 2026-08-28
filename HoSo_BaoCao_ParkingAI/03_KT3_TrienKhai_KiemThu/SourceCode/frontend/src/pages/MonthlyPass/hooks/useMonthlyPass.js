@@ -12,7 +12,7 @@ const useMonthlyPass = () => {
   const [submitting, setSubmitting] = useState(false);
 
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deactivateDialogOpen, setDeactivateDialogOpen] = useState(false);
   const [selectedPass, setSelectedPass] = useState(null);
 
   const [notify, setNotify] = useState({ open: false, message: "", severity: "info" });
@@ -53,14 +53,14 @@ const useMonthlyPass = () => {
     setDialogOpen(true);
   };
 
-  const handleOpenDelete = (pass) => {
+  const handleOpenDeactivate = (pass) => {
     setSelectedPass(pass);
-    setDeleteDialogOpen(true);
+    setDeactivateDialogOpen(true);
   };
 
   const closeDialogs = () => {
     setDialogOpen(false);
-    setDeleteDialogOpen(false);
+    setDeactivateDialogOpen(false);
     setSelectedPass(null);
   };
 
@@ -84,9 +84,9 @@ const useMonthlyPass = () => {
     }
   };
 
-  const handleDelete = async () => {
+  const handleDeactivate = async () => {
     try {
-      await monthlyPassService.delete(selectedPass.id);
+      await monthlyPassService.deactivate(selectedPass.id);
       showNotify("Hủy vé tháng thành công!", "success");
       closeDialogs();
       fetchData();
@@ -100,9 +100,9 @@ const useMonthlyPass = () => {
 
   return {
     passes, vehicles, customers, loading, submitting,
-    dialogOpen, deleteDialogOpen, selectedPass, notify,
-    handleOpenCreate, handleOpenEdit, handleOpenDelete,
-    closeDialogs, handleSave, handleDelete, fetchData, closeNotify
+    dialogOpen, deactivateDialogOpen, selectedPass, notify,
+    handleOpenCreate, handleOpenEdit, handleOpenDeactivate,
+    closeDialogs, handleSave, handleDeactivate, fetchData, closeNotify
   };
 };
 

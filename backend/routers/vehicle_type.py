@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 from typing import List
 
@@ -9,7 +9,11 @@ from crud import vehicle_type as crud_vt
 router = APIRouter()
 
 @router.get("", response_model=List[vt_schema.VehicleTypeResponse])
-def read_vehicle_types(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+def read_vehicle_types(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=100),
+    db: Session = Depends(get_db),
+):
     """Lấy danh sách các loại xe"""
     return crud_vt.get_vehicle_types(db, skip=skip, limit=limit)
 

@@ -3,10 +3,16 @@ from sqlalchemy import select, and_, update
 from sqlalchemy.exc import IntegrityError
 from datetime import datetime
 from core.clock import business_now
+from crud import price_config as crud_price_config
 from models.parking_session import ParkingSession
 from models.parking_slot import ParkingSlot
+from models.monthly_pass import MonthlyPass
 from models.zone import Zone
 from schemas import parking_session as session_schema
+
+
+class MissingEffectiveCheckInPriceError(Exception):
+    """A vehicle has no active fallback rate effective at check-in."""
 
 
 def server_now() -> datetime:
@@ -22,7 +28,7 @@ def server_now() -> datetime:
 
 
 def claim_session_for_checkout(db: Session, session_id: str) -> bool:
-    """Chuyển session active -> completed NGUYÊN TỬ bằng conditional UPDATE.
+    """Claim active -> checking_out NGUYÊN TỬ bằng conditional UPDATE.
 
     Chỉ transaction đầu tiên thắng (rowcount == 1); request thua nhận False
     và KHÔNG được tính phí hay ghi đè dữ liệu. Không commit tại đây — claim,
@@ -34,12 +40,18 @@ def claim_session_for_checkout(db: Session, session_id: str) -> bool:
             ParkingSession.id == session_id,
             ParkingSession.status == "active",
         )
-        .values(status="completed")
+        .values(status="checking_out")
     )
     return result.rowcount == 1
 
 
-def claim_parking_slot(db: Session, slot_id: int) -> bool:
+def claim_parking_slot(
+    db: Session,
+    slot_id: int,
+    *,
+    expected_zone_id: int | None = None,
+    expected_vehicle_type_id: int | None = None,
+) -> bool:
     """Chiếm vị trí đỗ NGUYÊN TỬ bằng conditional UPDATE.
 
     Chỉ thành công khi slot vẫn đang active và chưa occupied tại thời điểm
@@ -48,27 +60,37 @@ def claim_parking_slot(db: Session, slot_id: int) -> bool:
     409/404 thay vì ghi đè. KHÔNG commit tại đây: claim phải nằm cùng
     transaction với INSERT session để cùng commit hoặc cùng rollback.
     """
-    result = db.execute(
-        update(ParkingSlot)
-        .where(
+    conditions = [
             ParkingSlot.id == slot_id,
             ParkingSlot.is_occupied == False,  # noqa: E712
             ParkingSlot.is_active == True,  # noqa: E712
             ParkingSlot.zone_id.in_(
                 select(Zone.id).where(Zone.is_active == True)  # noqa: E712
             ),
+    ]
+    # Snapshot assignment đã validate trước claim. Nếu admin chuyển
+    # khu/đổi loại xe và commit trước conditional UPDATE này, rowcount
+    # phải bằng 0 thay vì request cũ chiếm slot theo assignment đã stale.
+    if expected_zone_id is not None:
+        conditions.append(ParkingSlot.zone_id == expected_zone_id)
+    if expected_vehicle_type_id is not None:
+        conditions.append(
+            ParkingSlot.vehicle_type_id == expected_vehicle_type_id
         )
+
+    result = db.execute(
+        update(ParkingSlot)
+        .where(*conditions)
         .values(is_occupied=True)
     )
     return result.rowcount == 1
 
 
 def map_check_in_integrity_error(exc: IntegrityError) -> str | None:
-    """Dịch IntegrityError của hai unique index check-in thành thông báo 409.
+    """Dịch đúng các DB backstop check-in đã biết thành thông báo 409.
 
-    Chỉ map ĐÚNG hai xung đột nghiệp vụ đã biết (tên index/cột nằm trong
-    message của SQLite); mọi IntegrityError khác trả None để caller xử lý
-    như lỗi hệ thống thay vì che mù quáng thành 409.
+    Mọi IntegrityError khác trả None để caller xử lý như lỗi hệ thống thay vì
+    che mù quáng thành 409.
     """
     message = str(exc.orig) if exc.orig is not None else str(exc)
     # SQLite báo vi phạm partial unique index bằng TÊN CỘT (đã xác minh:
@@ -79,6 +101,57 @@ def map_check_in_integrity_error(exc: IntegrityError) -> str | None:
         return "Xe vừa được check-in ở một phiên khác. Vui lòng kiểm tra lại."
     if "parking_sessions.parking_slot_id" in message:
         return "Vị trí đỗ vừa được xe khác sử dụng. Vui lòng chọn vị trí khác."
+    if "active parking session requires effective price config" in message:
+        return (
+            "Bảng giá áp dụng vừa thay đổi hoặc không còn hiệu lực. "
+            "Vui lòng kiểm tra bảng giá rồi thử nhận xe lại."
+        )
+    if "monthly pass is not eligible at check-in" in message:
+        return (
+            "Vé tháng vừa thay đổi và không còn hợp lệ tại thời điểm nhận xe. "
+            "Vui lòng kiểm tra vé rồi thử lại."
+        )
+    if "parking slot is not eligible for active session" in message:
+        return (
+            "Vị trí/khu vực không còn hoạt động hoặc không phù hợp loại xe. "
+            "Vui lòng chọn lại vị trí phù hợp."
+        )
+    return None
+
+
+def resolve_check_in_monthly_pass_id(
+    db: Session,
+    *,
+    vehicle_id: int,
+    vehicle_type_id: int,
+    check_in_time: datetime,
+) -> int | None:
+    """Resolve the entitlement/rate required to admit one check-in.
+
+    Every stay must have the same active/effective fallback rate that
+    ``ParkingService.calculate_fee`` may need at checkout. A valid monthly
+    pass is then snapshotted independently; if it expires during the stay,
+    billing still has a stable rate contract to fall back to.
+    """
+    check_in_date = check_in_time.date()
+    effective_price = crud_price_config.get_effective_active_price_by_vehicle_type(
+        db,
+        vehicle_type_id=vehicle_type_id,
+        effective_on=check_in_date,
+    )
+    if effective_price is None:
+        raise MissingEffectiveCheckInPriceError
+
+    monthly_pass = db.execute(
+        select(MonthlyPass).where(
+            MonthlyPass.vehicle_id == vehicle_id,
+            MonthlyPass.is_active == True,  # noqa: E712
+            MonthlyPass.start_date <= check_in_date,
+            MonthlyPass.end_date >= check_in_date,
+        )
+    ).scalars().first()
+    if monthly_pass is not None:
+        return monthly_pass.id
     return None
 
 def get_parking_session(db: Session, session_id: str) -> ParkingSession | None:
@@ -99,14 +172,20 @@ def get_parking_sessions(db: Session, skip: int = 0, limit: int = 100):
     stmt = select(ParkingSession).offset(skip).limit(limit)
     return db.execute(stmt).scalars().all()
 
-def create_parking_session(db: Session, session_in: session_schema.ParkingSessionCreate, staff_in_id: int) -> ParkingSession:
-    # check_in_time do SERVER quyết định — lấy đúng MỘT lần từ server_now()
-    # (gọi qua global của module nên test monkeypatch được); schema không còn
-    # nhận thời gian từ client.
+def create_parking_session(
+    db: Session,
+    session_in: session_schema.ParkingSessionCreate,
+    staff_in_id: int,
+    *,
+    check_in_time: datetime,
+    monthly_pass_id: int | None,
+) -> ParkingSession:
+    """Persist a prepared check-in without sampling a second clock."""
     db_session = ParkingSession(
         vehicle_id=session_in.vehicle_id,
         parking_slot_id=session_in.parking_slot_id,
-        check_in_time=server_now(),
+        monthly_pass_id=monthly_pass_id,
+        check_in_time=check_in_time,
         staff_in_id=staff_in_id,
         status="active"
     )

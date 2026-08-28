@@ -17,8 +17,9 @@ import GridViewIcon from "@mui/icons-material/GridView";
 import TableRowsIcon from "@mui/icons-material/TableRows";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import CrudPage from "../../components/common/CrudPage";
-import api from "../../services/api";
 import { getParkingSlotVisualStatus } from "../../utils/parkingSlotStatus";
+import { vehicleTypeService } from "../VehicleType/services/vehicleTypeService";
+import { zoneService } from "../Zone/services/zoneService";
 import { parkingSlotService } from "./parkingSlotService";
 
 const slotColors = {
@@ -42,14 +43,14 @@ export default function ParkingSlotPage() {
     setLoading(true);
     setError("");
     try {
-      const [zoneResponse, typeResponse, slotResponse] = await Promise.all([
-        api.get("/api/v1/zones"),
-        api.get("/api/v1/vehicle-types"),
-        api.get("/api/v1/parking-slots", { params: { limit: 500 } }),
+      const [zoneList, typeList, slotList] = await Promise.all([
+        zoneService.getAll(),
+        vehicleTypeService.getAll(),
+        parkingSlotService.getAll(),
       ]);
-      setZones(zoneResponse.data);
-      setTypes(typeResponse.data);
-      setSlots(slotResponse.data);
+      setZones(zoneList);
+      setTypes(typeList);
+      setSlots(slotList);
     } catch (requestError) {
       setError(requestError.response?.data?.detail || "Không thể tải sơ đồ chỗ đỗ.");
     } finally {

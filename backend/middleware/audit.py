@@ -14,9 +14,16 @@ MUTATING_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 
 
 def _classify_action(method: str, path: str) -> str:
-    if path == "/parking/check-in":
+    normalized_path = path.rstrip("/") or "/"
+    if normalized_path in {
+        "/parking/check-in",
+        "/api/v1/parking-sessions/check-in",
+    }:
         return "CHECK_IN"
-    if path == "/parking/check-out":
+    if normalized_path == "/parking/check-out" or re.fullmatch(
+        r"/api/v1/parking-sessions/[^/]+/check-out",
+        normalized_path,
+    ):
         return "CHECK_OUT"
     if path.startswith("/ai/"):
         return "AI_ACTION"

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 from typing import List
 
@@ -9,7 +9,11 @@ from crud import customer as crud_customer
 router = APIRouter()
 
 @router.get("", response_model=List[customer_schema.CustomerResponse])
-def read_customers(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+def read_customers(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=100),
+    db: Session = Depends(get_db),
+):
     """Lấy danh sách khách hàng"""
     return crud_customer.get_customers(db, skip=skip, limit=limit)
 
@@ -27,7 +31,10 @@ def create_customer(customer_in: customer_schema.CustomerCreate, db: Session = D
     # Kiểm tra số điện thoại đã tồn tại chưa
     existing_customer = crud_customer.get_customer_by_phone(db, phone_number=customer_in.phone_number)
     if existing_customer:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Phone number already registered")
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Số điện thoại đã được đăng ký cho khách hàng khác.",
+        )
     
     return crud_customer.create_customer(db=db, customer_in=customer_in)
 
@@ -39,10 +46,16 @@ def update_customer(id: int, customer_in: customer_schema.CustomerUpdate, db: Se
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Customer not found")
     
     # Nếu có cập nhật số điện thoại, phải đảm bảo không trùng với người khác
-    if customer_in.phone_number and customer_in.phone_number != db_customer.phone_number:
+    if (
+        "phone_number" in customer_in.model_fields_set
+        and customer_in.phone_number != db_customer.phone_number
+    ):
         existing_customer = crud_customer.get_customer_by_phone(db, phone_number=customer_in.phone_number)
         if existing_customer:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Phone number already in use by another customer")
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Số điện thoại đã được đăng ký cho khách hàng khác.",
+            )
             
     return crud_customer.update_customer(db=db, db_customer=db_customer, customer_in=customer_in)
 
@@ -52,6 +65,23 @@ def delete_customer(id: int, db: Session = Depends(get_db)):
     db_customer = crud_customer.get_customer(db, customer_id=id)
     if not db_customer:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Customer not found")
+
+    if crud_customer.customer_has_vehicles(db, customer_id=id):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Không thể xóa khách hàng đang có phương tiện; "
+                "cần giữ liên kết để bảo toàn lịch sử."
+            ),
+        )
+    if crud_customer.customer_has_monthly_passes(db, customer_id=id):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Không thể xóa khách hàng đang có vé tháng; "
+                "cần giữ liên kết để bảo toàn lịch sử."
+            ),
+        )
     
     crud_customer.delete_customer(db=db, db_customer=db_customer)
     return None

@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
 import CrudPage from "../../components/common/CrudPage";
-import api from "../../services/api";
+import { vehicleTypeService } from "../VehicleType/services/vehicleTypeService";
 import { priceConfigService } from "./services/priceConfigService";
 
 export default function PriceConfigPage() {
   const [types, setTypes] = useState([]);
-  useEffect(() => { api.get("/api/v1/vehicle-types").then(({ data }) => setTypes(data)); }, []);
+  useEffect(() => {
+    vehicleTypeService.getAll().then((data) => setTypes(data));
+  }, []);
   return <CrudPage title="Cấu hình bảng giá" service={priceConfigService} fields={[
     { name: "vehicle_type_id", label: "Loại xe", type: "select", required: true,
       options: types.map((item) => ({ value: item.id, label: item.name })) },

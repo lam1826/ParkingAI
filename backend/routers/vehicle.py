@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 from typing import List
@@ -21,8 +21,72 @@ def validate_vehicle_relations(db: Session, vehicle_type_id: int | None, custome
     if customer_id is not None and not db.get(Customer, customer_id):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Khách hàng không tồn tại")
 
+
+def validate_vehicle_type_change(
+    db: Session,
+    vehicle_id: int,
+    current_vehicle_type_id: int,
+    requested_vehicle_type_id: int | None,
+) -> None:
+    """Giữ nguyên loại xe sau khi phương tiện đã phát sinh nghiệp vụ.
+
+    Phiên active dùng loại xe hiện tại để tính phí khi check-out; phiên đã
+    hoàn tất cũng join qua Vehicle để lập báo cáo. Cho phép đổi loại sau
+    khi đã có phiên sẽ làm sai cả phí lẫn lịch sử.
+    """
+    if (
+        requested_vehicle_type_id is None
+        or requested_vehicle_type_id == current_vehicle_type_id
+    ):
+        return
+
+    has_session = (
+        db.query(ParkingSession.id)
+        .filter(ParkingSession.vehicle_id == vehicle_id)
+        .first()
+    )
+    has_monthly_pass = (
+        db.query(MonthlyPass.id)
+        .filter(MonthlyPass.vehicle_id == vehicle_id)
+        .first()
+    )
+    if has_session or has_monthly_pass:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Không thể đổi loại xe vì phương tiện đã có phiên gửi xe "
+                "hoặc vé tháng."
+            ),
+        )
+
+
+def validate_license_plate_change(
+    db: Session,
+    vehicle_id: int,
+    current_license_plate: str,
+    requested_license_plate: str | None,
+) -> None:
+    if (
+        requested_license_plate is None
+        or requested_license_plate == current_license_plate
+    ):
+        return
+    if db.query(ParkingSession.id).filter(
+        ParkingSession.vehicle_id == vehicle_id
+    ).first():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Không thể đổi biển số vì phương tiện đã có lịch sử gửi xe."
+            ),
+        )
+
 @router.get("", response_model=List[vehicle_schema.VehicleResponse])
-def read_vehicles(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+def read_vehicles(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=100),
+    db: Session = Depends(get_db),
+):
     """Lấy danh sách phương tiện"""
     return crud_vehicle.get_vehicles(db, skip=skip, limit=limit)
 
@@ -63,6 +127,18 @@ def update_vehicle(id: int, vehicle_in: vehicle_schema.VehicleUpdate, db: Sessio
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Biển số xe đã được sử dụng")
 
     validate_vehicle_relations(db, vehicle_in.vehicle_type_id, vehicle_in.customer_id)
+    validate_vehicle_type_change(
+        db,
+        vehicle_id=db_vehicle.id,
+        current_vehicle_type_id=db_vehicle.vehicle_type_id,
+        requested_vehicle_type_id=vehicle_in.vehicle_type_id,
+    )
+    validate_license_plate_change(
+        db,
+        vehicle_id=db_vehicle.id,
+        current_license_plate=db_vehicle.license_plate,
+        requested_license_plate=vehicle_in.license_plate,
+    )
     try:
         return crud_vehicle.update_vehicle(db=db, db_vehicle=db_vehicle, vehicle_in=vehicle_in)
     except IntegrityError:

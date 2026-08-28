@@ -1,6 +1,7 @@
 // File: src/pages/Dashboard/components/RecentSessionsTable.jsx
 import { Card, CardContent, Typography, Box, Chip } from "@mui/material";
 import { DataGrid } from "@mui/x-data-grid";
+import { formatBusinessTimestamp } from "../../../utils/formatDate";
 
 const RecentSessionsTable = ({ data, loading }) => {
   const columns = [
@@ -12,10 +13,7 @@ const RecentSessionsTable = ({ data, loading }) => {
       flex: 1.5,
       minWidth: 160,
       // MUI DataGrid v9: valueFormatter nhận trực tiếp value
-      valueFormatter: (value) => {
-        if (!value) return "";
-        return new Date(value).toLocaleString("vi-VN");
-      }
+      valueFormatter: (value) => (value ? formatBusinessTimestamp(value, "") : ""),
     },
     {
       field: "status",

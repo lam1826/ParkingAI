@@ -1,5 +1,7 @@
-import pytest
+import re
 from unittest.mock import patch
+
+import pytest
 from fastapi.testclient import TestClient
 
 from models.user import User
@@ -114,3 +116,22 @@ def test_dashboard_peak_hours(mock_get_dashboard, client: TestClient, auth_heade
     assert response.status_code == 200
     data = response.json()
     assert data["top_peak_hours"][0]["hour"] == "08:00 - 09:00"
+
+
+def test_dashboard_suggestion_openapi_documents_rule_based_provenance(
+    client: TestClient,
+):
+    """Endpoint legacy /ai-insight không gọi provider; OpenAPI phải mô tả
+    đúng đây là gợi ý rule-based, không gắn nhãn Gemini/AI."""
+    openapi = client.get("/openapi.json").json()
+    operation = openapi["paths"]["/dashboard/ai-insight"]["get"]
+    field_description = openapi["components"]["schemas"]["AIInsightResponse"][
+        "properties"
+    ]["insight"]["description"]
+    documentation = " ".join(
+        [operation["summary"], operation.get("description", ""), field_description]
+    )
+
+    assert "quy tắc" in documentation.lower()
+    assert "không gọi ai provider" in documentation.lower()
+    assert re.search(r"AI Insight|Gemini", documentation, flags=re.IGNORECASE) is None

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 from typing import List
 
@@ -11,7 +11,12 @@ from crud import vehicle_type as crud_vehicle_type
 router = APIRouter()
 
 @router.get("", response_model=List[slot_schema.ParkingSlotResponse])
-def read_parking_slots(skip: int = 0, limit: int = 100, zone_id: int = None, db: Session = Depends(get_db)):
+def read_parking_slots(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=100),
+    zone_id: int = None,
+    db: Session = Depends(get_db),
+):
     """Lấy danh sách các vị trí đỗ xe (có hỗ trợ lọc theo zone_id)"""
     if zone_id:
         return crud_slot.get_parking_slots_by_zone(db, zone_id=zone_id, skip=skip, limit=limit)
@@ -77,6 +82,17 @@ def update_parking_slot(id: int, slot_in: slot_schema.ParkingSlotUpdate, db: Ses
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Không thể thay đổi vị trí khi đang có xe đang đỗ.",
+        )
+    if (
+        slot_in.zone_id is not None
+        and slot_in.zone_id != db_slot.zone_id
+        and crud_slot.has_any_parking_session(db, db_slot.id)
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Không thể chuyển khu vực vì vị trí đã có lịch sử gửi xe."
+            ),
         )
     
     # Nếu có cập nhật zone_id, phải kiểm tra xem zone mới có tồn tại không

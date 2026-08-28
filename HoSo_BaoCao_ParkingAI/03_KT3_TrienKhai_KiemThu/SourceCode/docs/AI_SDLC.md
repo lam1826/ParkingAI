@@ -61,7 +61,27 @@ Nguồn: <https://ai.google.dev/gemini-api/docs/latest-model> và <https://ai.go
 - AI hỏi đáp, báo cáo ngày, báo cáo tuần và gợi ý nhân sự thành công.
 - AI từ chối câu hỏi chỉ có khoảng trắng, dữ liệu rỗng và khoảng ngày tuần sai.
 - AI xử lý provider lỗi/timeout và prompt bắt buộc không bịa dữ liệu.
-- Thiếu `GEMINI_API_KEY`: endpoint AI trả 503 rõ ràng, thống kê cơ bản vẫn chạy.
+- AI fail-closed theo hai lớp: `AI_ENABLED=false` hoặc thiếu `GEMINI_API_KEY`
+  đều làm endpoint AI trả 503 trước khi tạo provider client; thống kê cơ bản
+  vẫn chạy. UAT mặc định giữ `AI_ENABLED=false`.
+- Ánh xạ lỗi biên provider sang HTTP ổn định (`services/ai_service.py::
+  _provider_http_exception`), áp dụng cho cả năm luồng AI:
+
+  | Tình huống | HTTP | Kiểm chứng |
+  | --- | --- | --- |
+  | Timeout / `DEADLINE_EXCEEDED` / mã 408, 504 | 504 | `tests/test_ai_provider_fail_closed.py`, `tests/test_ai.py` |
+  | Quota, `UNAVAILABLE`, lỗi mạng, mã 401/403/429/503 | 503 | `tests/test_ai_provider_fail_closed.py` |
+  | Phản hồi không hợp lệ hoặc lỗi không phân loại được | 502 | `tests/test_ai.py::test_ai_gemini_returns_error` |
+
+  Response chỉ chứa một thông báo chung; test khẳng định không rò API key,
+  phản hồi thô của provider hay stack trace. `HTTPException` từ tầng trong
+  được re-raise nguyên trạng thay vì bị đổi thành 500
+  (`test_ai_flow_outer_handlers_preserve_http_exception`).
+- **Toàn bộ kiểm chứng AI đều dùng mock.** `tests/conftest.py` cài một fixture
+  autouse thay `services.ai_service.genai.Client` bằng seam ném
+  `AssertionError`, nên một test quên mock sẽ fail trước khi client thật được
+  tạo — không có request nào rời khỏi máy. Dự án **không** tuyên bố đã chạy
+  E2E live với Gemini.
 - Backend tự tổng hợp dữ liệu cho AI khi client không gửi số liệu
   (daily-report/staff-suggestion kiểm tra prompt chứa số liệu backend tổng hợp).
 
@@ -78,7 +98,8 @@ Khi demo: tạo dữ liệu khu vực → loại xe → vị trí → bảng gi�
 | Đăng nhập và phân quyền | JWT, `RoleChecker`, vai trò customer/staff/manager/admin; đăng ký manager/admin bằng mã bí mật | `tests/test_auth.py`, `tests/test_management_api.py` |
 | Khu vực, vị trí, loại xe | CRUD dưới `/api/v1`; giao diện quản lý tương ứng | `tests/test_management_api.py` |
 | Xe vào/ra và thời gian gửi | `/parking/check-in` (chọn vị trí cụ thể hoặc tự cấp phát), `/parking/check-out`, lịch sử phiên | `tests/test_check_in.py`, `tests/test_check_out.py` |
-| Tính phí | Theo giờ/ngày, bảng giá có hiệu lực, vé tháng hợp lệ miễn phí | `tests/test_fee.py`, `tests/test_check_out.py` |
+| Vòng đời phiên gửi xe | Trạng thái lưu `active`/`completed`/`cancelled`; `checking_out` chỉ tồn tại trong transaction check-out; hai endpoint check-out dùng chung vòng đời; tính phí lỗi thì rollback về `active` | `tests/test_session_lifecycle_integrity.py`, `tests/test_check_out_concurrency.py` |
+| Tính phí | Theo giờ/ngày, khóa bảng giá khi phiên mở; MỌI lượt vào cần bảng giá dự phòng hiệu lực tại check-in; vé tháng chỉ miễn phí nếu còn bao phủ ngày xe ra | `tests/test_fee.py`, `tests/test_check_out.py`, `tests/test_session_entitlement_integrity.py`, `tests/test_rate_provenance.py` |
 | Theo dõi chỗ trống | Thống kê toàn bãi và nhóm theo khu vực/loại xe | `tests/test_slots.py` |
 | Tra cứu theo biển số/thời gian | Bộ lọc API và màn hình phiên đỗ xe | `tests/test_check_in.py`, `tests/test_check_out.py` |
 | Vé tháng/khách quen | CRUD khách hàng, phương tiện và vé tháng | `tests/test_management_api.py` |

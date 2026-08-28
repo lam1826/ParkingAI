@@ -1,10 +1,8 @@
 import api from "../../../services/api"; // Import instance axios đã cấu hình interceptors
+import { requestAllOffsetPages } from "../../../services/paginatedLookup";
 
 export const customerService = {
-  getAllCustomers: async () => {
-    const response = await api.get("/api/v1/customers");
-    return response.data;
-  },
+  getAllCustomers: async () => requestAllOffsetPages(api, "/api/v1/customers"),
   
   createCustomer: async (customerData) => {
     const response = await api.post("/api/v1/customers", customerData);

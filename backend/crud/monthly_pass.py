@@ -1,6 +1,8 @@
+from datetime import date
+
 from sqlalchemy.orm import Session, selectinload
 from sqlalchemy import select, and_
-from core.clock import business_today
+
 from models.monthly_pass import MonthlyPass
 from schemas import monthly_pass as monthly_pass_schema
 
@@ -12,20 +14,26 @@ def get_monthly_pass(db: Session, pass_id: int) -> MonthlyPass | None:
     )
     return db.execute(stmt).scalar_one_or_none()
 
-def get_active_pass_by_vehicle(
-    db: Session, vehicle_id: int, exclude_pass_id: int | None = None
+def get_overlapping_active_pass_by_vehicle(
+    db: Session,
+    vehicle_id: int,
+    start_date: date,
+    end_date: date,
+    exclude_pass_id: int | None = None,
 ) -> MonthlyPass | None:
-    """Kiểm tra xe có vé tháng hợp lệ (đã bắt đầu, còn hạn và đang active) không.
+    """Tìm vé active cùng xe có khoảng hiệu lực giao nhau.
 
-    exclude_pass_id: bỏ qua chính vé đang được cập nhật (dùng khi PUT).
+    Hai khoảng đóng [start_date, end_date] giao nhau khi
+    existing.start_date <= end_date và existing.end_date >= start_date.
+    Truy vấn cố ý không phụ thuộc business_today(): vé đặt trước
+    trong tương lai vẫn phải được bảo vệ khỏi khoảng trùng.
     """
-    today = business_today()
     stmt = select(MonthlyPass).where(
         and_(
             MonthlyPass.vehicle_id == vehicle_id,
             MonthlyPass.is_active == True,
-            MonthlyPass.start_date <= today,
-            MonthlyPass.end_date >= today
+            MonthlyPass.start_date <= end_date,
+            MonthlyPass.end_date >= start_date,
         )
     )
     if exclude_pass_id is not None:

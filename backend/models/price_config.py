@@ -1,10 +1,23 @@
 from datetime import datetime, date
 
-from sqlalchemy import String, Float, Boolean, Date, ForeignKey, Index, text
+from sqlalchemy import DDL, String, Integer, Boolean, Date, ForeignKey, Index, event, text
 from sqlalchemy.sql import func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from database import Base
+from database import (
+    Base,
+    PRICE_INTEGER_INSERT_TRIGGER_SQL,
+    PRICE_INTEGER_UPDATE_TRIGGER_SQL,
+    PRICE_SAFE_VND_INSERT_TRIGGER_SQL,
+    PRICE_SAFE_VND_UPDATE_TRIGGER_SQL,
+    PRICE_TICKET_TYPE_INSERT_TRIGGER_SQL,
+    PRICE_TICKET_TYPE_UPDATE_TRIGGER_SQL,
+    PRICE_EFFECTIVE_DATE_INSERT_TRIGGER_SQL,
+    PRICE_EFFECTIVE_DATE_UPDATE_TRIGGER_SQL,
+    PRICE_ACTIVE_SESSION_DELETE_GUARD_TRIGGER_SQL,
+    PRICE_ACTIVE_SESSION_REPLACE_GUARD_TRIGGER_SQL,
+    PRICE_ACTIVE_SESSION_UPDATE_GUARD_TRIGGER_SQL,
+)
 
 class PriceConfig(Base):
     __tablename__ = "price_configs"
@@ -26,8 +39,8 @@ class PriceConfig(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     vehicle_type_id: Mapped[int] = mapped_column(ForeignKey("vehicle_types.id"))
-    ticket_type: Mapped[str] = mapped_column(String(20))  # Ví dụ: 'HOURLY', 'DAILY', 'MONTHLY'
-    price: Mapped[float] = mapped_column(Float)
+    ticket_type: Mapped[str] = mapped_column(String(20))  # HOURLY hoặc DAILY
+    price: Mapped[int] = mapped_column(Integer)
     effective_date: Mapped[date] = mapped_column(Date)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
@@ -35,3 +48,70 @@ class PriceConfig(Base):
 
     # Quan hệ N-1: Một cấu hình giá được áp dụng cho một loại phương tiện (Vehicle Type) cụ thể
     vehicle_type: Mapped["VehicleType"] = relationship(back_populates="price_configs")
+
+
+event.listen(
+    PriceConfig.__table__,
+    "after_create",
+    DDL(PRICE_INTEGER_INSERT_TRIGGER_SQL).execute_if(dialect="sqlite"),
+)
+event.listen(
+    PriceConfig.__table__,
+    "after_create",
+    DDL(PRICE_SAFE_VND_INSERT_TRIGGER_SQL).execute_if(dialect="sqlite"),
+)
+event.listen(
+    PriceConfig.__table__,
+    "after_create",
+    DDL(PRICE_SAFE_VND_UPDATE_TRIGGER_SQL).execute_if(dialect="sqlite"),
+)
+event.listen(
+    PriceConfig.__table__,
+    "after_create",
+    DDL(PRICE_TICKET_TYPE_INSERT_TRIGGER_SQL).execute_if(dialect="sqlite"),
+)
+event.listen(
+    PriceConfig.__table__,
+    "after_create",
+    DDL(PRICE_TICKET_TYPE_UPDATE_TRIGGER_SQL).execute_if(dialect="sqlite"),
+)
+event.listen(
+    PriceConfig.__table__,
+    "after_create",
+    DDL(PRICE_INTEGER_UPDATE_TRIGGER_SQL).execute_if(dialect="sqlite"),
+)
+event.listen(
+    PriceConfig.__table__,
+    "after_create",
+    DDL(PRICE_EFFECTIVE_DATE_INSERT_TRIGGER_SQL).execute_if(dialect="sqlite"),
+)
+event.listen(
+    PriceConfig.__table__,
+    "after_create",
+    DDL(PRICE_EFFECTIVE_DATE_UPDATE_TRIGGER_SQL).execute_if(dialect="sqlite"),
+)
+
+# Hai trigger này tham chiếu vehicles/parking_sessions, nên chỉ cài sau khi
+# toàn bộ metadata đã được tạo. Router trả 409 dễ hiểu; DB giữ bất biến cho
+# race condition và các đường ghi ngoài API.
+event.listen(
+    Base.metadata,
+    "after_create",
+    DDL(PRICE_ACTIVE_SESSION_UPDATE_GUARD_TRIGGER_SQL).execute_if(
+        dialect="sqlite"
+    ),
+)
+event.listen(
+    Base.metadata,
+    "after_create",
+    DDL(PRICE_ACTIVE_SESSION_DELETE_GUARD_TRIGGER_SQL).execute_if(
+        dialect="sqlite"
+    ),
+)
+event.listen(
+    Base.metadata,
+    "after_create",
+    DDL(PRICE_ACTIVE_SESSION_REPLACE_GUARD_TRIGGER_SQL).execute_if(
+        dialect="sqlite"
+    ),
+)

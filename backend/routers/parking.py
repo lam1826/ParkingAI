@@ -1,5 +1,4 @@
-from typing import Annotated, Optional
-from datetime import datetime
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
@@ -13,6 +12,7 @@ from schemas.parking import (
     CheckOutResponse,
     AvailableSlotsOverviewResponse,
     PaginatedParkingSearchResponse,
+    ParkingSearchQuery,
 )
 
 # Dependency lấy user hiện tại
@@ -122,51 +122,7 @@ def get_available_slots_endpoint(
     summary="Tìm kiếm, lọc và phân trang lịch sử gửi xe"
 )
 def search_parking_sessions_endpoint(
-    license_plate: Optional[str] = Query(
-        None,
-        description="Lọc theo biển số xe (tìm kiếm tương đối)"
-    ),
-    status_filter: Optional[str] = Query(
-        None,
-        alias="status",
-        description="Lọc theo trạng thái (active, completed)"
-    ),
-    date_from: Optional[datetime] = Query(
-        None,
-        description="Lọc từ thời gian vào (ISO format: YYYY-MM-DDTHH:MM:SS)"
-    ),
-    date_to: Optional[datetime] = Query(
-        None,
-        description="Lọc đến thời gian vào (ISO format: YYYY-MM-DDTHH:MM:SS)"
-    ),
-    zone_id: Optional[int] = Query(
-        None,
-        description="Lọc theo khu vực đỗ"
-    ),
-    vehicle_type_id: Optional[int] = Query(
-        None,
-        description="Lọc theo loại phương tiện"
-    ),
-    page: int = Query(
-        1,
-        ge=1,
-        description="Số trang hiện tại (bắt đầu từ 1)"
-    ),
-    size: int = Query(
-        10,
-        ge=1,
-        le=100,
-        description="Số lượng bản ghi trên một trang (tối đa 100)"
-    ),
-    sort_by: str = Query(
-        "check_in_time",
-        description="Trường cần sắp xếp: check_in_time, check_out_time, parking_fee"
-    ),
-    sort_order: str = Query(
-        "desc",
-        pattern="^(asc|desc|ASC|DESC)$",
-        description="Thứ tự sắp xếp: asc hoặc desc"
-    ),
+    filters: Annotated[ParkingSearchQuery, Query()],
     db: Annotated[Session, Depends(get_db)] = None,
     current_user: Annotated[User, Depends(get_current_user)] = None
 ):
@@ -180,14 +136,14 @@ def search_parking_sessions_endpoint(
     """
     service = ParkingService(db)
     return service.search_sessions(
-        license_plate=license_plate,
-        parking_status=status_filter,
-        date_from=date_from,
-        date_to=date_to,
-        zone_id=zone_id,
-        vehicle_type_id=vehicle_type_id,
-        page=page,
-        size=size,
-        sort_by=sort_by,
-        sort_order=sort_order
+        license_plate=filters.license_plate,
+        parking_status=filters.status_filter,
+        date_from=filters.date_from,
+        date_to=filters.date_to,
+        zone_id=filters.zone_id,
+        vehicle_type_id=filters.vehicle_type_id,
+        page=filters.page,
+        size=filters.size,
+        sort_by=filters.sort_by,
+        sort_order=filters.sort_order,
     )

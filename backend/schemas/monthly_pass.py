@@ -1,6 +1,7 @@
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictInt, field_validator, model_validator
 from typing import Optional
 from datetime import date
+from core.money import MAX_EXACT_VND
 
 
 def _normalize_pass_code(value):
@@ -13,7 +14,11 @@ class MonthlyPassBase(BaseModel):
     customer_id: int
     vehicle_id: int
     pass_code: str = Field(min_length=1, max_length=50)
-    price: int = Field(ge=0, description="Số tiền thực thu (VND), số nguyên không âm")
+    price: StrictInt = Field(
+        ge=0,
+        le=MAX_EXACT_VND,
+        description="Số tiền thực thu (VND), số nguyên không âm",
+    )
     start_date: date
     end_date: date
     is_active: bool = True
@@ -41,7 +46,7 @@ class MonthlyPassUpdate(BaseModel):
     customer_id: Optional[int] = None
     vehicle_id: Optional[int] = None
     pass_code: Optional[str] = Field(default=None, min_length=1, max_length=50)
-    price: Optional[int] = Field(default=None, ge=0)
+    price: Optional[StrictInt] = Field(default=None, ge=0, le=MAX_EXACT_VND)
     start_date: Optional[date] = None
     end_date: Optional[date] = None
     is_active: Optional[bool] = None

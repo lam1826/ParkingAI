@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Alert,
   Box,
@@ -13,6 +13,9 @@ import {
 import RefreshIcon from "@mui/icons-material/Refresh";
 import { DataGrid, GridToolbar } from "@mui/x-data-grid";
 import api from "../../services/api";
+import { requestAllOffsetPages } from "../../services/paginatedLookup";
+import formatMetadataTimestamp from "../../utils/formatMetadataTimestamp";
+import { createLatestRequestGate } from "../../utils/latestRequestGate";
 
 const actionLabels = {
   CREATE: "Tạo mới",
@@ -24,6 +27,10 @@ const actionLabels = {
 };
 
 export default function AuditLogPage() {
+  const requestGate = useRef(null);
+  if (requestGate.current === null) {
+    requestGate.current = createLatestRequestGate();
+  }
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -32,27 +39,40 @@ export default function AuditLogPage() {
   const [success, setSuccess] = useState("");
 
   const load = useCallback(async () => {
+    const generation = requestGate.current.begin();
     setLoading(true);
     setError("");
     try {
-      const params = { limit: 500 };
+      const params = {};
       if (action) params.action = action;
       if (username.trim()) params.username = username.trim();
       if (success !== "") params.success = success;
-      const { data } = await api.get("/api/v1/audit-logs", { params });
-      setRows(data);
+      const data = await requestAllOffsetPages(
+        api,
+        "/api/v1/audit-logs",
+        100,
+        params,
+      );
+      if (requestGate.current.isCurrent(generation)) setRows(data);
     } catch (requestError) {
-      setError(requestError.response?.data?.detail || "Không thể tải nhật ký hoạt động.");
+      if (requestGate.current.isCurrent(generation)) {
+        setError(requestError.response?.data?.detail || "Không thể tải nhật ký hoạt động.");
+      }
     } finally {
-      setLoading(false);
+      if (requestGate.current.isCurrent(generation)) setLoading(false);
     }
   }, [action, success, username]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+    return () => requestGate.current.invalidate();
+  }, [load]);
 
   const columns = [
     { field: "id", headerName: "ID", width: 75 },
-    { field: "created_at", headerName: "Thời gian", width: 175, valueFormatter: (value) => new Date(value).toLocaleString("vi-VN") },
+    // created_at do SQLite func.now() sinh -> UTC-naive, phải diễn giải là
+    // UTC trước khi hiển thị theo giờ VN (xem utils/formatMetadataTimestamp.js).
+    { field: "created_at", headerName: "Thời gian", width: 175, valueFormatter: (value) => formatMetadataTimestamp(value) },
     { field: "username", headerName: "Tài khoản", minWidth: 140, flex: 1 },
     { field: "action", headerName: "Hành động", width: 135, renderCell: ({ value }) => <Chip size="small" label={actionLabels[value] || value} /> },
     { field: "resource", headerName: "Đối tượng", minWidth: 140, flex: 1 },

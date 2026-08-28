@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, Query, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
+from core.clock import business_today
 from database import get_db
 from schemas.report import TrafficReportResponse, RevenueReportResponse
 from services.report_service import TrafficService, RevenueService
@@ -27,7 +28,15 @@ router = APIRouter(
 )
 def get_traffic_report_endpoint(
     db: Annotated[Session, Depends(get_db)],
-    current_user: Annotated[User, Depends(get_current_user)]
+    current_user: Annotated[User, Depends(get_current_user)],
+    period: Literal["day", "week", "month", "year"] = Query(
+        "day",
+        description="Khoảng thời gian thống kê: day, week, month hoặc year",
+    ),
+    anchor_date: date | None = Query(
+        None,
+        description="Ngày neo kỳ báo cáo theo Asia/Ho_Chi_Minh",
+    ),
 ):
     """
     API trả về dữ liệu lưu lượng xe ra vào bãi đỗ dưới định dạng JSON chuẩn:
@@ -37,7 +46,9 @@ def get_traffic_report_endpoint(
     - Lưu lượng theo từng tháng.
     """
     service = TrafficService(db)
-    return service.get_traffic_report()
+    return service.get_traffic_report(
+        filter_type=period, anchor_date=anchor_date
+    )
 
 
 @router.get(
@@ -52,7 +63,11 @@ def get_revenue_report_endpoint(
         description="Khoảng thời gian thống kê: day (ngày), week (tuần), month (tháng), year (năm)"
     ),
     db: Annotated[Session, Depends(get_db)] = None,
-    current_user: Annotated[User, Depends(get_current_user)] = None
+    current_user: Annotated[User, Depends(get_current_user)] = None,
+    anchor_date: date | None = Query(
+        None,
+        description="Ngày neo kỳ báo cáo theo Asia/Ho_Chi_Minh",
+    )
 ):
     """
     API báo cáo doanh thu hệ thống bãi đỗ xe:
@@ -62,7 +77,9 @@ def get_revenue_report_endpoint(
     - **Loại xe nhiều nhất**: Tên loại phương tiện chiếm tỷ trọng lượt gửi lớn nhất.
     """
     service = RevenueService(db)
-    return service.get_revenue_report(filter_type=period)
+    return service.get_revenue_report(
+        filter_type=period, anchor_date=anchor_date
+    )
 
 
 @router.get(
@@ -74,14 +91,21 @@ def export_report_endpoint(
     period: Literal["day", "week", "month", "year"] = Query("week"),
     db: Annotated[Session, Depends(get_db)] = None,
     current_user: Annotated[User, Depends(get_current_user)] = None,
+    anchor_date: date | None = Query(
+        None,
+        description="Ngày neo kỳ báo cáo theo Asia/Ho_Chi_Minh",
+    ),
 ):
     service = ReportExportService(db)
-    filename = f"parking-report-{period}-{date.today().isoformat()}.{file_format}"
+    resolved_anchor = anchor_date or business_today()
+    filename = (
+        f"parking-report-{period}-{resolved_anchor.isoformat()}.{file_format}"
+    )
     if file_format == "xlsx":
-        content = service.build_excel(period)
+        content = service.build_excel(period, anchor_date=resolved_anchor)
         media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     else:
-        content = service.build_pdf(period)
+        content = service.build_pdf(period, anchor_date=resolved_anchor)
         media_type = "application/pdf"
 
     return StreamingResponse(

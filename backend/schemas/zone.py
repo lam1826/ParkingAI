@@ -1,11 +1,11 @@
 import unicodedata
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictInt, field_validator, model_validator
 from typing import Any, Optional
 
 class ZoneBase(BaseModel):
     name: str = Field(..., min_length=1, max_length=50)
-    capacity: int = Field(..., ge=0, description="Sức chứa tối đa của khu vực")
+    capacity: StrictInt = Field(..., ge=0, description="Sức chứa tối đa của khu vực")
     is_active: bool = True
 
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
@@ -20,7 +20,7 @@ class ZoneCreate(ZoneBase):
 
 class ZoneUpdate(BaseModel):
     name: Optional[str] = Field(default=None, min_length=1, max_length=50)
-    capacity: Optional[int] = Field(default=None, ge=0)
+    capacity: Optional[StrictInt] = Field(default=None, ge=0)
     is_active: Optional[bool] = None
 
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)

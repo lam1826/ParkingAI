@@ -1,9 +1,11 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+import json
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
 from typing import List, Dict, Any
 from datetime import date
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from database import get_db
 from core.config import settings
@@ -24,30 +26,124 @@ router = APIRouter(
     dependencies=[Depends(RoleChecker("staff"))],
 )
 
+MAX_AI_QUESTION_CHARS = 1_000
+MAX_CUSTOM_COLLECTION_ITEMS = 100
+MAX_WEEKLY_ITEMS = 7
+MAX_HOURLY_ITEMS = 24
+MAX_CUSTOM_JSON_BYTES = 32 * 1024
+
+
+def _validate_custom_payload(
+    value: Any,
+    *,
+    field_name: str,
+    top_level_limit: int,
+) -> Any:
+    """Bound user-supplied context before aggregation or provider setup.
+
+    HTTP JSON can contain small top-level collections with a very large nested
+    value.  Therefore both every nested collection's item count and the UTF-8
+    serialized size are bounded.
+    """
+    if value is None:
+        return value
+    if len(value) > top_level_limit:
+        raise ValueError(
+            f"{field_name} chỉ được chứa tối đa {top_level_limit} phần tử"
+        )
+
+    pending = list(value.values()) if isinstance(value, dict) else list(value)
+    while pending:
+        item = pending.pop()
+        if isinstance(item, dict):
+            if len(item) > MAX_CUSTOM_COLLECTION_ITEMS:
+                raise ValueError(
+                    f"Mỗi object trong {field_name} chỉ được chứa tối đa "
+                    f"{MAX_CUSTOM_COLLECTION_ITEMS} phần tử"
+                )
+            pending.extend(item.values())
+        elif isinstance(item, list):
+            if len(item) > MAX_CUSTOM_COLLECTION_ITEMS:
+                raise ValueError(
+                    f"Mỗi danh sách trong {field_name} chỉ được chứa tối đa "
+                    f"{MAX_CUSTOM_COLLECTION_ITEMS} phần tử"
+                )
+            pending.extend(item)
+
+    try:
+        encoded_size = len(
+            json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        )
+    except (TypeError, ValueError, RecursionError) as exc:
+        raise ValueError(f"{field_name} không phải dữ liệu JSON hợp lệ") from exc
+    if encoded_size > MAX_CUSTOM_JSON_BYTES:
+        raise ValueError(
+            f"{field_name} vượt giới hạn {MAX_CUSTOM_JSON_BYTES} byte"
+        )
+    return value
+
 # ==========================================
 # SCHEMAS DÀNH RIÊNG CHO REQUEST BODY
 # ==========================================
 class DailyReportRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     target_date: date
     # Bỏ trống -> backend tự tổng hợp từ database (luồng chuẩn).
     # Nếu client gửi thì không được gửi dict rỗng.
     parking_stats: Optional[Dict[str, Any]] = Field(default=None, min_length=1)
 
+    @field_validator("parking_stats")
+    @classmethod
+    def validate_parking_stats(cls, value):
+        return _validate_custom_payload(
+            value,
+            field_name="parking_stats",
+            top_level_limit=MAX_CUSTOM_COLLECTION_ITEMS,
+        )
+
 class WeeklyReportRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     start_date: date
     end_date: date
     # Bỏ trống -> backend tự tổng hợp theo từng ngày trong khoảng đã chọn.
     weekly_data: Optional[List[Dict[str, Any]]] = Field(default=None, min_length=1)
 
+    @field_validator("weekly_data")
+    @classmethod
+    def validate_weekly_data(cls, value):
+        return _validate_custom_payload(
+            value,
+            field_name="weekly_data",
+            top_level_limit=MAX_WEEKLY_ITEMS,
+        )
+
     @model_validator(mode="after")
     def validate_date_range(self):
-        if self.end_date < self.start_date:
-            raise ValueError("Ngày kết thúc phải từ ngày bắt đầu trở đi")
+        if (self.end_date - self.start_date).days != 6:
+            raise ValueError("Báo cáo tuần phải bao gồm đúng 7 ngày liên tiếp")
         return self
 
 class QuestionRequest(BaseModel):
-    question: str = Field(..., min_length=1, description="Câu hỏi của người dùng")
+    model_config = ConfigDict(extra="forbid")
+
+    question: str = Field(
+        ...,
+        min_length=1,
+        max_length=MAX_AI_QUESTION_CHARS,
+        description="Câu hỏi của người dùng",
+    )
     parking_stats: Dict[str, Any] = Field(min_length=1)
+
+    @field_validator("parking_stats")
+    @classmethod
+    def validate_parking_stats(cls, value):
+        return _validate_custom_payload(
+            value,
+            field_name="parking_stats",
+            top_level_limit=MAX_CUSTOM_COLLECTION_ITEMS,
+        )
 
     @field_validator("question")
     @classmethod
@@ -58,9 +154,12 @@ class QuestionRequest(BaseModel):
         return value
 
 class DashboardQuestionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     question: str = Field(
         ...,
         min_length=1,
+        max_length=MAX_AI_QUESTION_CHARS,
         description="Câu hỏi của người dùng về tình trạng bãi đỗ xe",
         json_schema_extra={"example": "Hôm nay bãi đỗ xe kiếm được bao nhiêu tiền?"}
     )
@@ -77,9 +176,20 @@ class DashboardQuestionRequest(BaseModel):
 class StaffSuggestionRequest(BaseModel):
     """Input: Lưu lượng, doanh thu, tỷ lệ lấp đầy.
     Bỏ trống toàn bộ -> backend tự tổng hợp từ database."""
+    model_config = ConfigDict(extra="forbid")
+
     hourly_traffic: Optional[List[Dict[str, Any]]] = Field(default=None, min_length=1, description="Dữ liệu lưu lượng xe ra vào theo giờ")
     revenue: Optional[float] = Field(default=None, ge=0, description="Tổng doanh thu dự kiến hoặc hiện tại")
     occupancy_rate: Optional[float] = Field(default=None, ge=0, le=100, description="Tỷ lệ lấp đầy bãi đỗ xe từ 0 đến 100%")
+
+    @field_validator("hourly_traffic")
+    @classmethod
+    def validate_hourly_traffic(cls, value):
+        return _validate_custom_payload(
+            value,
+            field_name="hourly_traffic",
+            top_level_limit=MAX_HOURLY_ITEMS,
+        )
 
 
 # ==========================================
@@ -196,7 +306,9 @@ def suggest_staff(
     if hourly_traffic is None or revenue is None or occupancy_rate is None:
         dashboard_data = ParkingService(db).get_dashboard_data()
         if hourly_traffic is None:
-            traffic = ReportService(db).get_traffic_report()
+            # Gợi ý nhân sự dựa trên Dashboard hiện tại nên dùng lưu lượng
+            # hôm nay, không được âm thầm cộng dữ liệu all-time.
+            traffic = ReportService(db).get_traffic_report("day")
             hourly_traffic = traffic.get("traffic_by_hour") or []
         if revenue is None:
             revenue = dashboard_data["total_revenue_today"]
@@ -221,8 +333,8 @@ def suggest_staff(
 # ==========================================
 @router.get("/reports", response_model=List[ai_report_schema.AiReportResponse])
 def read_ai_reports(
-    skip: int = 0, 
-    limit: int = 100, 
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=100, ge=1, le=100),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
