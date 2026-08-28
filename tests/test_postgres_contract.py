@@ -114,6 +114,8 @@ def test_delivery_waits_for_release_propagation_and_reports_cors_failure():
     assert "::error::Release verification failed" in workflow
     assert "::error::CORS verification failed" in workflow
     assert "Release verified:" in workflow
+    assert "parkingai-cors-normalized.txt" in workflow
+    assert "tr -d '\\r'" in workflow
 
 
 def test_fly_config_runs_migrations_and_keeps_one_machine_warm():
