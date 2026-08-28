@@ -20,13 +20,42 @@ SQLALCHEMY_DATABASE_URL = os.getenv(
 # toàn read-only. `db_rollout.initialize_database()` chịu trách nhiệm tạo thư
 # mục đích khi quản trị viên chạy migration tường minh.
 
+def create_database_engine(database_url: str):
+    """Build the SQLAlchemy adapter without leaking dialect options.
+
+    SQLite needs ``check_same_thread=False`` for FastAPI. PostgreSQL rejects
+    that argument, and benefits from pre-ping so a managed database failover
+    does not leave stale pooled connections in a long-running container.
+    """
+    if database_url.startswith("postgresql://"):
+        # SQLAlchemy otherwise defaults to the psycopg2 driver, while this
+        # project deliberately ships psycopg 3 only.
+        database_url = database_url.replace(
+            "postgresql://", "postgresql+psycopg://", 1
+        )
+
+    options = {"echo": False, "pool_pre_ping": True}
+    if database_url.startswith("sqlite"):
+        options["connect_args"] = {"check_same_thread": False}
+    elif database_url.startswith("postgresql+psycopg://"):
+        try:
+            pool_size = int(os.getenv("DB_POOL_SIZE", "5"))
+            max_overflow = int(os.getenv("DB_MAX_OVERFLOW", "5"))
+            pool_recycle = int(os.getenv("DB_POOL_RECYCLE_SECONDS", "1800"))
+        except ValueError as exc:
+            raise RuntimeError("PostgreSQL pool settings must be integers") from exc
+        if pool_size < 1 or max_overflow < 0 or pool_recycle < 1:
+            raise RuntimeError("PostgreSQL pool settings are outside safe bounds")
+        options.update(
+            pool_size=pool_size,
+            max_overflow=max_overflow,
+            pool_recycle=pool_recycle,
+        )
+    return create_engine(database_url, **options)
+
+
 # 2. Tạo Engine
-# check_same_thread=False là bắt buộc khi dùng SQLite với FastAPI
-engine = create_engine(
-    SQLALCHEMY_DATABASE_URL,
-    connect_args={"check_same_thread": False},
-    echo=False  # Đặt thành True nếu bạn muốn log toàn bộ câu lệnh SQL ra console để debug
-)
+engine = create_database_engine(SQLALCHEMY_DATABASE_URL)
 
 
 # SQLite mặc định KHÔNG thực thi ràng buộc khóa ngoại -> bật cho mọi connection
@@ -680,6 +709,7 @@ SESSION_COMPLETED_BILLING_IMMUTABLE_TRIGGER_SQL = (
 
 UQ_CUSTOMERS_PHONE_NORMALIZED = "uq_customers_phone_normalized"
 UQ_ROLES_NAME = "uq_roles_name"
+UQ_VEHICLE_TYPES_NAME_NORMALIZED = "uq_vehicle_types_name_normalized"
 
 TRG_ZONES_OPERATIONAL_UPDATE_GUARD = "trg_zones_operational_update_guard"
 TRG_PARKING_SLOTS_OPERATIONAL_UPDATE_GUARD = (
@@ -775,6 +805,29 @@ def run_sqlite_migrations(target_engine=engine) -> None:
             conn.exec_driver_sql(
                 f"CREATE UNIQUE INDEX IF NOT EXISTS {UQ_ROLES_NAME} "
                 "ON roles(name)"
+            )
+
+        # --- vehicle_types: tên nghiệp vụ duy nhất sau NFC/casefold/trim ---
+        vehicle_type_columns = {
+            row[1]
+            for row in conn.exec_driver_sql("PRAGMA table_info(vehicle_types)")
+        }
+        if vehicle_type_columns:
+            duplicate_vehicle_types = conn.exec_driver_sql(
+                "SELECT unicode_casefold(name), group_concat(id), COUNT(*) "
+                "FROM vehicle_types GROUP BY unicode_casefold(name) "
+                "HAVING COUNT(*) > 1"
+            ).fetchall()
+            if duplicate_vehicle_types:
+                raise RuntimeError(
+                    "Không thể tạo unique index cho vehicle_types vì tên loại "
+                    "xe bị trùng sau chuẩn hóa: "
+                    f"{duplicate_vehicle_types}. Cần đổi tên thủ công rồi migration lại."
+                )
+            conn.exec_driver_sql(
+                f"CREATE UNIQUE INDEX IF NOT EXISTS "
+                f"{UQ_VEHICLE_TYPES_NAME_NORMALIZED} "
+                "ON vehicle_types(unicode_casefold(name))"
             )
 
         # --- monthly_passes: cột pass_code/price + unique index ---

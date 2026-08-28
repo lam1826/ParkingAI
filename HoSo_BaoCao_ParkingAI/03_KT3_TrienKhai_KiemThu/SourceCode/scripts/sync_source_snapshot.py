@@ -22,7 +22,15 @@ SNAPSHOT = (
     / "SourceCode"
 )
 SNAPSHOT_PREFIX = SNAPSHOT.relative_to(ROOT).as_posix() + "/"
-ALLOWED_TOP_LEVEL = {".github", "backend", "docs", "frontend", "scripts", "tests"}
+ALLOWED_TOP_LEVEL = {
+    ".github",
+    "backend",
+    "deploy",
+    "docs",
+    "frontend",
+    "scripts",
+    "tests",
+}
 ALLOWED_ROOT_FILES = {"README.md", "package.json", "package-lock.json", "pytest.ini"}
 EXCLUDED_PARTS = {
     ".git",
@@ -45,6 +53,7 @@ SAFE_UNTRACKED_SUFFIXES = {
     ".js",
     ".jsx",
     ".md",
+    ".mjs",
     ".ps1",
     ".py",
     ".rst",
@@ -54,11 +63,25 @@ SAFE_UNTRACKED_SUFFIXES = {
     ".ts",
     ".tsx",
 }
+SAFE_UNTRACKED_PATHS = {
+    Path(".github/dependabot.yml"),
+    Path(".github/workflows/delivery.yml"),
+    Path("backend/.dockerignore"),
+    Path("backend/Dockerfile"),
+    Path("backend/alembic.ini"),
+    Path("backend/alembic/script.py.mako"),
+    Path("deploy/.env.production.example"),
+    Path("deploy/Caddyfile.blue"),
+    Path("deploy/Caddyfile.green"),
+    Path("deploy/compose.blue-green.yml"),
+    Path("frontend/public/_headers"),
+    Path("frontend/public/_redirects"),
+}
 
 
 def _is_sensitive_path(relative: Path) -> bool:
     name = relative.name.lower()
-    if name == ".env.example":
+    if name in {".env.example", ".env.production.example"}:
         return False
     if name == ".env" or name.startswith(".env."):
         return True
@@ -84,7 +107,11 @@ def _is_allowed_candidate(relative: Path, *, is_tracked: bool) -> bool:
             return False
     elif relative.parts[0] not in ALLOWED_TOP_LEVEL:
         return False
-    return is_tracked or relative.suffix.lower() in SAFE_UNTRACKED_SUFFIXES
+    return (
+        is_tracked
+        or relative in SAFE_UNTRACKED_PATHS
+        or relative.suffix.lower() in SAFE_UNTRACKED_SUFFIXES
+    )
 
 
 def _git_paths(*arguments: str) -> set[Path]:

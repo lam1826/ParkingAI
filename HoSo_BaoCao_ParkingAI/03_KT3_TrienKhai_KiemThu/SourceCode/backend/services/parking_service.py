@@ -1,3 +1,4 @@
+import logging
 import math
 from datetime import datetime, timedelta
 from typing import Optional, Any, Dict
@@ -5,10 +6,12 @@ from typing import Optional, Any, Dict
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy import asc, desc, extract, func, select
-from sqlalchemy.exc import IntegrityError, SQLAlchemyError
+from sqlalchemy.exc import DBAPIError, IntegrityError, SQLAlchemyError
 
 from core.clock import business_today, day_bounds
+from core.errors import internal_server_error
 from core.money import MAX_EXACT_VND, sum_exact_vnd
+from core.sql_time import day_bucket
 from crud import parking_session as crud_parking_session
 from crud.parking_session import claim_parking_slot, map_check_in_integrity_error
 
@@ -20,6 +23,9 @@ from models.monthly_pass import MonthlyPass
 from models.price_config import PriceConfig
 from models.zone import Zone
 from models.user import User
+
+
+logger = logging.getLogger(__name__)
 
 
 class ParkingService:
@@ -60,10 +66,12 @@ class ParkingService:
             return self.db.execute(stmt.limit(1)).scalar_one_or_none()
 
         except SQLAlchemyError as db_err:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Lỗi cơ sở dữ liệu khi tìm chỗ đỗ: {db_err}"
-            )
+            raise internal_server_error(
+                logger,
+                event="Available-slot query failed",
+                public_detail="Không thể truy vấn vị trí đỗ do lỗi hệ thống.",
+                error=db_err,
+            ) from db_err
 
     # ==========================================================
     # TÍNH PHÍ
@@ -161,10 +169,12 @@ class ParkingService:
             raise
 
         except SQLAlchemyError as db_err:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Lỗi truy vấn bảng giá: {db_err}"
-            )
+            raise internal_server_error(
+                logger,
+                event="Price lookup failed",
+                public_detail="Không thể truy vấn bảng giá do lỗi hệ thống.",
+                error=db_err,
+            ) from db_err
 
     # ==========================================================
     # CHECK IN
@@ -369,7 +379,7 @@ class ParkingService:
             self.db.rollback()
             raise
 
-        except IntegrityError as db_err:
+        except DBAPIError as db_err:
             # Rollback trả lại slot vừa claim (cùng transaction với INSERT).
             self.db.rollback()
             conflict_message = map_check_in_integrity_error(db_err)
@@ -622,10 +632,12 @@ class ParkingService:
             return result
 
         except SQLAlchemyError as db_err:
-            raise HTTPException(
-                status_code=500,
-                detail=f"Lỗi thống kê: {db_err}"
-            )
+            raise internal_server_error(
+                logger,
+                event="Parking statistics query failed",
+                public_detail="Không thể tổng hợp thống kê do lỗi hệ thống.",
+                error=db_err,
+            ) from db_err
 
     # ==========================================================
     # TỔNG HỢP THEO TỪNG NGÀY (phục vụ báo cáo tuần của AI)
@@ -642,7 +654,7 @@ class ParkingService:
 
             entries_stmt = (
                 select(
-                    func.strftime("%Y-%m-%d", ParkingSession.check_in_time).label("day"),
+                    day_bucket(ParkingSession.check_in_time).label("day"),
                     func.count(ParkingSession.id).label("entries"),
                 )
                 .where(
@@ -655,7 +667,7 @@ class ParkingService:
 
             exits_stmt = (
                 select(
-                    func.strftime("%Y-%m-%d", ParkingSession.check_out_time).label("day"),
+                    day_bucket(ParkingSession.check_out_time).label("day"),
                     ParkingSession.parking_fee,
                 )
                 .where(
@@ -695,10 +707,12 @@ class ParkingService:
             return summaries
 
         except SQLAlchemyError as db_err:
-            raise HTTPException(
-                status_code=500,
-                detail=f"Lỗi tổng hợp dữ liệu theo ngày: {db_err}"
-            )
+            raise internal_server_error(
+                logger,
+                event="Daily summary query failed",
+                public_detail="Không thể tổng hợp dữ liệu ngày do lỗi hệ thống.",
+                error=db_err,
+            ) from db_err
 
     # ==========================================================
     # THỐNG KÊ CHỖ ĐỖ TRỐNG THEO KHU VỰC
@@ -790,10 +804,12 @@ class ParkingService:
             }
 
         except SQLAlchemyError as db_err:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Lỗi cơ sở dữ liệu khi truy vấn trạng thái chỗ đỗ: {db_err}"
-            )
+            raise internal_server_error(
+                logger,
+                event="Parking availability query failed",
+                public_detail="Không thể truy vấn trạng thái chỗ đỗ do lỗi hệ thống.",
+                error=db_err,
+            ) from db_err
 
     # ==========================================================
     # TÌM KIẾM LỊCH SỬ GỬI XE
@@ -916,6 +932,15 @@ class ParkingService:
                     "zone_name": zone_name,
                     "check_in_time": session.check_in_time,
                     "check_out_time": session.check_out_time,
+                    "duration_minutes": (
+                        int(
+                            (session.check_out_time - session.check_in_time)
+                            .total_seconds()
+                            / 60
+                        )
+                        if session.check_out_time is not None
+                        else None
+                    ),
                     "parking_fee": session.parking_fee or 0,
                     "status": session.status,
                     "handled_by_staff": staff_info
@@ -929,10 +954,12 @@ class ParkingService:
             }
 
         except SQLAlchemyError as db_err:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Lỗi cơ sở dữ liệu khi tìm kiếm lịch sử: {db_err}"
-            )
+            raise internal_server_error(
+                logger,
+                event="Parking history search failed",
+                public_detail="Không thể tìm kiếm lịch sử gửi xe do lỗi hệ thống.",
+                error=db_err,
+            ) from db_err
 
     # ==========================================================
     # DASHBOARD
@@ -1081,10 +1108,12 @@ class ParkingService:
             }
 
         except SQLAlchemyError as db_err:
-            raise HTTPException(
-                status_code=500,
-                detail=f"Lỗi khi tổng hợp gợi ý vận hành: {db_err}"
-            )
+            raise internal_server_error(
+                logger,
+                event="Operational insight aggregation failed",
+                public_detail="Không thể tổng hợp gợi ý vận hành do lỗi hệ thống.",
+                error=db_err,
+            ) from db_err
 
     def get_recent_sessions(self, limit: int = 10) -> list:
         """
@@ -1118,10 +1147,12 @@ class ParkingService:
                 for r in rows
             ]
         except SQLAlchemyError as db_err:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Lỗi cơ sở dữ liệu khi lấy phiên gửi xe gần đây: {db_err}"
-            )
+            raise internal_server_error(
+                logger,
+                event="Recent parking sessions query failed",
+                public_detail="Không thể lấy phiên gửi xe gần đây do lỗi hệ thống.",
+                error=db_err,
+            ) from db_err
 
     def get_revenue_last_7_days(self) -> list:
         """
@@ -1135,7 +1166,7 @@ class ParkingService:
 
             stmt = (
                 select(
-                    func.strftime("%Y-%m-%d", ParkingSession.check_out_time).label("day"),
+                    day_bucket(ParkingSession.check_out_time).label("day"),
                     ParkingSession.parking_fee,
                 )
                 .where(
@@ -1162,7 +1193,9 @@ class ParkingService:
                 result.append({"day": d.strftime("%d/%m"), "revenue": rows.get(key, 0)})
             return result
         except SQLAlchemyError as db_err:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Lỗi cơ sở dữ liệu khi lấy doanh thu 7 ngày: {db_err}"
-            )
+            raise internal_server_error(
+                logger,
+                event="Seven-day revenue query failed",
+                public_detail="Không thể lấy doanh thu 7 ngày do lỗi hệ thống.",
+                error=db_err,
+            ) from db_err

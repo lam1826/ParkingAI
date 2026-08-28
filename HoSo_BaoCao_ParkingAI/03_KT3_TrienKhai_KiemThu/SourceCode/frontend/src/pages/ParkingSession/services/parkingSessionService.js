@@ -3,7 +3,7 @@ import { requestSessionCheckout } from "./parkingSessionCheckout";
 import { requestParkingSessionSearch } from "./parkingSessionSearch";
 
 const parkingSessionService = {
-  // Tra cứu lịch sử gửi xe: status = "active" | "completed" | "" (tất cả)
+  // Tra cứu lịch sử: status = "active" | "completed" | "cancelled" | ""
   getAllSessions: async (filters = {}) => requestParkingSessionSearch(api, filters),
   // Danh sách vị trí trống theo khu vực (phục vụ chọn chỗ khi check-in)
   getAvailableSlots: async () => (await api.get("/parking/available-slots")).data,

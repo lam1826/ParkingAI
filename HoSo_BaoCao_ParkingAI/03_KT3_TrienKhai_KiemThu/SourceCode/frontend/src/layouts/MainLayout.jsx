@@ -1,5 +1,6 @@
 import { useState, useContext } from "react";
 import { Outlet, useNavigate, useLocation } from "react-router-dom";
+import { hasMinimumRole } from "../constants/roles";
 import {
   Box,
   Drawer,
@@ -145,8 +146,7 @@ export default function MainLayout() {
               <List>
                 {menuItems.map((item) => {
                   // Ẩn menu nếu có yêu cầu role mà user không thỏa mãn (ví dụ giả lập)
-                  const roleLevel = { customer: 0, staff: 1, manager: 2, admin: 3 };
-                  if (item.role && (roleLevel[String(user?.role).toLowerCase()] || 0) < roleLevel[item.role]) return null;
+                  if (item.role && !hasMinimumRole(user?.role, item.role)) return null;
 
                   const isSelected = location.pathname === item.path || (location.pathname.startsWith(item.path) && item.path !== '/');
 

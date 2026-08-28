@@ -75,7 +75,7 @@ export default function SettingPage() {
 
         <Card sx={{ borderRadius: 3 }}>
           <CardContent sx={{ p: { xs: 3, sm: 4 } }}>
-            <Stack direction="row" spacing={1.5} alignItems="center" sx={{ mb: 3 }}>
+            <Stack direction="row" spacing={1.5} sx={{ alignItems: "center", mb: 3 }}>
               <LockIcon color="primary" />
               <Box>
                 <Typography variant="h6" fontWeight={700}>Đổi mật khẩu</Typography>

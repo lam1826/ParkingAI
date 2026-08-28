@@ -10,6 +10,12 @@ def test_snapshot_candidate_policy_allows_source_but_blocks_local_secrets() -> N
         is_tracked=False,
     )
     assert _is_allowed_candidate(Path("backend/.env.example"), is_tracked=True)
+    assert _is_allowed_candidate(
+        Path(".github/workflows/delivery.yml"), is_tracked=False
+    )
+    assert _is_allowed_candidate(
+        Path("deploy/compose.blue-green.yml"), is_tracked=False
+    )
 
     blocked = (
         "frontend/.env",

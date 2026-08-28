@@ -13,6 +13,11 @@ from models.vehicle import Vehicle
 from services.parking_service import ParkingService
 
 
+def _sqlite_datetime(value: datetime.datetime) -> str:
+    """Representation canonical của SQLAlchemy SQLite DATETIME."""
+    return value.strftime("%Y-%m-%d %H:%M:%S.%f")
+
+
 def _monthly_pass(db_session, vehicle, customer, start_date, end_date):
     monthly_pass = MonthlyPass(
         customer_id=customer.id,
@@ -228,7 +233,9 @@ def test_db_keeps_session_identity_immutable_after_insert(
         db_session.commit()
         replacement = other_vehicle.id
     elif replacement == "later":
-        replacement = parking_session.check_in_time + datetime.timedelta(minutes=1)
+        replacement = _sqlite_datetime(
+            parking_session.check_in_time + datetime.timedelta(minutes=1)
+        )
     elif replacement == "other_staff":
         # A non-existing FK is enough: the identity trigger must fire first.
         replacement = 999_999
@@ -294,7 +301,11 @@ def test_db_keeps_completed_billing_and_status_immutable(
             "check_out_time=:time, parking_fee=50000, staff_out_id=:staff "
             "WHERE id=:id"
         ),
-        {"time": completed_at, "staff": test_user.id, "id": parking_session.id},
+        {
+            "time": _sqlite_datetime(completed_at),
+            "staff": test_user.id,
+            "id": parking_session.id,
+        },
     )
     db_session.commit()
 

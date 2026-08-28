@@ -1,0 +1,76 @@
+name: ${COMPOSE_PROJECT_NAME:-parkingai}
+
+x-backend: &backend
+  env_file:
+    - ${PARKINGAI_STATE_DIR:?Set PARKINGAI_STATE_DIR}/.env.production
+  restart: unless-stopped
+  read_only: true
+  tmpfs:
+    - /tmp:size=64m,mode=1777
+  cap_drop:
+    - ALL
+  security_opt:
+    - no-new-privileges:true
+  networks:
+    - private
+  stop_grace_period: 30s
+  logging:
+    driver: json-file
+    options:
+      max-size: 10m
+      max-file: "5"
+
+services:
+  backend_blue:
+    <<: *backend
+    image: ${BACKEND_IMAGE_BLUE:?Set BACKEND_IMAGE_BLUE}
+    environment:
+      RELEASE_ID: ${BACKEND_IMAGE_BLUE}
+    container_name: ${COMPOSE_PROJECT_NAME:-parkingai}_backend_blue
+    labels:
+      parkingai.color: blue
+
+  backend_green:
+    <<: *backend
+    image: ${BACKEND_IMAGE_GREEN:?Set BACKEND_IMAGE_GREEN}
+    environment:
+      RELEASE_ID: ${BACKEND_IMAGE_GREEN}
+    container_name: ${COMPOSE_PROJECT_NAME:-parkingai}_backend_green
+    labels:
+      parkingai.color: green
+
+  caddy:
+    image: caddy:2.11.4-alpine
+    container_name: ${COMPOSE_PROJECT_NAME:-parkingai}_caddy
+    env_file:
+      - ${PARKINGAI_STATE_DIR:?Set PARKINGAI_STATE_DIR}/.env.production
+    restart: unless-stopped
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ${PARKINGAI_STATE_DIR:?Set PARKINGAI_STATE_DIR}/caddy:/etc/caddy:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - private
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "5"
+
+networks:
+  private:
+    driver: bridge
+
+volumes:
+  caddy_data:
+  caddy_config:

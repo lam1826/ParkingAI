@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 from typing import List
+from sqlalchemy.exc import IntegrityError
 
 from database import get_db
 from schemas import vehicle_type as vt_schema
@@ -30,9 +31,15 @@ def create_vehicle_type(vt_in: vt_schema.VehicleTypeCreate, db: Session = Depend
     """Tạo loại xe mới"""
     existing_vt = crud_vt.get_vehicle_type_by_name(db, name=vt_in.name)
     if existing_vt:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Vehicle Type name already exists")
-    
-    return crud_vt.create_vehicle_type(db=db, vt_in=vt_in)
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Tên loại xe đã tồn tại.")
+
+    try:
+        return crud_vt.create_vehicle_type(db=db, vt_in=vt_in)
+    except IntegrityError:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Tên loại xe đã tồn tại.",
+        )
 
 @router.put("/{id}", response_model=vt_schema.VehicleTypeResponse)
 def update_vehicle_type(id: int, vt_in: vt_schema.VehicleTypeUpdate, db: Session = Depends(get_db)):
@@ -40,8 +47,21 @@ def update_vehicle_type(id: int, vt_in: vt_schema.VehicleTypeUpdate, db: Session
     db_vt = crud_vt.get_vehicle_type(db, vt_id=id)
     if not db_vt:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vehicle Type not found")
-    
-    return crud_vt.update_vehicle_type(db=db, db_vt=db_vt, vt_in=vt_in)
+    if vt_in.name is not None:
+        conflict = crud_vt.get_vehicle_type_by_name(db, name=vt_in.name)
+        if conflict is not None and conflict.id != db_vt.id:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Tên loại xe đã tồn tại.",
+            )
+
+    try:
+        return crud_vt.update_vehicle_type(db=db, db_vt=db_vt, vt_in=vt_in)
+    except IntegrityError:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Tên loại xe đã tồn tại.",
+        )
 
 @router.delete("/{id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_vehicle_type(id: int, db: Session = Depends(get_db)):

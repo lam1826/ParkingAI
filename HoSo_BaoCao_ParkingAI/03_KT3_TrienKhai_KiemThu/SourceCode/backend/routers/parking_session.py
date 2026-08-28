@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy.exc import IntegrityError, SQLAlchemyError
+from sqlalchemy.exc import DBAPIError, SQLAlchemyError
 from sqlalchemy.orm import Session
 from typing import List
 
@@ -109,7 +109,7 @@ def check_in_vehicle(
             check_in_time=check_in_time,
             monthly_pass_id=monthly_pass_id,
         )
-    except IntegrityError as exc:
+    except DBAPIError as exc:
         db.rollback()  # trả lại slot vừa claim trong cùng transaction
         conflict_message = crud_session.map_check_in_integrity_error(exc)
         if conflict_message is not None:

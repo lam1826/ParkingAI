@@ -1,10 +1,11 @@
 import logging
+import os
 
 import uvicorn
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import DBAPIError, IntegrityError
 from routers import auth, dashboard, parking, ai_report, report
 
 # Import cấu hình database và toàn bộ Models
@@ -12,11 +13,13 @@ from routers import auth, dashboard, parking, ai_report, report
 from routers.api import api_router
 from core.config import settings
 from core.money import ExactVndRangeError
+from core.errors import is_known_database_business_conflict
 from database import engine
 from db_rollout import check_database_readiness
 from middleware.audit import AuditLogMiddleware
 
 logger = logging.getLogger(__name__)
+RELEASE_ID = os.getenv("RELEASE_ID", "development")
 
 # --- KHỞI TẠO APP & METADATA ---
 app = FastAPI(
@@ -63,6 +66,31 @@ async def integrity_error_handler(request: Request, exc: IntegrityError):
         },
     )
 
+
+@app.exception_handler(DBAPIError)
+async def database_error_handler(request: Request, exc: DBAPIError):
+    """Map known PostgreSQL trigger conflicts; hide every raw DB diagnostic."""
+    if is_known_database_business_conflict(exc):
+        return JSONResponse(
+            status_code=409,
+            content={
+                "detail": (
+                    "Dữ liệu vừa thay đổi hoặc đang được sử dụng bởi thao tác "
+                    "khác. Vui lòng tải lại và thử lại."
+                )
+            },
+        )
+    logger.error(
+        "Unhandled database error on %s %s",
+        request.method,
+        request.url.path,
+        exc_info=(type(exc), exc, exc.__traceback__),
+    )
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Không thể truy cập cơ sở dữ liệu do lỗi hệ thống."},
+    )
+
 # --- DATABASE LIFECYCLE ---
 # Import ASGI phải là thao tác read-only: không tự tạo bảng/migrate DB tại
 # module scope. Trước khi khởi động một môi trường mới, quản trị viên chạy
@@ -89,7 +117,8 @@ def home():
     return {
         "status": "success",
         "message": "Welcome to the Parking Management API!",
-        "version": "1.0.0"
+        "version": "1.0.0",
+        "release_id": RELEASE_ID,
     }
 
 

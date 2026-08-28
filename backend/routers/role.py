@@ -1,11 +1,13 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 from typing import List
 
 from database import get_db
 from schemas import role as role_schema
 from crud import role as crud_role
 from services.auth_service import RoleChecker
+from core.roles import CANONICAL_ROLE_NAMES
 
 router = APIRouter(
     # prefix="/roles",
@@ -37,9 +39,19 @@ def read_role(id: int, db: Session = Depends(get_db)):
     dependencies=[Depends(RoleChecker("admin"))],
 )
 def create_role(role_in: role_schema.RoleCreate, db: Session = Depends(get_db)):
-    """Tạo vai trò mới"""
-    # Bạn có thể thêm logic kiểm tra trùng lặp (ví dụ name) ở đây nếu cần
-    return crud_role.create_role(db=db, role_in=role_in)
+    """Khôi phục một vai trò chuẩn bị thiếu; không tạo role tùy ý."""
+    if crud_role.get_role_by_name(db, role_in.name):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Vai trò hệ thống đã tồn tại.",
+        )
+    try:
+        return crud_role.create_role(db=db, role_in=role_in)
+    except IntegrityError:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Vai trò hệ thống đã tồn tại.",
+        )
 
 @router.put(
     "/{id}",
@@ -51,6 +63,11 @@ def update_role(id: int, role_in: role_schema.RoleUpdate, db: Session = Depends(
     db_role = crud_role.get_role(db, role_id=id)
     if not db_role:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Role not found")
+    if role_in.name is not None and role_in.name != db_role.name:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Không thể đổi tên vai trò hệ thống vì tên này là một phần của contract phân quyền.",
+        )
     
     return crud_role.update_role(db=db, db_role=db_role, role_in=role_in)
 
@@ -64,6 +81,11 @@ def delete_role(id: int, db: Session = Depends(get_db)):
     db_role = crud_role.get_role(db, role_id=id)
     if not db_role:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Role not found")
+    if db_role.name in CANONICAL_ROLE_NAMES:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Không thể xóa vai trò hệ thống.",
+        )
     
     crud_role.delete_role(db=db, db_role=db_role)
     return None

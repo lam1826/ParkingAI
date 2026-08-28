@@ -38,6 +38,74 @@ def _other_vehicle_type(db: Session) -> VehicleType:
     return vehicle_type
 
 
+def test_vehicle_type_name_is_unique_after_unicode_normalization(
+    client: TestClient,
+    test_user: User,
+    vehicle_type: VehicleType,
+):
+    response = client.post(
+        "/api/v1/vehicle-types",
+        headers=_headers(test_user),
+        json={"name": "  Ô TÔ 4 CHỖ  ", "description": "Bản ghi trùng"},
+    )
+
+    assert response.status_code == 409
+    assert "đã tồn tại" in response.json()["detail"].lower()
+
+
+def test_vehicle_type_update_cannot_create_normalized_duplicate(
+    client: TestClient,
+    db_session: Session,
+    test_user: User,
+    vehicle_type: VehicleType,
+):
+    other = _other_vehicle_type(db_session)
+
+    response = client.put(
+        f"/api/v1/vehicle-types/{other.id}",
+        headers=_headers(test_user),
+        json={"name": " ô TÔ 4 CHỖ "},
+    )
+
+    assert response.status_code == 409
+    db_session.refresh(other)
+    assert other.name == "Xe máy"
+
+
+def test_vehicle_type_write_contract_rejects_unknown_and_null_fields(
+    client: TestClient,
+    test_user: User,
+    vehicle_type: VehicleType,
+):
+    headers = _headers(test_user)
+
+    unknown = client.post(
+        "/api/v1/vehicle-types",
+        headers=headers,
+        json={"name": "Xe tải", "bogus": True},
+    )
+    explicit_null = client.put(
+        f"/api/v1/vehicle-types/{vehicle_type.id}",
+        headers=headers,
+        json={"name": None},
+    )
+
+    assert unknown.status_code == 422
+    assert explicit_null.status_code == 422
+
+
+def test_database_rejects_normalized_duplicate_vehicle_type_name(
+    db_session: Session,
+    vehicle_type: VehicleType,
+):
+    db_session.add(VehicleType(name=" ô TÔ 4 CHỖ "))
+
+    with pytest.raises(IntegrityError):
+        db_session.commit()
+
+    db_session.rollback()
+
+
 def test_cannot_change_vehicle_type_while_vehicle_has_active_session(
     client: TestClient,
     db_session: Session,

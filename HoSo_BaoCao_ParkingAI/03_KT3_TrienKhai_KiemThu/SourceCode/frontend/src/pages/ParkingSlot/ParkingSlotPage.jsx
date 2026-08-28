@@ -118,7 +118,14 @@ export default function ParkingSlotPage() {
 
   return (
     <Stack spacing={2.5}>
-      <Stack direction={{ xs: "column", sm: "row" }} justifyContent="space-between" alignItems={{ xs: "stretch", sm: "center" }} gap={2}>
+      <Stack
+        direction={{ xs: "column", sm: "row" }}
+        gap={2}
+        sx={{
+          justifyContent: "space-between",
+          alignItems: { xs: "stretch", sm: "center" },
+        }}
+      >
         <Box>
           <Typography variant="h5" fontWeight="bold">Quản lý vị trí đỗ</Typography>
           <Typography color="text.secondary">Theo dõi trực quan tình trạng từng vị trí theo khu vực.</Typography>
@@ -146,7 +153,11 @@ export default function ParkingSlotPage() {
           </Stack>
 
           <Paper sx={{ p: 2 }}>
-            <Stack direction={{ xs: "column", md: "row" }} spacing={2} alignItems={{ md: "center" }}>
+            <Stack
+              direction={{ xs: "column", md: "row" }}
+              spacing={2}
+              sx={{ alignItems: { md: "center" } }}
+            >
               <TextField select size="small" label="Khu vực" value={zoneFilter} onChange={(event) => setZoneFilter(event.target.value)} sx={{ minWidth: 180 }}>
                 <MenuItem value="all">Tất cả khu vực</MenuItem>
                 {zones.map((zone) => <MenuItem key={zone.id} value={zone.id}>{zone.name}</MenuItem>)}
@@ -172,7 +183,10 @@ export default function ParkingSlotPage() {
             <Alert severity="info">Không có vị trí phù hợp với bộ lọc.</Alert>
           ) : groupedSlots.map(({ zone, slots: zoneSlots }) => (
             <Paper key={zone?.id || "unknown"} sx={{ p: 2.5 }}>
-              <Stack direction={{ xs: "column", sm: "row" }} justifyContent="space-between" sx={{ mb: 2 }}>
+              <Stack
+                direction={{ xs: "column", sm: "row" }}
+                sx={{ justifyContent: "space-between", mb: 2 }}
+              >
                 <Typography variant="h6" fontWeight={700}>{zone?.name || "Chưa xác định khu vực"}</Typography>
                 <Typography color="text.secondary">
                   {zoneSlots.filter((slot) => slot.visualStatus === "available").length}/{zoneSlots.length} vị trí đang trống

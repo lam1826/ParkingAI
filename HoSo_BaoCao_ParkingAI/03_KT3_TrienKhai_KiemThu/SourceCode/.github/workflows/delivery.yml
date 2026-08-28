@@ -1,0 +1,253 @@
+name: Continuous Delivery
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      commit_sha:
+        description: Optional main commit to rebuild; defaults to current main
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: parkingai-continuous-delivery
+  cancel-in-progress: false
+
+env:
+  IMAGE_REPOSITORY: ghcr.io/lam1826/parkingai-backend
+
+jobs:
+  build-release:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_branch == 'main')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      commit_sha: ${{ steps.release.outputs.commit_sha }}
+      image: ${{ steps.release.outputs.image }}
+
+    steps:
+      - name: Resolve immutable release commit
+        id: resolve
+        env:
+          WORKFLOW_SHA: ${{ github.event.workflow_run.head_sha }}
+          MANUAL_SHA: ${{ inputs.commit_sha }}
+        run: |
+          sha="${WORKFLOW_SHA:-${MANUAL_SHA:-}}"
+          if [ -z "$sha" ]; then sha="${GITHUB_SHA}"; fi
+          if ! printf '%s' "$sha" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "Invalid release SHA" >&2
+            exit 1
+          fi
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout exact release source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.resolve.outputs.sha }}
+          fetch-depth: 0
+
+      - name: Require release commit to belong to main
+        env:
+          RELEASE_SHA: ${{ steps.resolve.outputs.sha }}
+        run: |
+          git fetch origin main --no-tags
+          git merge-base --is-ancestor "$RELEASE_SHA" origin/main
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Build immutable frontend artifact
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Upload frontend artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: parkingai-frontend-${{ steps.resolve.outputs.sha }}
+          path: frontend/dist
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and publish backend image
+        id: backend
+        uses: docker/build-push-action@v6
+        with:
+          context: backend
+          file: backend/Dockerfile
+          push: true
+          tags: ${{ env.IMAGE_REPOSITORY }}:${{ steps.resolve.outputs.sha }}
+          provenance: mode=max
+          sbom: true
+
+      - name: Publish immutable release coordinates
+        id: release
+        env:
+          RELEASE_SHA: ${{ steps.resolve.outputs.sha }}
+          IMAGE_DIGEST: ${{ steps.backend.outputs.digest }}
+        run: |
+          echo "commit_sha=$RELEASE_SHA" >> "$GITHUB_OUTPUT"
+          echo "image=${IMAGE_REPOSITORY}@${IMAGE_DIGEST}" >> "$GITHUB_OUTPUT"
+
+  deploy-staging:
+    if: vars.STAGING_DEPLOY_ENABLED == 'true'
+    needs: build-release
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: staging
+
+    steps:
+      - name: Checkout deployment controls
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.build-release.outputs.commit_sha }}
+
+      - name: Download immutable frontend artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: parkingai-frontend-${{ needs.build-release.outputs.commit_sha }}
+          path: frontend-dist
+
+      - name: Configure SSH trust
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/parkingai_deploy
+          chmod 600 ~/.ssh/parkingai_deploy
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Upload deployment controls
+        env:
+          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ vars.DEPLOY_PORT }}
+          DEPLOY_USER: ${{ vars.DEPLOY_USER }}
+          DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
+        run: |
+          ssh -i ~/.ssh/parkingai_deploy -p "$DEPLOY_PORT" \
+            "$DEPLOY_USER@$DEPLOY_HOST" "mkdir -p '$DEPLOY_PATH/control'"
+          rsync -az -e "ssh -i ~/.ssh/parkingai_deploy -p $DEPLOY_PORT" \
+            deploy/ "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/control/"
+
+      - name: Migrate and deploy staging backend blue-green
+        env:
+          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ vars.DEPLOY_PORT }}
+          DEPLOY_USER: ${{ vars.DEPLOY_USER }}
+          DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
+          RELEASE_IMAGE: ${{ needs.build-release.outputs.image }}
+        run: |
+          ssh -i ~/.ssh/parkingai_deploy -p "$DEPLOY_PORT" \
+            "$DEPLOY_USER@$DEPLOY_HOST" \
+            "PARKINGAI_STATE_DIR='$DEPLOY_PATH/state' sh '$DEPLOY_PATH/control/scripts/deploy.sh' '$RELEASE_IMAGE'"
+
+      - name: Write staging runtime API configuration
+        env:
+          PUBLIC_API_URL: ${{ vars.PUBLIC_API_URL }}
+        run: node frontend/scripts/write-runtime-config.mjs frontend-dist/config.js
+
+      - name: Deploy frontend to Cloudflare Pages staging branch
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: >-
+            pages deploy frontend-dist
+            --project-name=${{ vars.CLOUDFLARE_PAGES_PROJECT }}
+            --branch=${{ vars.CLOUDFLARE_PAGES_BRANCH }}
+
+  deploy-production:
+    if: vars.PRODUCTION_DEPLOY_ENABLED == 'true'
+    needs: [build-release, deploy-staging]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
+
+    steps:
+      - name: Checkout deployment controls
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.build-release.outputs.commit_sha }}
+
+      - name: Download the exact staging-tested frontend artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: parkingai-frontend-${{ needs.build-release.outputs.commit_sha }}
+          path: frontend-dist
+
+      - name: Configure SSH trust
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/parkingai_deploy
+          chmod 600 ~/.ssh/parkingai_deploy
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Upload deployment controls
+        env:
+          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ vars.DEPLOY_PORT }}
+          DEPLOY_USER: ${{ vars.DEPLOY_USER }}
+          DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
+        run: |
+          ssh -i ~/.ssh/parkingai_deploy -p "$DEPLOY_PORT" \
+            "$DEPLOY_USER@$DEPLOY_HOST" "mkdir -p '$DEPLOY_PATH/control'"
+          rsync -az -e "ssh -i ~/.ssh/parkingai_deploy -p $DEPLOY_PORT" \
+            deploy/ "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/control/"
+
+      - name: Migrate and deploy production backend blue-green
+        env:
+          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ vars.DEPLOY_PORT }}
+          DEPLOY_USER: ${{ vars.DEPLOY_USER }}
+          DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
+          RELEASE_IMAGE: ${{ needs.build-release.outputs.image }}
+        run: |
+          ssh -i ~/.ssh/parkingai_deploy -p "$DEPLOY_PORT" \
+            "$DEPLOY_USER@$DEPLOY_HOST" \
+            "PARKINGAI_STATE_DIR='$DEPLOY_PATH/state' sh '$DEPLOY_PATH/control/scripts/deploy.sh' '$RELEASE_IMAGE'"
+
+      - name: Write production runtime API configuration
+        env:
+          PUBLIC_API_URL: ${{ vars.PUBLIC_API_URL }}
+        run: node frontend/scripts/write-runtime-config.mjs frontend-dist/config.js
+
+      - name: Deploy frontend to Cloudflare Pages production branch
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: >-
+            pages deploy frontend-dist
+            --project-name=${{ vars.CLOUDFLARE_PAGES_PROJECT }}
+            --branch=${{ vars.CLOUDFLARE_PAGES_BRANCH }}

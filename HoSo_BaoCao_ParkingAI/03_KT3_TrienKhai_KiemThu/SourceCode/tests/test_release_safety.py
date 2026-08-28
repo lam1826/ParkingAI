@@ -234,6 +234,74 @@ def test_readiness_is_200_only_after_explicit_verified_rollout(
     assert response.json() == {"status": "ready"}
 
 
+def test_rollout_installs_normalized_vehicle_type_unique_index(
+    tmp_path: Path,
+) -> None:
+    """Legacy DB hợp lệ phải nhận backstop giống DB tạo mới từ metadata."""
+    from database import UQ_VEHICLE_TYPES_NAME_NORMALIZED
+    from db_rollout import initialize_database
+
+    database_path = tmp_path / "legacy-vehicle-types.db"
+    with sqlite3.connect(database_path) as connection:
+        connection.executescript(
+            """
+            CREATE TABLE vehicle_types (
+                id INTEGER PRIMARY KEY,
+                name VARCHAR(50) NOT NULL,
+                description VARCHAR(255),
+                is_active BOOLEAN NOT NULL DEFAULT 1,
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+            INSERT INTO vehicle_types(id, name, description, is_active)
+            VALUES (1, 'Ô tô', NULL, 1);
+            """
+        )
+    connection.close()
+
+    initialize_database(database_path)
+
+    with sqlite3.connect(database_path) as connection:
+        index_names = {
+            row[1] for row in connection.execute("PRAGMA index_list(vehicle_types)")
+        }
+    connection.close()
+    assert UQ_VEHICLE_TYPES_NAME_NORMALIZED in index_names
+
+
+def test_rollout_rejects_normalized_duplicate_vehicle_types_without_rewrite(
+    tmp_path: Path,
+) -> None:
+    """Không tự gộp/xóa dữ liệu legacy mơ hồ; target phải byte-identical."""
+    from db_rollout import initialize_database
+
+    database_path = tmp_path / "duplicate-vehicle-types.db"
+    with sqlite3.connect(database_path) as connection:
+        connection.executescript(
+            """
+            CREATE TABLE vehicle_types (
+                id INTEGER PRIMARY KEY,
+                name VARCHAR(50) NOT NULL,
+                description VARCHAR(255),
+                is_active BOOLEAN NOT NULL DEFAULT 1,
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+            INSERT INTO vehicle_types(id, name, description, is_active)
+            VALUES
+                (1, 'Ô tô', NULL, 1),
+                (2, '  ô TÔ  ', NULL, 1);
+            """
+        )
+    connection.close()
+    database_before = database_path.read_bytes()
+
+    with pytest.raises(RuntimeError, match="trùng sau chuẩn hóa"):
+        initialize_database(database_path)
+
+    assert database_path.read_bytes() == database_before
+
+
 def test_http_readiness_uses_lightweight_schema_probe() -> None:
     """Frequent unauthenticated probes must not run full integrity scans."""
     import main

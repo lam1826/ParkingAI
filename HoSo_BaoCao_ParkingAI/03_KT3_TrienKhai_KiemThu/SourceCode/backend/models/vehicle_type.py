@@ -1,8 +1,7 @@
 from typing import List, Optional
 from datetime import datetime
 
-from sqlalchemy import String, Boolean
-from sqlalchemy.sql import func
+from sqlalchemy import Boolean, Index, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from database import Base
@@ -16,6 +15,14 @@ class VehicleType(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        Index(
+            "uq_vehicle_types_name_normalized",
+            func.unicode_casefold(name),
+            unique=True,
+        ),
+    )
 
     # Quan hệ 1-N: Một loại xe có nhiều xe cụ thể (Vehicles)
     vehicles: Mapped[List["Vehicle"]] = relationship(back_populates="vehicle_type")

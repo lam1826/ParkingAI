@@ -67,7 +67,11 @@ export default function ProfilePage() {
 
         <Card sx={{ borderRadius: 3 }}>
           <CardContent sx={{ p: { xs: 3, sm: 4 } }}>
-            <Stack direction={{ xs: "column", sm: "row" }} spacing={3} alignItems={{ xs: "flex-start", sm: "center" }} sx={{ mb: 3 }}>
+            <Stack
+              direction={{ xs: "column", sm: "row" }}
+              spacing={3}
+              sx={{ alignItems: { xs: "flex-start", sm: "center" }, mb: 3 }}
+            >
               <Avatar sx={{ width: 72, height: 72, bgcolor: "primary.main" }}><PersonIcon fontSize="large" /></Avatar>
               <Box>
                 <Typography variant="h6" fontWeight={700}>{user?.full_name || user?.username}</Typography>

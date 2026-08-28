@@ -1,0 +1,16 @@
+.env
+.env.*
+database/
+*.db
+*.db-*
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+venv/
+.venv/
+tests/
+scratchpad/
+dist/
+build/

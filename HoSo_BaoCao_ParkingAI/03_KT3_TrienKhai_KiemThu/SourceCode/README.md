@@ -6,6 +6,8 @@ Hệ thống quản lý bãi đỗ xe dùng FastAPI, React, SQLite và Gemini. H
 
 - Đăng ký/đăng nhập JWT; vai trò `customer`, `staff`, `manager`, `admin`.
 - CRUD khu vực, vị trí đỗ, loại xe, phương tiện, khách hàng, vé tháng và bảng giá.
+  Tên loại xe được chuẩn hóa Unicode/hoa-thường và có unique index ở database, nên
+  các biến thể như `Ô tô`, ` ô TÔ ` không thể tạo thành hai bản ghi nghiệp vụ.
 - Check-in theo biển số: nhân viên chọn loại xe, khu vực và vị trí đỗ cụ thể (hoặc để hệ thống
   tự cấp phát); hệ thống kiểm tra vị trí tồn tại/còn trống/đúng loại xe và chặn một xe vào hai lần.
   **Mọi lượt vào — kể cả xe có vé tháng — đều bắt buộc phải có một bảng giá dự phòng đang
@@ -23,8 +25,8 @@ Hệ thống quản lý bãi đỗ xe dùng FastAPI, React, SQLite và Gemini. H
   occupied và không có billing dở dang. Cả hai endpoint check-out
   (`POST /parking/check-out` và `PUT /api/v1/parking-sessions/{id}/check-out`) dùng chung
   đúng vòng đời này.
-- Tra cứu lịch sử theo biển số, trạng thái (đang gửi/đã ra), thời gian, khu vực, loại xe;
-  thống kê chỗ trống theo khu vực.
+- Tra cứu lịch sử theo biển số, trạng thái (đang gửi/đã ra/đã hủy), thời gian, khu vực,
+  loại xe; hiển thị thời lượng đã gửi của phiên hoàn tất và thống kê chỗ trống theo khu vực.
 - Dashboard, báo cáo lưu lượng/doanh thu và khung giờ cao điểm.
 - Sơ đồ chỗ đỗ trực quan theo khu vực với trạng thái còn trống, đang có xe và bảo trì.
 - Xuất báo cáo tổng hợp ra tệp Excel (`.xlsx`) hoặc PDF.
@@ -44,7 +46,22 @@ Hệ thống quản lý bãi đỗ xe dùng FastAPI, React, SQLite và Gemini. H
   | AI tắt (`AI_ENABLED=false`) hoặc thiếu `GEMINI_API_KEY` | 503 |
 
   `HTTPException` do tầng trong ném ra được router/service re-raise nguyên trạng, không bị
-  nuốt thành 500.
+  nuốt thành 500. Các lỗi nội bộ ngoài dự kiến chỉ được ghi đầy đủ ở log máy chủ; response
+  công khai dùng thông báo chung, không ghép exception SQL/provider hoặc stack trace.
+
+## Ma trận phân quyền hiện hành
+
+Phân quyền được kiểm tra tại backend; ẩn menu ở frontend chỉ là lớp trải nghiệm bổ sung.
+
+| Vai trò | Quyền chính |
+| --- | --- |
+| `customer` | Đăng nhập và dùng các chức năng tài khoản được cấp; không truy cập màn hình vận hành/quản trị |
+| `staff` | Nghiệp vụ xe vào/ra, tra cứu phiên, dashboard, báo cáo, AI analytics và quản lý dữ liệu bãi được router cho phép |
+| `manager` | Kế thừa `staff`; quản lý tài khoản và xem nhật ký hoạt động |
+| `admin` | Toàn quyền quản trị tài khoản và mô tả vai trò; không được đổi tên/xóa bốn vai trò canonical |
+
+Bốn tên vai trò `customer`, `staff`, `manager`, `admin` là contract cố định giữa token,
+backend và frontend. API từ chối tên vai trò tùy ý để tránh tài khoản hợp lệ bị mất quyền.
 
 ## Cài đặt
 
@@ -127,5 +144,11 @@ semantics rollout SQLite (`os.link`, `os.replace`, URI và file locking). `verif
 SHA-256, kích thước, mtime và trạng thái sidecar của hai DB local trước/sau, rồi fail nếu test
 vô tình làm thay đổi bất kỳ file được bảo vệ nào.
 
+Thiết kế 3NF và ERD tự chứa nằm tại [docs/KT1_Database_Design.md](docs/KT1_Database_Design.md).
 Chi tiết kiến trúc, prompt và minh chứng dùng AI trong SDLC nằm tại [docs/AI_SDLC.md](docs/AI_SDLC.md).
 Checklist backup, UAT, rollout và rollback SQLite nằm tại [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
+
+Kiến trúc production (frontend Cloudflare CDN, hai backend container,
+PostgreSQL managed, GitHub Actions Continuous Delivery và Blue/Green) cùng
+runbook bootstrap/rollback nằm tại
+[docs/PRODUCTION_DEPLOYMENT.md](docs/PRODUCTION_DEPLOYMENT.md).

@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
 from sqlalchemy import select, and_, update
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import DBAPIError
 from datetime import datetime
 from core.clock import business_now
 from crud import price_config as crud_price_config
@@ -86,7 +86,7 @@ def claim_parking_slot(
     return result.rowcount == 1
 
 
-def map_check_in_integrity_error(exc: IntegrityError) -> str | None:
+def map_check_in_integrity_error(exc: DBAPIError) -> str | None:
     """Dịch đúng các DB backstop check-in đã biết thành thông báo 409.
 
     Mọi IntegrityError khác trả None để caller xử lý như lỗi hệ thống thay vì
@@ -97,9 +97,15 @@ def map_check_in_integrity_error(exc: IntegrityError) -> str | None:
     # "UNIQUE constraint failed: parking_sessions.vehicle_id"), không phải tên
     # index. Hai cột này chỉ có đúng hai unique index của bất biến check-in
     # nên mapping không nhầm với ràng buộc khác.
-    if "parking_sessions.vehicle_id" in message:
+    if (
+        "parking_sessions.vehicle_id" in message
+        or "uq_parking_session_one_active_per_vehicle" in message
+    ):
         return "Xe vừa được check-in ở một phiên khác. Vui lòng kiểm tra lại."
-    if "parking_sessions.parking_slot_id" in message:
+    if (
+        "parking_sessions.parking_slot_id" in message
+        or "uq_parking_session_one_active_per_slot" in message
+    ):
         return "Vị trí đỗ vừa được xe khác sử dụng. Vui lòng chọn vị trí khác."
     if "active parking session requires effective price config" in message:
         return (

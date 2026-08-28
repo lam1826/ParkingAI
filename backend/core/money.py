@@ -5,7 +5,14 @@ Keeping every API and database backstop within this range prevents silent
 rounding while old databases are being rolled forward.
 """
 
+from sqlalchemy import BigInteger, Integer
+
 MAX_EXACT_VND = 9_007_199_254_740_991
+
+# SQLite ``INTEGER`` is signed 64-bit while PostgreSQL ``INTEGER`` is only
+# signed 32-bit.  Keep the existing SQLite schema byte-compatible and use
+# BIGINT on PostgreSQL so both adapters can honour the public exact-VND range.
+VND_DATABASE_TYPE = BigInteger().with_variant(Integer(), "sqlite")
 
 
 class ExactVndRangeError(RuntimeError):
