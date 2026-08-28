@@ -37,6 +37,7 @@ import SmartToyIcon from "@mui/icons-material/SmartToy";
 import { AuthContext } from "../context/AuthContext";
 import AIChatbot from "../components/ai/AIChatbot";
 import ErrorBoundary from "../components/common/ErrorBoundary";
+import BrandLogo from "../components/brand/BrandLogo";
 
 const drawerWidth = 260; // Độ rộng của Sidebar
 
@@ -107,9 +108,9 @@ export default function MainLayout() {
           >
             <MenuIcon />
           </IconButton>
-          <Typography variant="h6" noWrap component="div" sx={{ flexGrow: 1, fontWeight: 'bold' }}>
-            ParkingAI Enterprise
-          </Typography>
+          <Box sx={{ flexGrow: 1 }}>
+            <BrandLogo size={34} inverse />
+          </Box>
 
           {/* Góc phải User Profile */}
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>

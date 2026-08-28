@@ -2,7 +2,6 @@ import { useState, useContext } from "react";
 import { 
   Box, 
   Container, 
-  Typography, 
   TextField, 
   Button, 
   Paper, 
@@ -13,6 +12,7 @@ import { AuthContext } from "../../context/AuthContext";
 import { Link as RouterLink } from "react-router-dom";
 import { useLocation } from "react-router-dom";
 import PasswordField from "../../components/common/PasswordField";
+import BrandLogo from "../../components/brand/BrandLogo";
 
 export default function LoginPage() {
   const { login } = useContext(AuthContext);
@@ -51,14 +51,28 @@ export default function LoginPage() {
         display: "flex", 
         alignItems: "center", 
         justifyContent: "center",
-        backgroundColor: "#f5f7fb" // Màu nền nhạt, đồng bộ với App
+        backgroundColor: "background.default"
       }}
     >
       <Container maxWidth="xs">
-        <Paper elevation={3} sx={{ p: 4, display: 'flex', flexDirection: 'column', alignItems: 'center', borderRadius: 2 }}>
-          <Typography component="h1" variant="h5" fontWeight="bold" sx={{ mb: 3 }}>
-            ParkingAI - Đăng Nhập
-          </Typography>
+        <Paper
+          elevation={3}
+          sx={{
+            p: { xs: 3, sm: 4 },
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            borderRadius: 2,
+          }}
+        >
+          <Box sx={{ mb: 2.5 }}>
+            <BrandLogo
+              size={56}
+              orientation="vertical"
+              headingComponent="h1"
+              tagline="Đăng nhập hệ thống quản lý bãi đỗ xe"
+            />
+          </Box>
 
           {error && (
             <Alert severity="error" sx={{ width: "100%", mb: 2 }}>

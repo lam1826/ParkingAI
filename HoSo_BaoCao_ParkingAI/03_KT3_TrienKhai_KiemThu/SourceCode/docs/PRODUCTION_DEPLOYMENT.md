@@ -108,7 +108,28 @@ Kết quả bắt buộc:
 - frontend bundle dùng `https://api.parkingai.am`;
 - Fly health check passing và certificate `api.parkingai.am` Ready.
 
-## 6. Rollback
+## 6. Khôi phục admin cũ một lần
+
+Nếu PostgreSQL production chưa có username `admin` nhưng SQLite cũ còn tài
+khoản này, dùng `backend/restore_legacy_admin.py`. Lệnh chỉ đọc đúng tài khoản
+`admin` đang hoạt động và thuộc role `admin`, giữ nguyên bcrypt hash, từ chối
+ghi đè username đã có và không in hash ra log.
+
+```powershell
+flyctl ssh sftp put backend/database/parking.db /tmp/parkingai-legacy-admin.db `
+  --app parkingai-api-lam1826 --mode 0600
+flyctl ssh console --app parkingai-api-lam1826 --pty=false `
+  --command "cd /app && python restore_legacy_admin.py --source /tmp/parkingai-legacy-admin.db --confirm-legacy-admin"
+flyctl ssh console --app parkingai-api-lam1826 --pty=false `
+  --command "rm -f /tmp/parkingai-legacy-admin.db"
+```
+
+Chỉ chạy sau khi release chứa script đã healthy. Sau đó xác minh đăng nhập và
+`GET /api/auth/me`, rồi kiểm tra tệp tạm đã bị xóa. Không commit SQLite cũ,
+không truyền password/hash qua command line và không chạy full importer vào
+database production đã có dữ liệu.
+
+## 7. Rollback
 
 Liệt kê release rồi rollback image nếu cần:
 
