@@ -8,8 +8,13 @@ from pathlib import Path
 import pytest
 from sqlalchemy.orm import Session
 
+from models.role import Role
 from models.user import User
-from restore_legacy_admin import restore_legacy_admin
+from restore_legacy_admin import (
+    export_legacy_privileged_transfer,
+    restore_legacy_admin,
+    restore_legacy_privileged_users,
+)
 from services.auth_service import AuthService
 
 
@@ -49,6 +54,104 @@ def _write_legacy_user(
             """,
             (username, AuthService.get_password_hash(password)),
         )
+
+
+def _append_legacy_manager(path: Path) -> None:
+    with sqlite3.connect(path) as connection:
+        connection.execute(
+            "INSERT INTO roles(id, name) VALUES (2, 'manager')"
+        )
+        connection.execute(
+            """
+            INSERT INTO users(
+                id, role_id, username, password_hash, full_name, is_active
+            ) VALUES (2, 2, 'manager', ?, 'Quản lý bãi xe', 1)
+            """,
+            (AuthService.get_password_hash("legacy-manager-password"),),
+        )
+
+
+def test_restore_legacy_privileged_users_is_atomic_and_preserves_passwords(
+    tmp_path: Path,
+    db_session: Session,
+) -> None:
+    source = tmp_path / "legacy.db"
+    _write_legacy_user(source)
+    _append_legacy_manager(source)
+
+    restored = restore_legacy_privileged_users(source, db_session)
+
+    assert [(user.username, user.role.name) for user in restored] == [
+        ("admin", "admin"),
+        ("manager", "manager"),
+    ]
+    assert AuthService.verify_password(
+        "legacy-password",
+        restored[0].password_hash,
+    )
+    assert AuthService.verify_password(
+        "legacy-manager-password",
+        restored[1].password_hash,
+    )
+    assert db_session.query(User).count() == 2
+
+
+def test_restore_privileged_users_writes_nothing_when_one_username_exists(
+    tmp_path: Path,
+    db_session: Session,
+) -> None:
+    source = tmp_path / "legacy.db"
+    _write_legacy_user(source)
+    _append_legacy_manager(source)
+    manager_role = Role(name="manager")
+    db_session.add(manager_role)
+    db_session.flush()
+    db_session.add(
+        User(
+            username="manager",
+            password_hash=AuthService.get_password_hash("existing-password"),
+            full_name="Existing Manager",
+            role_id=manager_role.id,
+            is_active=True,
+        )
+    )
+    db_session.commit()
+
+    with pytest.raises(RuntimeError, match="manager.*đã tồn tại"):
+        restore_legacy_privileged_users(source, db_session)
+
+    assert [user.username for user in db_session.query(User).all()] == ["manager"]
+    assert db_session.query(Role).filter(Role.name == "admin").first() is None
+
+
+def test_export_privileged_transfer_contains_only_two_required_accounts(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "legacy.db"
+    transfer = tmp_path / "transfer.db"
+    _write_legacy_user(source)
+    _append_legacy_manager(source)
+
+    export_legacy_privileged_transfer(source, transfer)
+
+    with sqlite3.connect(transfer) as connection:
+        tables = {
+            row[0]
+            for row in connection.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table'"
+            )
+        }
+        accounts = connection.execute(
+            """
+            SELECT u.username, r.name
+            FROM users AS u
+            JOIN roles AS r ON r.id = u.role_id
+            ORDER BY u.id
+            """
+        ).fetchall()
+
+    assert tables == {"roles", "users"}
+    assert accounts == [("admin", "admin"), ("manager", "manager")]
 
 
 def test_restore_legacy_admin_preserves_password_and_admin_role(

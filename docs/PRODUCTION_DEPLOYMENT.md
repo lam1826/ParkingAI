@@ -108,26 +108,31 @@ Kết quả bắt buộc:
 - frontend bundle dùng `https://api.parkingai.am`;
 - Fly health check passing và certificate `api.parkingai.am` Ready.
 
-## 6. Khôi phục admin cũ một lần
+## 6. Khôi phục admin và manager cũ một lần
 
-Nếu PostgreSQL production chưa có username `admin` nhưng SQLite cũ còn tài
-khoản này, dùng `backend/restore_legacy_admin.py`. Lệnh chỉ đọc đúng tài khoản
-`admin` đang hoạt động và thuộc role `admin`, giữ nguyên bcrypt hash, từ chối
-ghi đè username đã có và không in hash ra log.
+Nếu PostgreSQL production chưa có username `admin` và `manager` nhưng SQLite
+cũ còn hai tài khoản này, dùng `backend/restore_legacy_admin.py`. Lệnh chỉ đọc
+hai tài khoản đang hoạt động và đúng role, giữ nguyên bcrypt hash, từ chối ghi
+đè nếu một trong hai username đã có, commit nguyên tử và không in hash ra log.
 
 ```powershell
-flyctl ssh sftp put backend/database/parking.db /tmp/parkingai-legacy-admin.db `
+.\.venv\Scripts\python.exe backend\restore_legacy_admin.py `
+  --source backend\database\parking.db `
+  --export-minimal-to .pytest-tmp\legacy-privileged-transfer.db
+flyctl ssh sftp put .pytest-tmp\legacy-privileged-transfer.db /tmp/parkingai-legacy-privileged.db `
   --app parkingai-api-lam1826 --mode 0600
 flyctl ssh console --app parkingai-api-lam1826 --pty=false `
-  --command "cd /app && python restore_legacy_admin.py --source /tmp/parkingai-legacy-admin.db --confirm-legacy-admin"
+  --command "cd /app && python restore_legacy_admin.py --source /tmp/parkingai-legacy-privileged.db --confirm-admin-and-manager"
 flyctl ssh console --app parkingai-api-lam1826 --pty=false `
-  --command "rm -f /tmp/parkingai-legacy-admin.db"
+  --command "rm -f /tmp/parkingai-legacy-privileged.db"
+Remove-Item -LiteralPath .pytest-tmp\legacy-privileged-transfer.db -Force
 ```
 
-Chỉ chạy sau khi release chứa script đã healthy. Sau đó xác minh đăng nhập và
-`GET /api/auth/me`, rồi kiểm tra tệp tạm đã bị xóa. Không commit SQLite cũ,
-không truyền password/hash qua command line và không chạy full importer vào
-database production đã có dữ liệu.
+Chỉ chạy sau khi release chứa script đã healthy. Payload trung gian chỉ có hai
+bảng `roles`/`users` và đúng hai tài khoản. Sau đó xác minh đăng nhập và
+`GET /api/auth/me`, rồi kiểm tra cả hai tệp tạm đã bị xóa. Không commit SQLite
+cũ/payload, không truyền password/hash qua command line và không chạy full
+importer vào database production đã có dữ liệu.
 
 ## 7. Rollback
 
