@@ -1,7 +1,7 @@
 from typing import List, Optional
 from datetime import datetime, date
 
-from sqlalchemy import DDL, Boolean, Date, ForeignKey, Index, Integer, String, event, text
+from sqlalchemy import DDL, Boolean, Date, ForeignKey, Index, String, event, text
 from sqlalchemy.sql import func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -13,6 +13,7 @@ from database import (
     MONTHLY_PASS_PRICE_INSERT_TRIGGER_SQL,
     MONTHLY_PASS_PRICE_UPDATE_TRIGGER_SQL,
 )
+from core.money import VND_DATABASE_TYPE
 
 class MonthlyPass(Base):
     __tablename__ = "monthly_passes"
@@ -26,6 +27,7 @@ class MonthlyPass(Base):
             "pass_code",
             unique=True,
             sqlite_where=text("pass_code IS NOT NULL"),
+            postgresql_where=text("pass_code IS NOT NULL"),
         ),
     )
 
@@ -35,7 +37,12 @@ class MonthlyPass(Base):
     # Mã thẻ NFC/RFID — nullable để tương thích dữ liệu cũ; bản ghi mới bắt buộc qua API
     pass_code: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     # Số tiền thực thu (VND) — số nguyên, không dùng Float cho tiền tệ
-    price: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
+    price: Mapped[int] = mapped_column(
+        VND_DATABASE_TYPE,
+        nullable=False,
+        default=0,
+        server_default=text("0"),
+    )
     start_date: Mapped[date] = mapped_column(Date)
     end_date: Mapped[date] = mapped_column(Date)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)

@@ -24,12 +24,14 @@ const AIInsightCard = ({ loading, insight }) => {
     >
       <CardContent sx={{ height: "100%" }}>
         <Box
-          display="flex"
-          justifyContent="space-between"
-          alignItems="center"
-          mb={2}
+          sx={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            mb: 2,
+          }}
         >
-          <Box display="flex" alignItems="center" gap={1}>
+          <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
             <AutoAwesomeIcon color="secondary" />
             <Typography
               variant="h6"

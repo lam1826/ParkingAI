@@ -322,6 +322,64 @@ def test_parking_search_keeps_public_status_query_alias(
     assert response.json()["total"] == 1
 
 
+def test_parking_search_supports_cancelled_status(
+    client: TestClient,
+    db_session: Session,
+    staff_headers: dict[str, str],
+    test_user,
+    vehicle,
+):
+    cancelled = ParkingSession(
+        vehicle_id=vehicle.id,
+        parking_slot_id=None,
+        check_in_time=datetime(2026, 8, 25, 8, 0),
+        status="cancelled",
+        staff_in_id=test_user.id,
+    )
+    db_session.add(cancelled)
+    db_session.commit()
+
+    response = client.get(
+        "/parking/search",
+        headers=staff_headers,
+        params={"status": "cancelled"},
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["total"] == 1
+    assert response.json()["items"][0]["status"] == "cancelled"
+
+
+def test_parking_search_returns_persisted_stay_duration(
+    client: TestClient,
+    db_session: Session,
+    staff_headers: dict[str, str],
+    test_user,
+    vehicle,
+):
+    completed = ParkingSession(
+        vehicle_id=vehicle.id,
+        parking_slot_id=None,
+        check_in_time=datetime(2026, 8, 25, 8, 0),
+        check_out_time=datetime(2026, 8, 25, 10, 30),
+        parking_fee=50_000,
+        status="completed",
+        staff_in_id=test_user.id,
+        staff_out_id=test_user.id,
+    )
+    db_session.add(completed)
+    db_session.commit()
+
+    response = client.get(
+        "/parking/search",
+        headers=staff_headers,
+        params={"status": "completed"},
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["items"][0]["duration_minutes"] == 150
+
+
 @pytest.mark.parametrize(
     ("query_name", "query_value"),
     [
@@ -356,7 +414,7 @@ def test_parking_search_openapi_documents_status_and_sort_enums(
         for branch in status_schema.get("anyOf", [])
         if "enum" in branch
     )
-    assert status_enum == ["active", "completed"]
+    assert status_enum == ["active", "completed", "cancelled"]
     assert parameters["sort_by"]["schema"]["enum"] == [
         "check_in_time",
         "check_out_time",

@@ -100,6 +100,7 @@ export default function ParkingSessionPage() {
         >
           <MenuItem value="active">Đang gửi trong bãi</MenuItem>
           <MenuItem value="completed">Đã rời bãi</MenuItem>
+          <MenuItem value="cancelled">Đã hủy</MenuItem>
           <MenuItem value="">Tất cả</MenuItem>
         </TextField>
         <TextField
@@ -146,6 +147,8 @@ export default function ParkingSessionPage() {
             ? "Danh sách xe đang đỗ trong bãi"
             : statusFilter === "completed"
               ? "Lịch sử xe đã rời bãi"
+              : statusFilter === "cancelled"
+                ? "Danh sách phiên đã hủy"
               : "Toàn bộ lịch sử gửi xe"
         }
       />

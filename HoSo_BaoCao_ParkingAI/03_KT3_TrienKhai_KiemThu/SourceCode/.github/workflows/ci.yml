@@ -9,6 +9,21 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: parkingai_test
+          POSTGRES_PASSWORD: parkingai_test
+          POSTGRES_DB: parkingai_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U parkingai_test -d parkingai_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
@@ -27,7 +42,24 @@ jobs:
         run: python -m pip install -r backend/requirements.txt
 
       - name: Run backend tests
-        run: python -m pytest -q
+        id: backend-tests
+        continue-on-error: true
+        run: python -m pytest -q --junitxml=pytest-results.xml
+
+      - name: Report backend test failures
+        if: steps.backend-tests.outcome == 'failure'
+        run: python scripts/report_pytest_failures.py pytest-results.xml
+
+      - name: Migrate PostgreSQL test database
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql+psycopg://parkingai_test:parkingai_test@127.0.0.1:5432/parkingai_test
+        run: alembic -c alembic.ini upgrade head
+
+      - name: Run PostgreSQL integration tests
+        env:
+          POSTGRES_TEST_URL: postgresql+psycopg://parkingai_test:parkingai_test@127.0.0.1:5432/parkingai_test
+        run: python -m pytest tests/test_postgres_integration.py -q
 
       - name: Set up Node.js
         uses: actions/setup-node@v4

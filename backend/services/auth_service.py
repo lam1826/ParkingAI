@@ -1,13 +1,14 @@
 import datetime
 import bcrypt
 import secrets
-from typing import Dict, Annotated
+from typing import Annotated
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import jwt, JWTError
 from sqlalchemy.orm import Session  # Sửa từ AsyncSession thành Session đồng bộ
 
 from core.config import settings
+from core.roles import ROLE_HIERARCHY
 from database import get_db
 from models.user import User
 
@@ -17,13 +18,6 @@ from models.user import User
 
 # tokenUrl trỏ tới endpoint OAuth2 form (/auth/login), không phải endpoint JSON
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
-
-ROLE_HIERARCHY: Dict[str, int] = {
-    "customer": 0,
-    "staff": 1,
-    "manager": 2,
-    "admin": 3
-}
 
 # ==========================================
 # 2. LỚP AUTH SERVICE (Nghiệp vụ cốt lõi)

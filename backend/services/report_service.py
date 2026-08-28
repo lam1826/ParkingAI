@@ -1,3 +1,4 @@
+import logging
 from datetime import date, datetime, timedelta
 from typing import Dict, Any, Literal
 from fastapi import HTTPException
@@ -6,10 +7,15 @@ from sqlalchemy import select, func, desc
 from sqlalchemy.exc import SQLAlchemyError
 
 from core.clock import business_now, day_bounds, week_bounds, month_bounds, year_bounds
+from core.errors import internal_server_error
 from core.money import sum_exact_vnd
+from core.sql_time import day_bucket, hour_bucket, month_bucket, week_bucket
 from models.parking_session import ParkingSession
 from models.vehicle import Vehicle
 from models.vehicle_type import VehicleType
+
+
+logger = logging.getLogger(__name__)
 
 
 ReportPeriod = Literal["day", "week", "month", "year"]
@@ -119,7 +125,12 @@ class ReportService:
                 "most_frequent_vehicle_type": vtype_res.name if vtype_res else "Chưa có dữ liệu"
             }
         except SQLAlchemyError as db_err:
-            raise HTTPException(status_code=500, detail=f"Lỗi cơ sở dữ liệu doanh thu: {str(db_err)}")
+            raise internal_server_error(
+                logger,
+                event="Revenue report database failure",
+                public_detail="Không thể tạo báo cáo doanh thu do lỗi hệ thống.",
+                error=db_err,
+            ) from db_err
 
     def get_traffic_report(
         self,
@@ -137,34 +148,38 @@ class ReportService:
             )
 
             # Theo giờ
+            hour_expression = hour_bucket(ParkingSession.check_in_time)
             hours_res = self.db.execute(
-                select(func.strftime('%H', ParkingSession.check_in_time).label('h'), func.count(ParkingSession.id).label('c'))
+                select(hour_expression.label('h'), func.count(ParkingSession.id).label('c'))
                 .where(*period_conditions)
-                .group_by('h').order_by('h')
+                .group_by(hour_expression).order_by(hour_expression)
             ).all()
             traffic_by_hour = [{"time_label": f"{r.h}:00" if r.h else "00:00", "total_vehicles": r.c} for r in hours_res]
 
             # Theo ngày
+            day_expression = day_bucket(ParkingSession.check_in_time)
             days_res = self.db.execute(
-                select(func.strftime('%Y-%m-%d', ParkingSession.check_in_time).label('d'), func.count(ParkingSession.id).label('c'))
+                select(day_expression.label('d'), func.count(ParkingSession.id).label('c'))
                 .where(*period_conditions)
-                .group_by('d').order_by('d')
+                .group_by(day_expression).order_by(day_expression)
             ).all()
             traffic_by_day = [{"time_label": r.d, "total_vehicles": r.c} for r in days_res if r.d]
 
             # Theo tuần
+            week_expression = week_bucket(ParkingSession.check_in_time)
             weeks_res = self.db.execute(
-                select(func.strftime('%Y-%W', ParkingSession.check_in_time).label('w'), func.count(ParkingSession.id).label('c'))
+                select(week_expression.label('w'), func.count(ParkingSession.id).label('c'))
                 .where(*period_conditions)
-                .group_by('w').order_by('w')
+                .group_by(week_expression).order_by(week_expression)
             ).all()
             traffic_by_week = [{"time_label": f"Tuần {r.w}", "total_vehicles": r.c} for r in weeks_res if r.w]
 
             # Theo tháng
+            month_expression = month_bucket(ParkingSession.check_in_time)
             months_res = self.db.execute(
-                select(func.strftime('%Y-%m', ParkingSession.check_in_time).label('m'), func.count(ParkingSession.id).label('c'))
+                select(month_expression.label('m'), func.count(ParkingSession.id).label('c'))
                 .where(*period_conditions)
-                .group_by('m').order_by('m')
+                .group_by(month_expression).order_by(month_expression)
             ).all()
             traffic_by_month = [{"time_label": r.m, "total_vehicles": r.c} for r in months_res if r.m]
 
@@ -175,7 +190,12 @@ class ReportService:
                 "traffic_by_month": traffic_by_month
             }
         except SQLAlchemyError as db_err:
-            raise HTTPException(status_code=500, detail=f"Lỗi cơ sở dữ liệu lưu lượng: {str(db_err)}")
+            raise internal_server_error(
+                logger,
+                event="Traffic report database failure",
+                public_detail="Không thể tạo báo cáo lưu lượng do lỗi hệ thống.",
+                error=db_err,
+            ) from db_err
 
 
 class TrafficService(ReportService):

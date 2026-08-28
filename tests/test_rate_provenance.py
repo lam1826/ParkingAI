@@ -473,7 +473,10 @@ def test_db_rejects_insert_or_replace_rate_bypass_while_session_is_active(
                 "replacement_id": price_config.id + 10_000,
                 "vehicle_type_id": price_config.vehicle_type_id,
                 "price": price_config.price + 1,
-                "effective_date": price_config.effective_date,
+                # Đây là đường ghi raw-SQL, nên truyền đúng representation TEXT
+                # canonical thay vì dựa vào sqlite3 default date adapter đã
+                # deprecated từ Python 3.12.
+                "effective_date": price_config.effective_date.isoformat(),
             },
         )
         db_session.commit()

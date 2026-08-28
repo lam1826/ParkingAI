@@ -1,9 +1,16 @@
 import axios from "axios";
+import { resolveApiBaseUrl } from "../utils/apiBaseUrl";
 
 // Khởi tạo instance của axios
 const api = axios.create({
-  // Sử dụng biến môi trường của Vite, nếu không có thì fallback về localhost
-  baseURL: import.meta.env.VITE_API_URL || "http://localhost:8000",
+  // Runtime config keeps the hashed application artifact identical between
+  // staging and production. The CDN deployment only replaces config.js.
+  baseURL: resolveApiBaseUrl({
+    runtimeUrl: globalThis.__PARKINGAI_CONFIG__?.API_URL,
+    buildUrl: import.meta.env.VITE_API_URL,
+    isDevelopment: import.meta.env.DEV,
+    locationOrigin: globalThis.location?.origin,
+  }),
   timeout: 10000, // Timeout 10s
   headers: {
     "Content-Type": "application/json",

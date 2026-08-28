@@ -1,6 +1,6 @@
 from datetime import datetime, date
 
-from sqlalchemy import DDL, String, Integer, Boolean, Date, ForeignKey, Index, event, text
+from sqlalchemy import DDL, String, Boolean, Date, ForeignKey, Index, event, text
 from sqlalchemy.sql import func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -18,6 +18,7 @@ from database import (
     PRICE_ACTIVE_SESSION_REPLACE_GUARD_TRIGGER_SQL,
     PRICE_ACTIVE_SESSION_UPDATE_GUARD_TRIGGER_SQL,
 )
+from core.money import VND_DATABASE_TYPE
 
 class PriceConfig(Base):
     __tablename__ = "price_configs"
@@ -34,13 +35,14 @@ class PriceConfig(Base):
             "vehicle_type_id",
             unique=True,
             sqlite_where=text("is_active = 1"),
+            postgresql_where=text("is_active"),
         ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     vehicle_type_id: Mapped[int] = mapped_column(ForeignKey("vehicle_types.id"))
     ticket_type: Mapped[str] = mapped_column(String(20))  # HOURLY hoặc DAILY
-    price: Mapped[int] = mapped_column(Integer)
+    price: Mapped[int] = mapped_column(VND_DATABASE_TYPE)
     effective_date: Mapped[date] = mapped_column(Date)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())

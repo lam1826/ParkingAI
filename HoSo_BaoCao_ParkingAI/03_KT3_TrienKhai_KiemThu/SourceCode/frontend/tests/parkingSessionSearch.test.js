@@ -52,6 +52,7 @@ test("mapParkingSearchResponse bảo toàn total và metadata phân trang lớn 
       zone_name: "Khu A",
       check_in_time: "2026-08-01T08:00:00",
       check_out_time: null,
+      duration_minutes: 150,
       parking_fee: 0,
       status: "active",
     }],
@@ -63,6 +64,7 @@ test("mapParkingSearchResponse bảo toàn total và metadata phân trang lớn 
   assert.equal(result.items.length, 1);
   assert.equal(result.items[0].id, "session-51");
   assert.equal(result.items[0].parking_slot.slot_number, "A-01 (Khu A)");
+  assert.equal(result.items[0].durationMinutes, 150);
 });
 
 

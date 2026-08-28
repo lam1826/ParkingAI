@@ -16,6 +16,10 @@ import { DataGrid } from "@mui/x-data-grid";
 import LogoutIcon from "@mui/icons-material/Logout";
 import formatDate from "../../../utils/formatDate";
 import { formatParkingFee } from "../../../utils/formatCurrency";
+import {
+  formatParkingDuration,
+  getSessionStatusPresentation,
+} from "../sessionPresentation";
 
 const SessionTable = ({
   sessions,
@@ -73,6 +77,13 @@ const SessionTable = ({
         value ? formatDate(value, "HH:mm:ss - DD/MM/YYYY") : "—",
     },
     {
+      field: "durationMinutes",
+      headerName: "Thời gian gửi",
+      flex: 1,
+      minWidth: 130,
+      valueGetter: (value, row) => formatParkingDuration(value, row.status),
+    },
+    {
       field: "parkingFee",
       headerName: "Phí (VNĐ)",
       flex: 0.8,
@@ -83,14 +94,17 @@ const SessionTable = ({
       field: "status",
       headerName: "Trạng thái",
       width: 120,
-      renderCell: (params) => (
-        <Chip
-          label={params.row.status === "active" ? "Đang gửi" : "Đã ra"}
-          color={params.row.status === "active" ? "success" : "default"}
-          size="small"
-          variant={params.row.status === "active" ? "filled" : "outlined"}
-        />
-      ),
+      renderCell: (params) => {
+        const presentation = getSessionStatusPresentation(params.row.status);
+        return (
+          <Chip
+            label={presentation.label}
+            color={presentation.color}
+            size="small"
+            variant={presentation.variant}
+          />
+        );
+      },
     },
     {
       field: "actions",

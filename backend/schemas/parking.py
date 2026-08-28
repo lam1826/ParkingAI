@@ -119,6 +119,11 @@ class ParkingSessionDetailResponse(BaseModel):
     zone_name: Optional[str] = None
     check_in_time: datetime
     check_out_time: Optional[datetime] = None
+    duration_minutes: Optional[int] = Field(
+        default=None,
+        ge=0,
+        description="Thời gian gửi đã hoàn tất, tính bằng phút",
+    )
     parking_fee: int = 0
     status: str
     handled_by_staff: Optional[StaffInfoResponse] = None
@@ -151,10 +156,10 @@ class ParkingSearchQuery(BaseModel):
         default=None,
         description="Lọc theo biển số xe (tìm kiếm tương đối)",
     )
-    status_filter: Optional[Literal["active", "completed"]] = Field(
+    status_filter: Optional[Literal["active", "completed", "cancelled"]] = Field(
         default=None,
         alias="status",
-        description="Lọc theo trạng thái (active, completed)",
+        description="Lọc theo trạng thái (active, completed, cancelled)",
     )
     date_from: Optional[datetime] = Field(
         default=None,

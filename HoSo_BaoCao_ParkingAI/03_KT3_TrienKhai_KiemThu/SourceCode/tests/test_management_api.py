@@ -111,6 +111,58 @@ def test_manager_can_view_users_but_cannot_modify(
     assert create.status_code == 403
 
 
+def test_admin_cannot_rename_canonical_role_and_keeps_access(
+    client: TestClient,
+    db_session: Session,
+    admin_user: User,
+):
+    """Canonical role names are part of the authorization contract."""
+    headers = make_headers(admin_user)
+
+    response = client.put(
+        f"/api/v1/roles/{admin_user.role_id}",
+        headers=headers,
+        json={"name": "manager", "description": "Tên mới"},
+    )
+
+    assert response.status_code == 409
+    assert "không thể đổi tên" in response.json()["detail"].lower()
+    db_session.refresh(admin_user.role)
+    assert admin_user.role.name == "admin"
+    assert client.get("/api/v1/roles", headers=headers).status_code == 200
+
+
+def test_admin_cannot_delete_canonical_role(
+    client: TestClient,
+    admin_user: User,
+):
+    response = client.delete(
+        f"/api/v1/roles/{admin_user.role_id}",
+        headers=make_headers(admin_user),
+    )
+
+    assert response.status_code == 409
+    assert "vai trò hệ thống" in response.json()["detail"].lower()
+
+
+def test_legacy_custom_role_does_not_break_role_list_serialization(
+    client: TestClient,
+    db_session: Session,
+    admin_user: User,
+):
+    """Response đọc dữ liệu cũ không được chạy lại validator của write contract."""
+    db_session.add(Role(name="legacy-operator", description="Dữ liệu từ bản cũ"))
+    db_session.commit()
+
+    response = client.get(
+        "/api/v1/roles",
+        headers=make_headers(admin_user),
+    )
+
+    assert response.status_code == 200
+    assert "legacy-operator" in {item["name"] for item in response.json()}
+
+
 def test_vehicle_api_accepts_guest_and_returns_related_data(
     client: TestClient,
     test_user: User,

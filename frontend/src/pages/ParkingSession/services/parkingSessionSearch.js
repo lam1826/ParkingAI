@@ -44,6 +44,7 @@ function mapSession(item) {
     },
     checkInTime: item.check_in_time,
     checkOutTime: item.check_out_time,
+    durationMinutes: item.duration_minutes,
     parkingFee: item.parking_fee,
     status: item.status,
   };

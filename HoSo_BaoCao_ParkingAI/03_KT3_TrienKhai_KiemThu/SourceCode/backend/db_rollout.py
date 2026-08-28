@@ -100,6 +100,7 @@ from database import (
     TRG_ZONES_OPERATIONAL_UPDATE_GUARD,
     UQ_CUSTOMERS_PHONE_NORMALIZED,
     UQ_ROLES_NAME,
+    UQ_VEHICLE_TYPES_NAME_NORMALIZED,
     VEHICLE_TYPE_IMMUTABLE_TRIGGER_SQL,
     VEHICLE_LICENSE_PLATE_IMMUTABLE_TRIGGER_SQL,
     ZONE_CAPACITY_INTEGER_INSERT_TRIGGER_SQL,
@@ -236,6 +237,10 @@ _REQUIRED_TRIGGER_SQL.update(BOOLEAN_DOMAIN_TRIGGER_SQL)
 
 _REQUIRED_INDEX_SQL = {
     UQ_ROLES_NAME: f"CREATE UNIQUE INDEX {UQ_ROLES_NAME} ON roles(name)",
+    UQ_VEHICLE_TYPES_NAME_NORMALIZED: (
+        f"CREATE UNIQUE INDEX {UQ_VEHICLE_TYPES_NAME_NORMALIZED} "
+        "ON vehicle_types(unicode_casefold(name))"
+    ),
     "ix_monthly_passes_pass_code": (
         "CREATE UNIQUE INDEX ix_monthly_passes_pass_code "
         "ON monthly_passes(pass_code) WHERE pass_code IS NOT NULL"
@@ -796,9 +801,21 @@ def _validate_business_invariants(connection) -> None:
 
 def check_database_readiness(target_engine, *, deep: bool = True) -> None:
     """Read-only schema gate; explicit rollout may request deep integrity checks."""
+    backend_name = target_engine.url.get_backend_name()
+    if backend_name == "postgresql":
+        # Keep PostgreSQL catalog queries and invariants behind their own
+        # adapter.  The large SQLite rollout module remains stable and never
+        # sends PRAGMA/sqlite_master SQL to a managed database.
+        from postgres_readiness import check_postgres_readiness
+
+        check_postgres_readiness(target_engine, deep=deep)
+        return
+    if backend_name != "sqlite":
+        raise RuntimeError(f"Database dialect không được hỗ trợ: {backend_name}")
+
     readiness_engine = target_engine
     dispose_readiness_engine = False
-    if target_engine.url.get_backend_name() == "sqlite":
+    if backend_name == "sqlite":
         database_name = target_engine.url.database
         if database_name and database_name != ":memory:":
             database_path = Path(database_name).resolve()

@@ -60,7 +60,9 @@ Nguồn: <https://ai.google.dev/gemini-api/docs/latest-model> và <https://ai.go
 - Chỗ trống khi có chỗ/hết chỗ, nhóm theo khu vực, lọc đúng loại xe.
 - AI hỏi đáp, báo cáo ngày, báo cáo tuần và gợi ý nhân sự thành công.
 - AI từ chối câu hỏi chỉ có khoảng trắng, dữ liệu rỗng và khoảng ngày tuần sai.
-- AI xử lý provider lỗi/timeout và prompt bắt buộc không bịa dữ liệu.
+- AI xử lý provider lỗi/timeout; prompt bắt buộc không bịa dữ liệu, bao dữ liệu
+  trong delimiter riêng và coi câu hỏi người dùng là nội dung không tin cậy,
+  không phải chỉ thị có quyền ghi đè system prompt.
 - AI fail-closed theo hai lớp: `AI_ENABLED=false` hoặc thiếu `GEMINI_API_KEY`
   đều làm endpoint AI trả 503 trước khi tạo provider client; thống kê cơ bản
   vẫn chạy. UAT mặc định giữ `AI_ENABLED=false`.
@@ -77,6 +79,9 @@ Nguồn: <https://ai.google.dev/gemini-api/docs/latest-model> và <https://ai.go
   phản hồi thô của provider hay stack trace. `HTTPException` từ tầng trong
   được re-raise nguyên trạng thay vì bị đổi thành 500
   (`test_ai_flow_outer_handlers_preserve_http_exception`).
+- Lỗi SQL hoặc lỗi nội bộ ngoài dự kiến ở báo cáo, tra cứu vị trí và lưu báo
+  cáo AI được log phía server nhưng response chỉ trả thông báo chung; marker
+  exception không xuất hiện trong JSON (`tests/test_error_response_safety.py`).
 - **Toàn bộ kiểm chứng AI đều dùng mock.** `tests/conftest.py` cài một fixture
   autouse thay `services.ai_service.genai.Client` bằng seam ném
   `AssertionError`, nên một test quên mock sẽ fail trước khi client thật được
@@ -95,20 +100,20 @@ Khi demo: tạo dữ liệu khu vực → loại xe → vị trí → bảng gi�
 
 | Yêu cầu | Phần triển khai | Minh chứng kiểm thử |
 | --- | --- | --- |
-| Đăng nhập và phân quyền | JWT, `RoleChecker`, vai trò customer/staff/manager/admin; đăng ký manager/admin bằng mã bí mật | `tests/test_auth.py`, `tests/test_management_api.py` |
-| Khu vực, vị trí, loại xe | CRUD dưới `/api/v1`; giao diện quản lý tương ứng | `tests/test_management_api.py` |
-| Xe vào/ra và thời gian gửi | `/parking/check-in` (chọn vị trí cụ thể hoặc tự cấp phát), `/parking/check-out`, lịch sử phiên | `tests/test_check_in.py`, `tests/test_check_out.py` |
+| Đăng nhập và phân quyền | JWT, `RoleChecker`, bốn vai trò canonical; API không cho đổi tên/xóa contract vai trò, frontend dùng chung thứ bậc quyền | `tests/test_auth.py`, `tests/test_management_api.py`, `frontend/tests/roleContract.test.js` |
+| Khu vực, vị trí, loại xe | CRUD dưới `/api/v1`; tên loại xe unique sau chuẩn hóa ở API và DB; giao diện quản lý tương ứng | `tests/test_management_api.py`, `tests/test_vehicle_type_integrity.py`, `tests/test_release_safety.py` |
+| Xe vào/ra và thời gian gửi | `/parking/check-in` (chọn vị trí cụ thể hoặc tự cấp phát), `/parking/check-out`, lịch sử phiên có thời lượng hoàn tất | `tests/test_check_in.py`, `tests/test_check_out.py`, `tests/test_api_edge_hardening.py`, `frontend/tests/sessionPresentation.test.js` |
 | Vòng đời phiên gửi xe | Trạng thái lưu `active`/`completed`/`cancelled`; `checking_out` chỉ tồn tại trong transaction check-out; hai endpoint check-out dùng chung vòng đời; tính phí lỗi thì rollback về `active` | `tests/test_session_lifecycle_integrity.py`, `tests/test_check_out_concurrency.py` |
 | Tính phí | Theo giờ/ngày, khóa bảng giá khi phiên mở; MỌI lượt vào cần bảng giá dự phòng hiệu lực tại check-in; vé tháng chỉ miễn phí nếu còn bao phủ ngày xe ra | `tests/test_fee.py`, `tests/test_check_out.py`, `tests/test_session_entitlement_integrity.py`, `tests/test_rate_provenance.py` |
 | Theo dõi chỗ trống | Thống kê toàn bãi và nhóm theo khu vực/loại xe | `tests/test_slots.py` |
-| Tra cứu theo biển số/thời gian | Bộ lọc API và màn hình phiên đỗ xe | `tests/test_check_in.py`, `tests/test_check_out.py` |
+| Tra cứu theo biển số/thời gian | Bộ lọc API và màn hình phiên đỗ xe; phân biệt `active`, `completed`, `cancelled` | `tests/test_check_in.py`, `tests/test_check_out.py`, `tests/test_api_edge_hardening.py`, `frontend/tests/parkingSessionSearch.test.js` |
 | Vé tháng/khách quen | CRUD khách hàng, phương tiện và vé tháng | `tests/test_management_api.py` |
 | Lưu lượng, doanh thu, cao điểm | Dashboard và `/reports/traffic`, `/reports/revenue` | `tests/test_dashboard.py`, `tests/test_extensions.py` |
 | Sơ đồ chỗ đỗ | Trình bày vị trí theo khu vực, loại xe và ba trạng thái màu; chuyển đổi sơ đồ/danh sách | ESLint và production build |
 | Xuất báo cáo | `/reports/export/xlsx`, `/reports/export/pdf`; nút tải trên trang Báo cáo | `tests/test_extensions.py` |
 | Nhật ký hoạt động | Middleware ghi thao tác thay đổi dữ liệu; `/api/v1/audit-logs` chỉ dành cho manager/admin | `tests/test_extensions.py` |
 | AI báo cáo ngày/tuần | `/ai/daily-report`, `/ai/weekly-report`; nút nhanh trong chatbot | `tests/test_ai.py` |
-| AI hỏi đáp dữ liệu | `/ai/question` tự lấy Dashboard; `/ai/ask` nhận dữ liệu có cấu trúc | `tests/test_ai.py` |
+| AI hỏi đáp dữ liệu | `/ai/question` tự lấy Dashboard; `/ai/ask` nhận dữ liệu có cấu trúc; câu hỏi được JSON-encode và đánh dấu là dữ liệu không tin cậy | `tests/test_ai.py` |
 | AI gợi ý nhân sự | `/ai/staff-suggestion`; nút “Gợi ý nhân sự” trong chatbot | `tests/test_ai.py` |
 | AI tích hợp giao diện | Trang **AI Analytics** (`/ai`) trong menu và chatbot nổi dùng chung trong `MainLayout` | ESLint và production build |
 
@@ -133,10 +138,13 @@ Khi demo: tạo dữ liệu khu vực → loại xe → vị trí → bảng gi�
 
 ### Hỏi đáp dữ liệu
 
-- Prompt: chỉ dùng dữ liệu Dashboard hoặc JSON do client gửi; nếu thiếu phải trả lời không đủ dữ liệu.
+- Prompt: chỉ dùng dữ liệu Dashboard hoặc JSON do client gửi; nếu thiếu phải trả lời
+  không đủ dữ liệu. Câu hỏi được JSON-encode, nằm ngoài delimiter dữ liệu và được
+  ghi rõ là nội dung không tin cậy, không thể ghi đè quy tắc chống ảo giác.
 - Code: `ask_dashboard_question`, `answer_question`, `POST /ai/question`, `POST /ai/ask`.
 - Giao diện: ô chat và các câu hỏi gợi ý thay đổi theo trang hiện tại.
-- Test: prompt hợp lệ/rỗng, dữ liệu rỗng, chống ảo giác, provider lỗi và timeout.
+- Test: prompt hợp lệ/rỗng, dữ liệu rỗng, prompt-injection, chống ảo giác,
+  provider lỗi và timeout.
 
 ### Gợi ý nhân sự
 
@@ -178,6 +186,36 @@ Khi demo: tạo dữ liệu khu vực → loại xe → vị trí → bảng gi�
 > ⚠️ Bằng chứng "Kết nối Gemini thật: Đạt" ở mục 7.1 **chỉ áp dụng cho
 > `gemini-3.6-flash`** và **không** chứng nhận `gemini-3.7-flash`. Việc xác
 > minh kết nối live với model mới là hạng mục riêng, chưa thực hiện.
+
+### 7.3. Rà soát hoàn thiện theo đề bài — ngày 28/08/2026
+
+| Hạng mục | Kết quả |
+| --- | --- |
+| Backend đầy đủ | `681 passed, 1 skipped` — ca skip là kiểm tra quyền sở hữu chỉ dành cho POSIX khi chạy trên Windows |
+| Frontend unit/source-contract test | `78 passed` |
+| Frontend ESLint / production build | Đạt / Vite build thành công |
+| Snapshot hồ sơ bàn giao | `252` tệp khớp byte-for-byte, không có DB, secret hay runtime artifact |
+| Bổ sung chính | Khóa tên vai trò canonical; unique tên loại xe sau chuẩn hóa; trạng thái `cancelled`; thời lượng phiên; lỗi 500 không rò exception; prompt Q&A chống ghi đè chỉ thị |
+| Gemini/provider live trong vòng test tự động | **Không gọi** — toàn bộ AI test dùng mock và sentinel fail-closed |
+
+Hai file DB local được `scripts/verify.ps1` chụp hash/kích thước/mtime/sidecar
+trước và sau toàn bộ suite; verification thất bại nếu có bất kỳ thay đổi nào.
+
+### 7.4. Nghiệm thu vận hành có kiểm soát — ngày 28/08/2026
+
+| Hạng mục | Kết quả |
+| --- | --- |
+| Browser E2E/UAT | **Đạt** trên Chrome headless và DB scratch: đăng nhập admin, dashboard, lịch sử phiên `completed`/`cancelled`, thời lượng `2 giờ 30 phút`, phí `75.000`, khu vực `Khu UAT`, trang vai trò chỉ đọc |
+| AI fail-closed trong UAT | **Đạt** — backend scratch chạy `AI_ENABLED=false`, request AI trả đúng `503`, không gọi provider |
+| Console trình duyệt | **Sạch** — không JavaScript exception, `console.error` hoặc `console.warn` trong toàn bộ kịch bản |
+| Cảnh báo Starlette TestClient | **Đã xử lý** bằng `httpx2==2.12.0`; test chạy với `DeprecationWarning` là lỗi vẫn đạt |
+| Cảnh báo SQLite adapter | **Đã xử lý** — raw SQL trong test truyền chuỗi ISO tường minh thay vì dựa vào date/datetime adapter mặc định đã deprecated |
+| Gemini 3.7 Flash live | **Provider đã nhận request nhưng chưa đạt nội dung thành công** — hai smoke request không chứa dữ liệu thật tới `gemini-3.7-flash` đều được ứng dụng ánh xạ thành `503` do provider tạm không khả dụng/đạt giới hạn; không retry thêm |
+
+Nghiệm thu browser dùng database và profile Chrome tạm trong `.pytest-tmp`; hai
+database local thật không được dùng. Smoke prompt Gemini chỉ yêu cầu trả một token
+cố định, không chứa biển số, khách hàng, tài khoản hay số liệu nghiệp vụ và không
+lưu kết quả vào database.
 
 Lệnh tái hiện:
 

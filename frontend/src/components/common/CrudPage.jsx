@@ -127,9 +127,11 @@ export default function CrudPage({ title, fields, service, canEdit = true }) {
     <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
       <Stack
         direction={{ xs: "column", sm: "row" }}
-        justifyContent="space-between"
-        alignItems={{ xs: "flex-start", sm: "center" }}
         spacing={1}
+        sx={{
+          justifyContent: "space-between",
+          alignItems: { xs: "flex-start", sm: "center" },
+        }}
       >
         <Typography variant="h5" fontWeight="bold">{title}</Typography>
         <Stack direction="row" spacing={1}>
@@ -139,7 +141,7 @@ export default function CrudPage({ title, fields, service, canEdit = true }) {
       </Stack>
       <Box sx={{ height: { xs: 460, md: 560 }, width: "100%" }}>
         <DataGrid rows={rows} columns={columns} loading={loading} disableRowSelectionOnClick
-          pageSizeOptions={[10, 25, 50]} slots={{ toolbar: GridToolbar }} />
+          pageSizeOptions={[10, 25, 50, 100]} slots={{ toolbar: GridToolbar }} />
       </Box>
 
       <Dialog open={open} onClose={() => setOpen(false)} fullWidth maxWidth="sm">

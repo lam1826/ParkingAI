@@ -2,7 +2,7 @@ import uuid
 from typing import Optional
 from datetime import datetime
 
-from sqlalchemy import DDL, String, Integer, ForeignKey, DateTime, Index, event, text
+from sqlalchemy import DDL, String, ForeignKey, DateTime, Index, event, text
 from sqlalchemy.sql import func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -27,6 +27,7 @@ from database import (
     SESSION_STATUS_INSERT_VALIDATION_TRIGGER_SQL,
     SESSION_STATUS_UPDATE_VALIDATION_TRIGGER_SQL,
 )
+from core.money import VND_DATABASE_TYPE
 
 class ParkingSession(Base):
     __tablename__ = "parking_sessions"
@@ -44,12 +45,16 @@ class ParkingSession(Base):
             "vehicle_id",
             unique=True,
             sqlite_where=text("status = 'active'"),
+            postgresql_where=text("status = 'active'"),
         ),
         Index(
             "uq_parking_session_one_active_per_slot",
             "parking_slot_id",
             unique=True,
             sqlite_where=text("status = 'active' AND parking_slot_id IS NOT NULL"),
+            postgresql_where=text(
+                "status = 'active' AND parking_slot_id IS NOT NULL"
+            ),
         ),
     )
 
@@ -71,7 +76,7 @@ class ParkingSession(Base):
     image_in_url: Mapped[Optional[str]] = mapped_column(String(255))
     image_out_url: Mapped[Optional[str]] = mapped_column(String(255))
     
-    parking_fee: Mapped[Optional[int]] = mapped_column(Integer)
+    parking_fee: Mapped[Optional[int]] = mapped_column(VND_DATABASE_TYPE)
     status: Mapped[str] = mapped_column(String(20))  # Trạng thái: 'active' (Đang trong bãi), 'completed' (Đã ra)
     
     staff_in_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
