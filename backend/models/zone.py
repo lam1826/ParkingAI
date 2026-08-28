@@ -1,11 +1,15 @@
 from typing import List
 from datetime import datetime
 
-from sqlalchemy import String, Integer, Boolean, Index
+from sqlalchemy import DDL, String, Integer, Boolean, Index, event
 from sqlalchemy.sql import func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from database import Base
+from database import (
+    Base,
+    ZONE_CAPACITY_INTEGER_INSERT_TRIGGER_SQL,
+    ZONE_CAPACITY_INTEGER_UPDATE_TRIGGER_SQL,
+)
 
 class Zone(Base):
     __tablename__ = "zones"
@@ -30,3 +34,15 @@ class Zone(Base):
         back_populates="zone",
         passive_deletes=True,
     )
+
+
+event.listen(
+    Zone.__table__,
+    "after_create",
+    DDL(ZONE_CAPACITY_INTEGER_INSERT_TRIGGER_SQL).execute_if(dialect="sqlite"),
+)
+event.listen(
+    Zone.__table__,
+    "after_create",
+    DDL(ZONE_CAPACITY_INTEGER_UPDATE_TRIGGER_SQL).execute_if(dialect="sqlite"),
+)

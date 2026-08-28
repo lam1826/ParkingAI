@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 from typing import List
@@ -15,7 +15,11 @@ from services.auth_service import RoleChecker
 router = APIRouter()
 
 @router.get("", response_model=List[user_schema.UserResponse])
-def read_users(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+def read_users(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=100),
+    db: Session = Depends(get_db),
+):
     """Lấy danh sách người dùng"""
     return crud_user.get_users(db, skip=skip, limit=limit)
 

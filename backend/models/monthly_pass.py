@@ -1,11 +1,18 @@
 from typing import List, Optional
 from datetime import datetime, date
 
-from sqlalchemy import Boolean, Date, ForeignKey, Index, Integer, String, text
+from sqlalchemy import DDL, Boolean, Date, ForeignKey, Index, Integer, String, event, text
 from sqlalchemy.sql import func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from database import Base
+from database import (
+    Base,
+    MONTHLY_PASS_DATE_RANGE_INSERT_TRIGGER_SQL,
+    MONTHLY_PASS_DATE_RANGE_UPDATE_TRIGGER_SQL,
+    MONTHLY_PASS_HISTORY_IMMUTABLE_TRIGGER_SQL,
+    MONTHLY_PASS_PRICE_INSERT_TRIGGER_SQL,
+    MONTHLY_PASS_PRICE_UPDATE_TRIGGER_SQL,
+)
 
 class MonthlyPass(Base):
     __tablename__ = "monthly_passes"
@@ -43,3 +50,65 @@ class MonthlyPass(Base):
     
     # Quan hệ 1-N: Một vé tháng có thể được sử dụng để xác thực cho nhiều lượt gửi xe (Parking Sessions)
     parking_sessions: Mapped[List["ParkingSession"]] = relationship(back_populates="monthly_pass")
+
+
+# API kiểm tra trước để trả lỗi 409 dễ hiểu, còn hai trigger này là backstop
+# bắt buộc cho race condition và mọi đường ghi trực tiếp vào SQLite. Khoảng
+# ngày là inclusive: hai vé chạm nhau tại cùng một ngày vẫn được xem là chồng.
+event.listen(
+    MonthlyPass.__table__,
+    "after_create",
+    DDL(
+        "CREATE TRIGGER IF NOT EXISTS trg_monthly_passes_no_overlap_insert "
+        "BEFORE INSERT ON monthly_passes FOR EACH ROW "
+        "WHEN NEW.is_active = 1 AND EXISTS ("
+        "SELECT 1 FROM monthly_passes "
+        "WHERE vehicle_id = NEW.vehicle_id AND is_active = 1 "
+        "AND start_date <= NEW.end_date AND end_date >= NEW.start_date) "
+        "BEGIN SELECT RAISE(ABORT, 'monthly pass interval overlap'); END"
+    ).execute_if(dialect="sqlite"),
+)
+
+event.listen(
+    MonthlyPass.__table__,
+    "after_create",
+    DDL(MONTHLY_PASS_PRICE_INSERT_TRIGGER_SQL).execute_if(dialect="sqlite"),
+)
+event.listen(
+    MonthlyPass.__table__,
+    "after_create",
+    DDL(MONTHLY_PASS_PRICE_UPDATE_TRIGGER_SQL).execute_if(dialect="sqlite"),
+)
+event.listen(
+    MonthlyPass.__table__,
+    "after_create",
+    DDL(MONTHLY_PASS_DATE_RANGE_INSERT_TRIGGER_SQL).execute_if(dialect="sqlite"),
+)
+event.listen(
+    MonthlyPass.__table__,
+    "after_create",
+    DDL(MONTHLY_PASS_DATE_RANGE_UPDATE_TRIGGER_SQL).execute_if(dialect="sqlite"),
+)
+
+# Trigger này tham chiếu parking_sessions nên chỉ cài sau khi toàn bộ metadata
+# đã được tạo.
+event.listen(
+    Base.metadata,
+    "after_create",
+    DDL(MONTHLY_PASS_HISTORY_IMMUTABLE_TRIGGER_SQL).execute_if(dialect="sqlite"),
+)
+
+event.listen(
+    MonthlyPass.__table__,
+    "after_create",
+    DDL(
+        "CREATE TRIGGER IF NOT EXISTS trg_monthly_passes_no_overlap_update "
+        "BEFORE UPDATE OF vehicle_id, start_date, end_date, is_active "
+        "ON monthly_passes FOR EACH ROW "
+        "WHEN NEW.is_active = 1 AND EXISTS ("
+        "SELECT 1 FROM monthly_passes "
+        "WHERE id != OLD.id AND vehicle_id = NEW.vehicle_id AND is_active = 1 "
+        "AND start_date <= NEW.end_date AND end_date >= NEW.start_date) "
+        "BEGIN SELECT RAISE(ABORT, 'monthly pass interval overlap'); END"
+    ).execute_if(dialect="sqlite"),
+)

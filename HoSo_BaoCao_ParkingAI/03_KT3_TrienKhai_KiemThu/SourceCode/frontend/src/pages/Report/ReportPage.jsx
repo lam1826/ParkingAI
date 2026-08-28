@@ -1,29 +1,58 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Alert, Box, Button, CircularProgress, Grid, MenuItem, Paper, Stack, TextField, Typography } from "@mui/material";
 import DownloadIcon from "@mui/icons-material/Download";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { reportService } from "./services/reportService";
+import { loadPeriodReport } from "./services/loadPeriodReport";
+import { extractReportDownloadErrorMessage } from "./services/reportDownloadError";
+import { createLatestRequestGate } from "../../utils/latestRequestGate";
 
 export default function ReportPage() {
+  const reportRequestGate = useRef(null);
+  if (reportRequestGate.current === null) {
+    reportRequestGate.current = createLatestRequestGate();
+  }
+
   const [period, setPeriod] = useState("week");
   const [revenue, setRevenue] = useState(null);
   const [traffic, setTraffic] = useState([]);
+  const [reportAnchor, setReportAnchor] = useState("");
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState("");
   useEffect(() => {
+    const requestGate = reportRequestGate.current;
+    const requestGeneration = requestGate.begin();
+    setLoading(true);
     setError("");
-    Promise.all([reportService.getRevenueReport({ period }), reportService.getTrafficReport()])
-      .then(([revenueData, trafficData]) => { setRevenue(revenueData); setTraffic(trafficData.traffic_by_hour || []); })
-      .catch((requestError) => setError(requestError.response?.data?.detail || "Không thể tải báo cáo."));
+    setRevenue(null);
+    setTraffic([]);
+    setReportAnchor("");
+    loadPeriodReport(reportService, period)
+      .then(({ revenue: revenueData, traffic: trafficData, anchorDate }) => {
+        if (!requestGate.isCurrent(requestGeneration)) return;
+        setRevenue(revenueData);
+        setTraffic(trafficData.traffic_by_hour || []);
+        setReportAnchor(anchorDate);
+      })
+      .catch((requestError) => {
+        if (!requestGate.isCurrent(requestGeneration)) return;
+        setError(requestError.response?.data?.detail || "Không thể tải báo cáo.");
+      })
+      .finally(() => {
+        if (requestGate.isCurrent(requestGeneration)) setLoading(false);
+      });
+    return () => requestGate.invalidate();
   }, [period]);
 
   const exportReport = async (format) => {
     setExporting(format);
     setError("");
     try {
-      const response = await reportService.downloadReport(format, period);
+      const response = await reportService.downloadReport(format, period, reportAnchor);
       const disposition = response.headers["content-disposition"] || "";
-      const filename = disposition.match(/filename="?([^";]+)"?/)?.[1] || `parking-report-${period}.${format}`;
+      const filename = disposition.match(/filename="?([^";]+)"?/)?.[1]
+        || `parking-report-${period}-${reportAnchor}.${format}`;
       const url = window.URL.createObjectURL(response.data);
       const link = document.createElement("a");
       link.href = url;
@@ -33,22 +62,28 @@ export default function ReportPage() {
       link.remove();
       window.URL.revokeObjectURL(url);
     } catch (requestError) {
-      setError(requestError.response?.data?.detail || `Không thể xuất báo cáo ${format.toUpperCase()}.`);
+      setError(await extractReportDownloadErrorMessage(
+        requestError,
+        `Không thể xuất báo cáo ${format.toUpperCase()}.`,
+      ));
     } finally {
       setExporting("");
     }
   };
-  if (!revenue && !error) return <CircularProgress />;
+  if (loading) return <CircularProgress />;
   return <Box sx={{ display: "flex", flexDirection: "column", gap: 3 }}>
     <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
       <Typography variant="h5" fontWeight="bold">Báo cáo lưu lượng và doanh thu</Typography>
       <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
-        <TextField select size="small" label="Kỳ báo cáo" value={period} onChange={(event) => setPeriod(event.target.value)} sx={{ width: 160 }}>
+        <TextField select size="small" label="Kỳ báo cáo" value={period} onChange={(event) => {
+          setReportAnchor("");
+          setPeriod(event.target.value);
+        }} sx={{ width: 160 }}>
           <MenuItem value="day">Hôm nay</MenuItem><MenuItem value="week">Tuần này</MenuItem>
           <MenuItem value="month">Tháng này</MenuItem><MenuItem value="year">Năm nay</MenuItem>
         </TextField>
-        <Button variant="outlined" startIcon={exporting === "xlsx" ? <CircularProgress size={16} /> : <DownloadIcon />} disabled={Boolean(exporting)} onClick={() => exportReport("xlsx")}>Excel</Button>
-        <Button variant="outlined" startIcon={exporting === "pdf" ? <CircularProgress size={16} /> : <DownloadIcon />} disabled={Boolean(exporting)} onClick={() => exportReport("pdf")}>PDF</Button>
+        <Button variant="outlined" startIcon={exporting === "xlsx" ? <CircularProgress size={16} /> : <DownloadIcon />} disabled={Boolean(exporting) || !reportAnchor} onClick={() => exportReport("xlsx")}>Excel</Button>
+        <Button variant="outlined" startIcon={exporting === "pdf" ? <CircularProgress size={16} /> : <DownloadIcon />} disabled={Boolean(exporting) || !reportAnchor} onClick={() => exportReport("pdf")}>PDF</Button>
       </Stack>
     </Box>
     {error && <Alert severity="error">{error}</Alert>}

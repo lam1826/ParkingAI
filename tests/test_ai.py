@@ -78,9 +78,18 @@ def test_ai_gemini_returns_error(mock_genai_client, client: TestClient, auth_hea
     }
     
     response = client.post("/ai/ask", json=payload, headers=auth_headers)
-    
-    assert response.status_code == 500
-    assert "lỗi" in response.json().get("detail", "").lower()
+
+    # Contract fail-closed ổn định: lỗi provider không phân loại được thuộc
+    # nhóm "upstream trả phản hồi không dùng được" -> 502, kèm MỘT thông báo
+    # chung. Không ràng buộc một từ tiếng Việt cụ thể (câu chữ có thể đổi);
+    # điều phải bất biến là status, có detail cho người dùng, và tuyệt đối
+    # không rò exception/provider detail/stack trace/API key ra response.
+    assert response.status_code == 502
+    detail = response.json().get("detail", "")
+    assert isinstance(detail, str) and detail.strip()
+    assert "Gemini API internal error" not in response.text
+    assert "Traceback" not in response.text
+    assert "test_gemini_api_key_for_pytest" not in response.text
 
 
 @patch("services.ai_service.genai.Client")
@@ -98,7 +107,7 @@ def test_ai_gemini_timeout(mock_genai_client, client: TestClient, auth_headers: 
     
     response = client.post("/ai/ask", json=payload, headers=auth_headers)
     
-    assert response.status_code == 500
+    assert response.status_code == 504
 
 
 @patch("services.ai_service.genai.Client")
@@ -236,6 +245,32 @@ def test_ai_dashboard_question_rejects_whitespace(client: TestClient, auth_heade
     assert response.status_code == 422
 
 
+@patch("services.ai_service.genai.Client")
+def test_ai_dashboard_question_includes_real_zone_availability(
+    mock_genai_client,
+    client: TestClient,
+    auth_headers: dict,
+    parking_slot,
+):
+    mock_instance = MagicMock()
+    mock_response = MagicMock()
+    mock_response.text = "Khu A còn 1 vị trí trống."
+    mock_instance.models.generate_content.return_value = mock_response
+    mock_genai_client.return_value = mock_instance
+
+    response = client.post(
+        "/ai/question",
+        headers=auth_headers,
+        json={"question": "Khu vực nào còn nhiều chỗ trống?"},
+    )
+
+    assert response.status_code == 200
+    sent_prompt = mock_instance.models.generate_content.call_args.kwargs["contents"]
+    assert '"zone_name": "Khu A"' in sent_prompt
+    assert '"available_slots": 1' in sent_prompt
+    assert '"name": "A-01"' in sent_prompt
+
+
 def test_ai_missing_api_key_returns_503(client: TestClient, auth_headers: dict):
     """13. Kiểm thử khi chưa cấu hình GEMINI_API_KEY -> trả 503 rõ ràng,
     không crash 500 và không ảnh hưởng các chức năng thống kê."""
@@ -255,7 +290,8 @@ def test_ai_missing_api_key_returns_503(client: TestClient, auth_headers: dict):
 
 @patch("services.ai_service.genai.Client")
 def test_ai_daily_report_server_side_aggregation(
-    mock_genai_client, client: TestClient, auth_headers: dict, parking_session
+    mock_genai_client, client: TestClient, auth_headers: dict, parking_session,
+    business_reference_now,
 ):
     """14. Kiểm thử /ai/daily-report khi client KHÔNG gửi parking_stats:
     backend phải tự tổng hợp dữ liệu thật từ database rồi mới gửi cho AI."""
@@ -265,15 +301,44 @@ def test_ai_daily_report_server_side_aggregation(
     mock_instance.models.generate_content.return_value = mock_response
     mock_genai_client.return_value = mock_instance
 
-    import datetime as _dt
-    payload = {"target_date": _dt.date.today().isoformat()}
+    target_date = business_reference_now.date()
+    payload = {"target_date": target_date.isoformat()}
 
     response = client.post("/ai/daily-report", json=payload, headers=auth_headers)
 
     assert response.status_code == 200
     # Prompt gửi cho AI phải chứa số liệu backend tự tổng hợp (1 lượt xe vào từ fixture)
     sent_prompt = mock_instance.models.generate_content.call_args.kwargs["contents"]
-    assert "total_vehicles_today" in sent_prompt
+    assert f'"date": "{target_date.isoformat()}"' in sent_prompt
+    assert '"total_vehicles_today": 1' in sent_prompt
+
+
+@patch("services.ai_service.genai.Client")
+def test_ai_historical_daily_report_does_not_mislabel_current_slot_state(
+    mock_genai_client,
+    client: TestClient,
+    auth_headers: dict,
+    parking_slot,
+):
+    """Past reports have no occupancy snapshots, so current state must be omitted."""
+    mock_instance = MagicMock()
+    mock_response = MagicMock()
+    mock_response.text = "Báo cáo lịch sử không suy diễn tình trạng chỗ hiện tại."
+    mock_instance.models.generate_content.return_value = mock_response
+    mock_genai_client.return_value = mock_instance
+
+    response = client.post(
+        "/ai/daily-report",
+        json={"target_date": "2020-01-01"},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 200
+    sent_prompt = mock_instance.models.generate_content.call_args.kwargs["contents"]
+    assert '"date": "2020-01-01"' in sent_prompt
+    assert '"available_slots"' not in sent_prompt
+    assert '"occupied_slots"' not in sent_prompt
+    assert '"slot_state_note"' in sent_prompt
 
 
 @patch("services.ai_service.genai.Client")

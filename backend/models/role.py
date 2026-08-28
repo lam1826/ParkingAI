@@ -1,17 +1,19 @@
 from typing import List, Optional
 from datetime import datetime
 
-from sqlalchemy import String
+from sqlalchemy import Index, String
 from sqlalchemy.sql import func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from database import Base
+from database import Base, UQ_ROLES_NAME
 
 class Role(Base):
     __tablename__ = "roles"
 
+    __table_args__ = (Index(UQ_ROLES_NAME, "name", unique=True),)
+
     id: Mapped[int] = mapped_column(primary_key=True)
-    name: Mapped[str] = mapped_column(String(50), unique=True)
+    name: Mapped[str] = mapped_column(String(50))
     description: Mapped[Optional[str]] = mapped_column(String(255))
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())

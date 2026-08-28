@@ -1,11 +1,15 @@
 from typing import List, Optional
 from datetime import datetime
 
-from sqlalchemy import String, ForeignKey
+from sqlalchemy import DDL, String, ForeignKey, event
 from sqlalchemy.sql import func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from database import Base
+from database import (
+    Base,
+    VEHICLE_LICENSE_PLATE_IMMUTABLE_TRIGGER_SQL,
+    VEHICLE_TYPE_IMMUTABLE_TRIGGER_SQL,
+)
 
 class Vehicle(Base):
     __tablename__ = "vehicles"
@@ -28,3 +32,18 @@ class Vehicle(Base):
     
     # Quan hệ 1-N: Một phương tiện có thể có rất nhiều lượt gửi xe (Parking Sessions)
     parking_sessions: Mapped[List["ParkingSession"]] = relationship(back_populates="vehicle")
+
+
+# Metadata-level event chạy sau khi TẤT CẢ bảng đã được tạo; trigger tham
+# chiếu monthly_passes và parking_sessions nên không thể gắn after_create
+# trực tiếp vào bảng vehicles (bảng này được tạo trước hai bảng lịch sử).
+event.listen(
+    Base.metadata,
+    "after_create",
+    DDL(VEHICLE_TYPE_IMMUTABLE_TRIGGER_SQL).execute_if(dialect="sqlite"),
+)
+event.listen(
+    Base.metadata,
+    "after_create",
+    DDL(VEHICLE_LICENSE_PLATE_IMMUTABLE_TRIGGER_SQL).execute_if(dialect="sqlite"),
+)

@@ -1,7 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 from typing import List
-from datetime import datetime
 
 from database import get_db
 from schemas import parking_session as session_schema
@@ -15,7 +15,11 @@ from models.vehicle import Vehicle
 router = APIRouter()
 
 @router.get("", response_model=List[session_schema.ParkingSessionResponse])
-def read_parking_sessions(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+def read_parking_sessions(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=100),
+    db: Session = Depends(get_db),
+):
     """Lấy danh sách lịch sử các phiên đỗ xe"""
     return crud_session.get_parking_sessions(db, skip=skip, limit=limit)
 
@@ -47,6 +51,7 @@ def check_in_vehicle(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vehicle not found")
 
     # Kiểm tra vị trí đỗ: tồn tại, đang hoạt động, còn trống, đúng loại xe
+    slot = None
     if session_in.parking_slot_id is not None:
         slot = db.get(ParkingSlot, session_in.parking_slot_id)
         if not slot or not slot.is_active:
@@ -58,58 +63,149 @@ def check_in_vehicle(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Parking slot does not support this vehicle type"
             )
-        slot.is_occupied = True
+    # Sample đúng một timestamp cho admission, entitlement và session. Giá
+    # được kiểm tra trước slot claim để lỗi cấu hình không để lại side effect.
+    check_in_time = crud_session.server_now()
+    try:
+        monthly_pass_id = crud_session.resolve_check_in_monthly_pass_id(
+            db,
+            vehicle_id=vehicle.id,
+            vehicle_type_id=vehicle.vehicle_type_id,
+            check_in_time=check_in_time,
+        )
+    except crud_session.MissingEffectiveCheckInPriceError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Loại xe chưa có bảng giá đang áp dụng cho ngày check-in. "
+                "Hãy cấu hình bảng giá trước khi nhận xe."
+            ),
+        )
 
-    return crud_session.create_parking_session(db=db, session_in=session_in, staff_in_id=current_user.id)
+    if slot is not None:
+        # Claim NGUYÊN TỬ thay cho gán ORM: hai request đồng thời cùng vượt
+        # qua các kiểm tra đọc ở trên thì chỉ một UPDATE có điều kiện thành
+        # công; request thua nhận 409, không ghi đè slot.
+        if not crud_session.claim_parking_slot(
+            db,
+            slot.id,
+            expected_zone_id=slot.zone_id,
+            expected_vehicle_type_id=vehicle.vehicle_type_id,
+        ):
+            db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Vị trí đỗ vừa được xe khác sử dụng. Vui lòng chọn vị trí khác."
+            )
+
+    try:
+        # Claim slot + INSERT session nằm cùng transaction; commit trong CRUD
+        # là điểm cùng-thành-công của cả hai thao tác.
+        return crud_session.create_parking_session(
+            db=db,
+            session_in=session_in,
+            staff_in_id=current_user.id,
+            check_in_time=check_in_time,
+            monthly_pass_id=monthly_pass_id,
+        )
+    except IntegrityError as exc:
+        db.rollback()  # trả lại slot vừa claim trong cùng transaction
+        conflict_message = crud_session.map_check_in_integrity_error(exc)
+        if conflict_message is not None:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=conflict_message)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Lỗi hệ thống khi ghi phiên gửi xe."
+        )
 
 @router.put("/{id}/check-out", response_model=session_schema.ParkingSessionResponse)
 def check_out_vehicle(
     id: str,
-    session_in: session_schema.ParkingSessionUpdate,
+    session_in: session_schema.CheckOutBody | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Xử lý xe ra bãi (Check-out) — server tự tính phí và giải phóng vị trí.
+    """Xử lý xe ra bãi (Check-out) — IDEMPOTENT trên một session xác định.
 
-    Phí do server tính từ bảng giá/vé tháng; giá trị parking_fee client gửi lên bị bỏ qua
-    để tránh gian lận hoặc tính phí hai lần.
+    - check_out_time, parking_fee, status, staff_out_id hoàn toàn do SERVER
+      quyết định; body chứa bất kỳ field nào đều bị 422 (CheckOutBody forbid).
+    - Lần đầu: claim nguyên tử active -> checking_out, tính phí rồi hoàn tất.
+    - Các lần sau (hoặc thua race): trả 200 với đúng dữ liệu đã persist,
+      không tính lại phí, không lặp side effect.
     """
     db_session = crud_session.get_parking_session(db, session_id=id)
     if not db_session:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Parking session not found")
 
     if db_session.status == "completed":
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="This parking session has already been completed."
-        )
+        # Idempotent: trả dữ liệu đã persist, không side effect nào chạy lại
+        return db_session
 
-    check_out_time = session_in.check_out_time or datetime.now()
+    if db_session.status != "active":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Phiên gửi xe đang ở trạng thái '{db_session.status}', "
+                   "không thể check-out."
+        )
 
     vehicle = db.get(Vehicle, db_session.vehicle_id)
     if not vehicle:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vehicle not found")
 
-    service = ParkingService(db)
-    fee = service.calculate_fee(
-        vehicle_id=vehicle.id,
-        vehicle_type_id=vehicle.vehicle_type_id,
-        time_in=db_session.check_in_time,
-        time_out=check_out_time,
-    )
+    # Claim NGUYÊN TỬ trước khi tính phí: chỉ một transaction chuyển được
+    # active -> checking_out; claim + phí + slot cùng transaction này.
+    if not crud_session.claim_session_for_checkout(db, db_session.id):
+        # Thua race: winner vừa hoàn tất phiên NÀY. Kết thúc transaction đọc
+        # cũ rồi đọc lại chính session đó để trả kết quả idempotent.
+        db.rollback()
+        winner_state = crud_session.get_parking_session(db, session_id=id)
+        if winner_state is not None and winner_state.status == "completed":
+            return winner_state
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Phiên gửi xe vừa được xử lý bởi một yêu cầu khác. "
+                   "Vui lòng tải lại."
+        )
 
-    db_session.check_out_time = check_out_time
-    db_session.parking_fee = fee
-    db_session.status = "completed"
-    db_session.staff_out_id = current_user.id
+    try:
+        # Đồng hồ server, lấy ĐÚNG MỘT LẦN cho phí + DB + response
+        check_out_time = crud_session.server_now()
 
-    # Giải phóng vị trí đỗ trong cùng transaction
-    if db_session.parking_slot_id is not None:
-        slot = db.get(ParkingSlot, db_session.parking_slot_id)
-        if slot:
-            slot.is_occupied = False
+        service = ParkingService(db)
+        fee = service.calculate_fee(
+            vehicle_id=vehicle.id,
+            vehicle_type_id=vehicle.vehicle_type_id,
+            time_in=db_session.check_in_time,
+            time_out=check_out_time,
+            monthly_pass_id=db_session.monthly_pass_id,
+        )
 
-    db.commit()
+        db_session.check_out_time = check_out_time
+        db_session.parking_fee = fee
+        db_session.status = "completed"  # hoàn tất cùng billing trong một UPDATE
+        db_session.staff_out_id = current_user.id
+
+        # Giải phóng vị trí đỗ trong cùng transaction; slot thiếu do dữ liệu
+        # legacy không được làm hỏng một checkout hợp lệ.
+        if db_session.parking_slot_id is not None:
+            slot = db.get(ParkingSlot, db_session.parking_slot_id)
+            if slot:
+                slot.is_occupied = False
+
+        db.commit()
+    except HTTPException:
+        # calculate_fee lỗi (thiếu bảng giá...) SAU claim -> rollback trả
+        # session về active, slot giữ nguyên, có thể retry.
+        db.rollback()
+        raise
+    except SQLAlchemyError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Lỗi hệ thống trong quá trình check-out."
+        )
+
     db.refresh(db_session)
     return db_session
 

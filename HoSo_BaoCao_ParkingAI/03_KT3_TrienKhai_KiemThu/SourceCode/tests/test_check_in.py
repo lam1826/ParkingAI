@@ -11,6 +11,7 @@ from models.customer import Customer
 from models.vehicle import Vehicle
 from models.parking_session import ParkingSession
 from models.monthly_pass import MonthlyPass
+from models.price_config import PriceConfig
 from services.auth_service import AuthService
 
 
@@ -30,7 +31,8 @@ def test_check_in_success(
     client: TestClient,
     auth_headers: dict,
     vehicle_type: VehicleType,
-    parking_slot: ParkingSlot
+    parking_slot: ParkingSlot,
+    price_config,
 ):
     """1. Kiểm thử xe vào bãi thành công với thông tin hợp lệ (chỗ đỗ được hệ thống tự cấp phát)."""
     payload = {
@@ -52,7 +54,8 @@ def test_check_in_new_vehicle(
     client: TestClient,
     auth_headers: dict,
     vehicle_type: VehicleType,
-    parking_slot: ParkingSlot
+    parking_slot: ParkingSlot,
+    price_config,
 ):
     """2. Kiểm thử xe mới hoàn toàn đăng ký vào bãi thành công."""
     payload = {
@@ -148,7 +151,8 @@ def test_check_in_with_chosen_slot_success(
     auth_headers: dict,
     db_session: Session,
     vehicle_type: VehicleType,
-    parking_slot: ParkingSlot
+    parking_slot: ParkingSlot,
+    price_config,
 ):
     """9. Kiểm thử nhân viên chọn đích danh vị trí đỗ hợp lệ -> check-in thành công."""
     payload = {
@@ -253,7 +257,8 @@ def test_check_in_with_active_monthly_pass(
     db_session: Session,
     customer: Customer,
     vehicle_type: VehicleType,
-    parking_slot: ParkingSlot
+    parking_slot: ParkingSlot,
+    price_config: PriceConfig,
 ):
     """7. Kiểm thử xe có vé tháng còn hiệu lực vẫn check-in bình thường
     (vé tháng chỉ ảnh hưởng tới phí lúc check-out, không chặn/gate ở bước check-in)."""
@@ -291,7 +296,8 @@ def test_check_in_with_expired_monthly_pass(
     db_session: Session,
     customer: Customer,
     vehicle_type: VehicleType,
-    parking_slot: ParkingSlot
+    parking_slot: ParkingSlot,
+    price_config,
 ):
     """8. Kiểm thử xe có vé tháng đã hết hạn vẫn check-in bình thường
     (việc hết hạn chỉ ảnh hưởng tới tính phí ở bước check-out)."""

@@ -9,7 +9,7 @@ class PeakHourItem(BaseModel):
 
 class DashboardResponse(BaseModel):
     total_vehicles_today: int = Field(..., description="Tổng số xe vào bãi trong ngày hôm nay")
-    total_revenue_today: float = Field(..., description="Tổng doanh thu trong ngày hôm nay")
+    total_revenue_today: int = Field(..., description="Tổng doanh thu VND trong ngày hôm nay")
     vehicles_currently_inside: int = Field(..., description="Số lượng xe hiện đang còn trong bãi")
     vehicles_checked_out_today: int = Field(..., description="Số lượng xe đã hoàn tất rời bãi trong ngày")
     occupancy_rate_percentage: float = Field(..., description="Tỷ lệ lấp đầy bãi đỗ hiện tại (%)")
@@ -18,7 +18,10 @@ class DashboardResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 class AIInsightResponse(BaseModel):
-    insight: str = Field(..., description="Nội dung phân tích và gợi ý từ AI Gemini")
+    insight: str = Field(
+        ...,
+        description="Gợi ý vận hành được tổng hợp theo quy tắc từ số liệu bãi đỗ",
+    )
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -33,6 +36,6 @@ class RecentSessionItem(BaseModel):
 
 class RevenueChartItem(BaseModel):
     day: str = Field(..., description="Ngày (VD: 24/07)")
-    revenue: float = Field(..., description="Doanh thu trong ngày")
+    revenue: int = Field(..., description="Doanh thu VND trong ngày")
 
     model_config = ConfigDict(from_attributes=True)

@@ -4,9 +4,9 @@ import EditIcon from "@mui/icons-material/Edit";
 import DeleteIcon from "@mui/icons-material/Delete";
 import AddIcon from "@mui/icons-material/Add";
 import formatDate from "../../../utils/formatDate";
-import dayjs from "dayjs";
+import { isBusinessDateExpired } from "../../../utils/businessDate";
 
-const MonthlyPassTable = ({ passes, loading, onAdd, onEdit, onDelete }) => {
+const MonthlyPassTable = ({ passes, loading, onAdd, onEdit, onDeactivate }) => {
   // Lưu ý: MUI DataGrid v9 — valueGetter/valueFormatter nhận (value, row) thay vì params
   const columns = [
     { field: "pass_code", headerName: "Mã thẻ", width: 120, renderCell: ({ value }) => <strong>{value || "—"}</strong> },
@@ -48,7 +48,7 @@ const MonthlyPassTable = ({ passes, loading, onAdd, onEdit, onDelete }) => {
           return <Chip label="Ngừng hoạt động" color="default" size="small" />;
         }
         // Vé còn hiệu lực đến HẾT ngày end_date (23:59:59), khớp cách backend tính phí
-        const isExpired = dayjs().isAfter(dayjs(row.end_date).endOf("day"));
+        const isExpired = isBusinessDateExpired(row.end_date);
         return (
           <Chip
             label={isExpired ? "Hết hạn" : "Đang hoạt động"}
@@ -71,7 +71,7 @@ const MonthlyPassTable = ({ passes, loading, onAdd, onEdit, onDelete }) => {
             </IconButton>
           </Tooltip>
           <Tooltip title="Hủy vé">
-            <IconButton color="error" size="small" onClick={() => onDelete(params.row)}>
+            <IconButton color="error" size="small" onClick={() => onDeactivate(params.row)}>
               <DeleteIcon fontSize="small" />
             </IconButton>
           </Tooltip>

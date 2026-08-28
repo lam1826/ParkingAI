@@ -8,9 +8,9 @@ import useMonthlyPass from "./hooks/useMonthlyPass";
 const MonthlyPassPage = () => {
   const {
     passes, vehicles, customers, loading, submitting,
-    dialogOpen, deleteDialogOpen, selectedPass, notify,
-    handleOpenCreate, handleOpenEdit, handleOpenDelete,
-    closeDialogs, handleSave, handleDelete, fetchData, closeNotify
+    dialogOpen, deactivateDialogOpen, selectedPass, notify,
+    handleOpenCreate, handleOpenEdit, handleOpenDeactivate,
+    closeDialogs, handleSave, handleDeactivate, fetchData, closeNotify
   } = useMonthlyPass();
 
   return (
@@ -29,7 +29,7 @@ const MonthlyPassPage = () => {
         loading={loading}
         onAdd={handleOpenCreate}
         onEdit={handleOpenEdit}
-        onDelete={handleOpenDelete}
+        onDeactivate={handleOpenDeactivate}
       />
 
       <MonthlyPassDialog
@@ -42,7 +42,7 @@ const MonthlyPassPage = () => {
         submitting={submitting}
       />
 
-      <Dialog open={deleteDialogOpen} onClose={closeDialogs}>
+      <Dialog open={deactivateDialogOpen} onClose={closeDialogs}>
         <DialogTitle fontWeight="bold">Xác nhận hủy vé</DialogTitle>
         <DialogContent>
           <DialogContentText>
@@ -51,7 +51,7 @@ const MonthlyPassPage = () => {
         </DialogContent>
         <DialogActions sx={{ p: 2 }}>
           <Button onClick={closeDialogs} variant="outlined">Quay lại</Button>
-          <Button onClick={handleDelete} color="error" variant="contained">Xác nhận Hủy</Button>
+          <Button onClick={handleDeactivate} color="error" variant="contained">Xác nhận Hủy</Button>
         </DialogActions>
       </Dialog>
 

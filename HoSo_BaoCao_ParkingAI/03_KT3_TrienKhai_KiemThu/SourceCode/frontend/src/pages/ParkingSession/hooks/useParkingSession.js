@@ -1,10 +1,21 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import parkingSessionService from "../services/parkingSessionService";
 import { vehicleTypeService } from "../../VehicleType/services/vehicleTypeService";
 import { zoneService } from "../../Zone/services/zoneService";
+import { createLatestRequestGate } from "../../../utils/latestRequestGate";
 
 const useParkingSession = () => {
+  const sessionRequestGate = useRef(null);
+  if (sessionRequestGate.current === null) {
+    sessionRequestGate.current = createLatestRequestGate();
+  }
+  const slotRequestGate = useRef(null);
+  if (slotRequestGate.current === null) {
+    slotRequestGate.current = createLatestRequestGate();
+  }
+
   const [sessions, setSessions] = useState([]);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
@@ -22,6 +33,10 @@ const useParkingSession = () => {
   // Bộ lọc lịch sử: "active" | "completed" | "" (tất cả)
   const [statusFilter, setStatusFilter] = useState("active");
   const [searchPlate, setSearchPlate] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(10);
 
   // Snackbar Notification State
   const [notify, setNotify] = useState({ open: false, message: "", severity: "info" });
@@ -35,24 +50,69 @@ const useParkingSession = () => {
   };
 
   const fetchSessions = useCallback(async () => {
+    const requestGate = sessionRequestGate.current;
+    const requestGeneration = requestGate.begin();
     setLoading(true);
     try {
       const data = await parkingSessionService.getAllSessions({
         status: statusFilter,
         licensePlate: searchPlate.trim() || undefined,
+        dateFrom,
+        dateTo,
+        page,
+        pageSize,
       });
-      setSessions(data || []);
+      if (!requestGate.isCurrent(requestGeneration)) return;
+      setSessions(data.items || []);
+      setTotal(data.total || 0);
     } catch (err) {
+      if (!requestGate.isCurrent(requestGeneration)) return;
       console.error("Lỗi lấy dữ liệu phiên đỗ:", err);
-      showNotify("Không thể tải danh sách phiên gửi xe", "error");
+      setSessions([]);
+      setTotal(0);
+      showNotify(
+        err.message || "Không thể tải danh sách phiên gửi xe",
+        "error",
+      );
     } finally {
-      setLoading(false);
+      if (requestGate.isCurrent(requestGeneration)) setLoading(false);
     }
-  }, [statusFilter, searchPlate]);
+  }, [statusFilter, searchPlate, dateFrom, dateTo, page, pageSize]);
+
+  const changeStatusFilter = useCallback((value) => {
+    setPage(0);
+    setStatusFilter(value);
+  }, []);
+
+  const changeSearchPlate = useCallback((value) => {
+    setPage(0);
+    setSearchPlate(value);
+  }, []);
+
+  const changeDateFrom = useCallback((value) => {
+    setPage(0);
+    setDateFrom(value);
+  }, []);
+
+  const changeDateTo = useCallback((value) => {
+    setPage(0);
+    setDateTo(value);
+  }, []);
+
+  const handlePaginationModelChange = useCallback((model) => {
+    if (model.pageSize !== pageSize) {
+      setPageSize(model.pageSize);
+      setPage(0);
+      return;
+    }
+    setPage(model.page);
+  }, [pageSize]);
 
   const fetchAvailableSlots = useCallback(async () => {
+    const requestGeneration = slotRequestGate.current.begin();
     try {
       const data = await parkingSessionService.getAvailableSlots();
+      if (!slotRequestGate.current.isCurrent(requestGeneration)) return;
       // Trải phẳng danh sách slot trống của từng khu vực
       const slots = (data.zones || []).flatMap((z) =>
         (z.available_slots_list || []).map((s) => ({
@@ -63,12 +123,14 @@ const useParkingSession = () => {
       );
       setAvailableSlots(slots);
     } catch (err) {
+      if (!slotRequestGate.current.isCurrent(requestGeneration)) return;
       console.error("Lỗi lấy danh sách chỗ trống:", err);
     }
   }, []);
 
   useEffect(() => {
     fetchSessions();
+    return () => sessionRequestGate.current.invalidate();
   }, [fetchSessions]);
 
   useEffect(() => {
@@ -85,6 +147,7 @@ const useParkingSession = () => {
       }
     })();
     fetchAvailableSlots();
+    return () => slotRequestGate.current.invalidate();
   }, [fetchAvailableSlots]);
 
   const handleCheckIn = async (e) => {
@@ -120,9 +183,9 @@ const useParkingSession = () => {
     }
   };
 
-  const handleCheckOut = async (plate) => {
+  const handleCheckOut = async (sessionId) => {
     try {
-      const res = await parkingSessionService.checkOut(plate);
+      const res = await parkingSessionService.checkOut(sessionId);
       const fee = res.parking_fee ? new Intl.NumberFormat("vi-VN").format(res.parking_fee) : 0;
       showNotify(`Xe ra thành công! Phí đỗ xe: ${fee} VNĐ`, "success");
       fetchSessions();
@@ -134,6 +197,7 @@ const useParkingSession = () => {
 
   return {
     sessions,
+    total,
     loading,
     submitting,
     licensePlate,
@@ -148,9 +212,16 @@ const useParkingSession = () => {
     zones,
     availableSlots,
     statusFilter,
-    setStatusFilter,
+    setStatusFilter: changeStatusFilter,
     searchPlate,
-    setSearchPlate,
+    setSearchPlate: changeSearchPlate,
+    dateFrom,
+    setDateFrom: changeDateFrom,
+    dateTo,
+    setDateTo: changeDateTo,
+    page,
+    pageSize,
+    handlePaginationModelChange,
     notify,
     handleCheckIn,
     handleCheckOut,

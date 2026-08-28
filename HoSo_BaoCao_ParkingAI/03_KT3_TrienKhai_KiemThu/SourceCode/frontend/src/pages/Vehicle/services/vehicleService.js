@@ -1,21 +1,13 @@
 import api from "../../../services/api";
+import { requestAllOffsetPages } from "../../../services/paginatedLookup";
 
 const vehicleService = {
-  getAllVehicles: async () => {
-    const response = await api.get("/api/v1/vehicles");
-    return response.data;
-  },
+  getAllVehicles: async () => requestAllOffsetPages(api, "/api/v1/vehicles"),
   
   // Lấy dữ liệu phụ trợ cho Form
-  getVehicleTypes: async () => {
-    const response = await api.get("/api/v1/vehicle-types");
-    return response.data;
-  },
+  getVehicleTypes: async () => requestAllOffsetPages(api, "/api/v1/vehicle-types"),
   
-  getCustomers: async () => {
-    const response = await api.get("/api/v1/customers");
-    return response.data;
-  },
+  getCustomers: async () => requestAllOffsetPages(api, "/api/v1/customers"),
 
   create: async (data) => {
     const response = await api.post("/api/v1/vehicles", data);

@@ -42,14 +42,15 @@ def get_dashboard_summary(
     "/ai-insight",
     response_model=AIInsightResponse,
     status_code=status.HTTP_200_OK,
-    summary="Lấy gợi ý thông minh (AI Insight) dựa trên dữ liệu bãi đỗ hiện tại"
+    summary="Lấy gợi ý vận hành theo quy tắc từ dữ liệu bãi đỗ hiện tại"
 )
 def get_ai_insight(
     db: Annotated[Session, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)]
 ):
     """
-    Phân tích tình trạng lấp đầy hiện tại và trả về một gợi ý ngắn gọn cho nhân viên.
+    Tổng hợp tình trạng lấp đầy hiện tại và trả về gợi ý
+    vận hành theo quy tắc; endpoint này không gọi AI provider.
     """
     service = ParkingService(db)
     return service.get_ai_insight_data()

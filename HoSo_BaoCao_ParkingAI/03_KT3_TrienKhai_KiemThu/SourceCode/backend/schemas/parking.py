@@ -1,10 +1,18 @@
-from pydantic import BaseModel, Field, field_validator, ConfigDict
-from typing import Optional, List
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from typing import Literal, Optional, List
 from datetime import datetime
+
+from core.clock import BUSINESS_TZ
 
 
 class CheckInRequest(BaseModel):
-    """Schema nhận dữ liệu yêu cầu Check-in."""
+    """Schema nhận dữ liệu yêu cầu Check-in.
+
+    extra="forbid": thời gian vào, phí, trạng thái, nhân viên và vé tháng hoàn
+    toàn do server quyết định — client gửi các field đó (hoặc field lạ) nhận
+    422 thay vì bị âm thầm bỏ qua."""
+    model_config = ConfigDict(extra="forbid")
+
     license_plate: str = Field(
         ..., min_length=4, max_length=15, description="Biển số xe"
     )
@@ -26,7 +34,13 @@ class CheckInRequest(BaseModel):
 
 
 class CheckOutRequest(BaseModel):
-    """Schema validate dữ liệu đầu vào cho yêu cầu Check-out."""
+    """Schema validate dữ liệu đầu vào cho yêu cầu Check-out.
+
+    extra="forbid": thời gian ra, phí, trạng thái và nhân viên xử lý hoàn toàn
+    do server quyết định — client cố gửi các field đó (hoặc field lạ) phải
+    nhận 422 thay vì bị âm thầm bỏ qua."""
+    model_config = ConfigDict(extra="forbid")
+
     license_plate: str = Field(
         ..., min_length=4, max_length=15,
         description="Biển số xe cần rời bãi"
@@ -46,7 +60,7 @@ class CheckOutResponse(BaseModel):
     check_in_time: datetime
     check_out_time: datetime
     duration_minutes: int
-    parking_fee: float
+    parking_fee: int
     status: str
 
     model_config = ConfigDict(from_attributes=True)
@@ -105,7 +119,7 @@ class ParkingSessionDetailResponse(BaseModel):
     zone_name: Optional[str] = None
     check_in_time: datetime
     check_out_time: Optional[datetime] = None
-    parking_fee: float = 0.0
+    parking_fee: int = 0
     status: str
     handled_by_staff: Optional[StaffInfoResponse] = None
 
@@ -121,3 +135,59 @@ class PaginatedParkingSearchResponse(BaseModel):
     )
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class ParkingSearchQuery(BaseModel):
+    """Validated query contract for the business-local session timeline.
+
+    Database timestamps are naive Asia/Ho_Chi_Minh values. An offset-aware
+    client timestamp is therefore converted to that timezone and made naive
+    before comparison; a naive input is interpreted as already business-local.
+    """
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    license_plate: Optional[str] = Field(
+        default=None,
+        description="Lọc theo biển số xe (tìm kiếm tương đối)",
+    )
+    status_filter: Optional[Literal["active", "completed"]] = Field(
+        default=None,
+        alias="status",
+        description="Lọc theo trạng thái (active, completed)",
+    )
+    date_from: Optional[datetime] = Field(
+        default=None,
+        description="Lọc từ thời gian vào (ISO 8601)",
+    )
+    date_to: Optional[datetime] = Field(
+        default=None,
+        description="Lọc đến thời gian vào (ISO 8601)",
+    )
+    zone_id: Optional[int] = Field(default=None, gt=0)
+    vehicle_type_id: Optional[int] = Field(default=None, gt=0)
+    page: int = Field(default=1, ge=1)
+    size: int = Field(default=10, ge=1, le=100)
+    sort_by: Literal[
+        "check_in_time",
+        "check_out_time",
+        "parking_fee",
+    ] = Field(default="check_in_time")
+    sort_order: str = Field(default="desc", pattern="^(asc|desc|ASC|DESC)$")
+
+    @field_validator("date_from", "date_to")
+    @classmethod
+    def normalize_to_business_local(cls, value: Optional[datetime]):
+        if value is None or value.tzinfo is None or value.utcoffset() is None:
+            return value
+        return value.astimezone(BUSINESS_TZ).replace(tzinfo=None)
+
+    @model_validator(mode="after")
+    def validate_date_range(self):
+        if (
+            self.date_from is not None
+            and self.date_to is not None
+            and self.date_from > self.date_to
+        ):
+            raise ValueError("date_from phải nhỏ hơn hoặc bằng date_to")
+        return self

@@ -34,9 +34,27 @@ const MonthlyPassDialog = ({ isOpen, onClose, onSave, pass, vehicles, customers,
     setForm((prev) => ({ ...prev, [name]: value }));
   };
 
+  // Validation tối thiểu phía client; backend vẫn là biên bảo vệ cuối cùng
+  const dateRangeInvalid =
+    Boolean(form.start_date && form.end_date) && form.end_date < form.start_date;
+  // Giá vé: số nguyên VND không âm. KHÔNG tự làm tròn — nhập 123.5 phải bị
+  // chặn kèm thông báo, không âm thầm đổi thành 124.
+  const priceNumber = Number(form.price);
+  const priceInvalid =
+    form.price === "" || form.price === null ||
+    !Number.isFinite(priceNumber) ||
+    !Number.isInteger(priceNumber) ||
+    priceNumber < 0;
+
   const handleSubmit = (e) => {
     e.preventDefault();
-    onSave(form);
+    if (dateRangeInvalid || priceInvalid) return;
+    // Contract backend: price là số nguyên VND, pass_code được trim
+    onSave({
+      ...form,
+      pass_code: form.pass_code.trim(),
+      price: priceNumber,
+    });
   };
 
   return (
@@ -63,6 +81,9 @@ const MonthlyPassDialog = ({ isOpen, onClose, onSave, pass, vehicles, customers,
                 name="price"
                 value={form.price}
                 onChange={handleChange}
+                error={priceInvalid}
+                helperText={priceInvalid ? "Số tiền phải là số nguyên VND không âm (không nhập số lẻ thập phân)" : undefined}
+                slotProps={{ htmlInput: { min: 0, step: 1000 } }}
               />
             </Grid>
             <Grid size={{ xs: 12 }}>
@@ -96,7 +117,7 @@ const MonthlyPassDialog = ({ isOpen, onClose, onSave, pass, vehicles, customers,
                 fullWidth required size="small" type="date"
                 label="Ngày bắt đầu"
                 name="start_date"
-                InputLabelProps={{ shrink: true }}
+                slotProps={{ inputLabel: { shrink: true } }}
                 value={form.start_date}
                 onChange={handleChange}
               />
@@ -106,9 +127,11 @@ const MonthlyPassDialog = ({ isOpen, onClose, onSave, pass, vehicles, customers,
                 fullWidth required size="small" type="date"
                 label="Ngày hết hạn"
                 name="end_date"
-                InputLabelProps={{ shrink: true }}
+                slotProps={{ inputLabel: { shrink: true } }}
                 value={form.end_date}
                 onChange={handleChange}
+                error={dateRangeInvalid}
+                helperText={dateRangeInvalid ? "Ngày hết hạn phải từ ngày bắt đầu trở đi" : undefined}
               />
             </Grid>
           </Grid>

@@ -1,15 +1,10 @@
 import api from "../../../services/api";
+import { requestAllOffsetPages } from "../../../services/paginatedLookup";
 
 const userService = {
-  getAllUsers: async () => {
-    const response = await api.get("/api/v1/users");
-    return response.data;
-  },
+  getAllUsers: async () => requestAllOffsetPages(api, "/api/v1/users"),
 
-  getRoles: async () => {
-    const response = await api.get("/api/v1/roles");
-    return response.data;
-  },
+  getRoles: async () => requestAllOffsetPages(api, "/api/v1/roles"),
 
   create: async (data) => {
     const response = await api.post("/api/v1/users", data);

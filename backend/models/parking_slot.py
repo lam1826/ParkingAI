@@ -5,7 +5,12 @@ from sqlalchemy import String, Boolean, DDL, ForeignKey, Index, event
 from sqlalchemy.sql import func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from database import Base
+from database import (
+    Base,
+    PARKING_SLOT_ZONE_IMMUTABLE_TRIGGER_SQL,
+    PARKING_SLOTS_OPERATIONAL_UPDATE_GUARD_TRIGGER_SQL,
+    ZONES_OPERATIONAL_UPDATE_GUARD_TRIGGER_SQL,
+)
 
 class ParkingSlot(Base):
     __tablename__ = "parking_slots"
@@ -61,6 +66,27 @@ event.listen(
         END
         """
     ).execute_if(dialect="sqlite"),
+)
+
+
+# Hai trigger operational tham chiếu parking_sessions, nên chỉ cài sau
+# khi toàn bộ metadata (bao gồm bảng session) đã được tạo.
+event.listen(
+    Base.metadata,
+    "after_create",
+    DDL(ZONES_OPERATIONAL_UPDATE_GUARD_TRIGGER_SQL).execute_if(dialect="sqlite"),
+)
+event.listen(
+    Base.metadata,
+    "after_create",
+    DDL(PARKING_SLOT_ZONE_IMMUTABLE_TRIGGER_SQL).execute_if(dialect="sqlite"),
+)
+event.listen(
+    Base.metadata,
+    "after_create",
+    DDL(PARKING_SLOTS_OPERATIONAL_UPDATE_GUARD_TRIGGER_SQL).execute_if(
+        dialect="sqlite"
+    ),
 )
 
 event.listen(

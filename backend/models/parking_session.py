@@ -2,11 +2,31 @@ import uuid
 from typing import Optional
 from datetime import datetime
 
-from sqlalchemy import String, Float, ForeignKey, DateTime, Index, text
+from sqlalchemy import DDL, String, Integer, ForeignKey, DateTime, Index, event, text
 from sqlalchemy.sql import func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from database import Base
+from database import (
+    Base,
+    PARKING_FEE_INTEGER_INSERT_TRIGGER_SQL,
+    PARKING_FEE_INTEGER_UPDATE_TRIGGER_SQL,
+    PARKING_FEE_SAFE_VND_INSERT_TRIGGER_SQL,
+    PARKING_FEE_SAFE_VND_UPDATE_TRIGGER_SQL,
+    SESSION_COMPLETED_BILLING_IMMUTABLE_TRIGGER_SQL,
+    SESSION_COMPLETED_STATUS_TERMINAL_TRIGGER_SQL,
+    SESSION_DATETIME_INSERT_VALIDATION_TRIGGER_SQL,
+    SESSION_DATETIME_UPDATE_VALIDATION_TRIGGER_SQL,
+    SESSION_IDENTITY_IMMUTABLE_TRIGGER_SQL,
+    SESSION_MONTHLY_PASS_INSERT_VALIDATION_TRIGGER_SQL,
+    SESSION_RATE_ACTIVATION_VALIDATION_TRIGGER_SQL,
+    SESSION_RATE_INSERT_VALIDATION_TRIGGER_SQL,
+    SESSION_SLOT_ADMISSION_ACTIVATION_VALIDATION_TRIGGER_SQL,
+    SESSION_SLOT_ADMISSION_INSERT_VALIDATION_TRIGGER_SQL,
+    SESSION_STATE_INSERT_VALIDATION_TRIGGER_SQL,
+    SESSION_STATE_UPDATE_VALIDATION_TRIGGER_SQL,
+    SESSION_STATUS_INSERT_VALIDATION_TRIGGER_SQL,
+    SESSION_STATUS_UPDATE_VALIDATION_TRIGGER_SQL,
+)
 
 class ParkingSession(Base):
     __tablename__ = "parking_sessions"
@@ -51,7 +71,7 @@ class ParkingSession(Base):
     image_in_url: Mapped[Optional[str]] = mapped_column(String(255))
     image_out_url: Mapped[Optional[str]] = mapped_column(String(255))
     
-    parking_fee: Mapped[Optional[float]] = mapped_column(Float)
+    parking_fee: Mapped[Optional[int]] = mapped_column(Integer)
     status: Mapped[str] = mapped_column(String(20))  # Trạng thái: 'active' (Đang trong bãi), 'completed' (Đã ra)
     
     staff_in_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
@@ -80,3 +100,121 @@ class ParkingSession(Base):
     staff_out: Mapped[Optional["User"]] = relationship(
         foreign_keys=[staff_out_id], back_populates="parking_sessions_out"
     )
+
+
+event.listen(
+    ParkingSession.__table__,
+    "after_create",
+    DDL(PARKING_FEE_INTEGER_INSERT_TRIGGER_SQL).execute_if(dialect="sqlite"),
+)
+event.listen(
+    ParkingSession.__table__,
+    "after_create",
+    DDL(PARKING_FEE_SAFE_VND_INSERT_TRIGGER_SQL).execute_if(dialect="sqlite"),
+)
+event.listen(
+    ParkingSession.__table__,
+    "after_create",
+    DDL(PARKING_FEE_SAFE_VND_UPDATE_TRIGGER_SQL).execute_if(dialect="sqlite"),
+)
+event.listen(
+    ParkingSession.__table__,
+    "after_create",
+    DDL(PARKING_FEE_INTEGER_UPDATE_TRIGGER_SQL).execute_if(dialect="sqlite"),
+)
+event.listen(
+    ParkingSession.__table__,
+    "after_create",
+    DDL(SESSION_MONTHLY_PASS_INSERT_VALIDATION_TRIGGER_SQL).execute_if(
+        dialect="sqlite"
+    ),
+)
+event.listen(
+    ParkingSession.__table__,
+    "after_create",
+    DDL(SESSION_IDENTITY_IMMUTABLE_TRIGGER_SQL).execute_if(dialect="sqlite"),
+)
+event.listen(
+    ParkingSession.__table__,
+    "after_create",
+    DDL(SESSION_COMPLETED_STATUS_TERMINAL_TRIGGER_SQL).execute_if(
+        dialect="sqlite"
+    ),
+)
+event.listen(
+    ParkingSession.__table__,
+    "after_create",
+    DDL(SESSION_COMPLETED_BILLING_IMMUTABLE_TRIGGER_SQL).execute_if(
+        dialect="sqlite"
+    ),
+)
+event.listen(
+    ParkingSession.__table__,
+    "after_create",
+    DDL(SESSION_STATUS_INSERT_VALIDATION_TRIGGER_SQL).execute_if(
+        dialect="sqlite"
+    ),
+)
+event.listen(
+    ParkingSession.__table__,
+    "after_create",
+    DDL(SESSION_STATUS_UPDATE_VALIDATION_TRIGGER_SQL).execute_if(
+        dialect="sqlite"
+    ),
+)
+event.listen(
+    ParkingSession.__table__,
+    "after_create",
+    DDL(SESSION_DATETIME_INSERT_VALIDATION_TRIGGER_SQL).execute_if(
+        dialect="sqlite"
+    ),
+)
+event.listen(
+    ParkingSession.__table__,
+    "after_create",
+    DDL(SESSION_DATETIME_UPDATE_VALIDATION_TRIGGER_SQL).execute_if(
+        dialect="sqlite"
+    ),
+)
+event.listen(
+    ParkingSession.__table__,
+    "after_create",
+    DDL(SESSION_STATE_INSERT_VALIDATION_TRIGGER_SQL).execute_if(
+        dialect="sqlite"
+    ),
+)
+event.listen(
+    ParkingSession.__table__,
+    "after_create",
+    DDL(SESSION_STATE_UPDATE_VALIDATION_TRIGGER_SQL).execute_if(
+        dialect="sqlite"
+    ),
+)
+
+# Trigger admission tham chiếu price_configs; đợi toàn bộ metadata tồn tại.
+event.listen(
+    Base.metadata,
+    "after_create",
+    DDL(SESSION_RATE_INSERT_VALIDATION_TRIGGER_SQL).execute_if(dialect="sqlite"),
+)
+event.listen(
+    Base.metadata,
+    "after_create",
+    DDL(SESSION_RATE_ACTIVATION_VALIDATION_TRIGGER_SQL).execute_if(
+        dialect="sqlite"
+    ),
+)
+event.listen(
+    Base.metadata,
+    "after_create",
+    DDL(SESSION_SLOT_ADMISSION_INSERT_VALIDATION_TRIGGER_SQL).execute_if(
+        dialect="sqlite"
+    ),
+)
+event.listen(
+    Base.metadata,
+    "after_create",
+    DDL(SESSION_SLOT_ADMISSION_ACTIVATION_VALIDATION_TRIGGER_SQL).execute_if(
+        dialect="sqlite"
+    ),
+)

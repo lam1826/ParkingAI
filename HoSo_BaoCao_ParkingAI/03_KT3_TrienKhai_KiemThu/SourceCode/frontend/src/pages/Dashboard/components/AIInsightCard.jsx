@@ -35,12 +35,12 @@ const AIInsightCard = ({ loading, insight }) => {
               variant="h6"
               fontWeight={700}
             >
-              AI Insight
+              Gợi ý vận hành
             </Typography>
           </Box>
 
           <Chip
-            label="Gemini AI"
+            label="Theo quy tắc"
             size="small"
             color="secondary"
             variant="outlined"
@@ -66,7 +66,7 @@ const AIInsightCard = ({ loading, insight }) => {
             }}
           >
             {insight?.insight ??
-              "Chưa có dữ liệu AI để phân tích."}
+              "Chưa có đủ dữ liệu để đưa ra gợi ý."}
           </Typography>
         )}
       </CardContent>

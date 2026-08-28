@@ -2,7 +2,10 @@ import json
 from datetime import date
 from typing import Optional, Dict, Any, List
 from fastapi import HTTPException, status
+import httpx
+import requests
 from google import genai
+from google.genai import errors as genai_errors
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
 from core.config import settings
@@ -13,19 +16,108 @@ from models.ai_report import AiReport
 # IMPORT THÊM ParkingService ĐỂ LẤY DỮ LIỆU DASHBOARD TỰ ĐỘNG
 from services.parking_service import ParkingService
 
+
+_PROVIDER_TIMEOUT_EXCEPTIONS = (
+    TimeoutError,
+    httpx.TimeoutException,
+    requests.exceptions.Timeout,
+)
+_PROVIDER_NETWORK_EXCEPTIONS = (
+    ConnectionError,
+    httpx.NetworkError,
+    requests.exceptions.ConnectionError,
+)
+_PROVIDER_TIMEOUT_CODES = {408, 504}
+_PROVIDER_UNAVAILABLE_CODES = {401, 403, 429, 503}
+_PROVIDER_TIMEOUT_STATUSES = {"DEADLINE_EXCEEDED"}
+_PROVIDER_UNAVAILABLE_STATUSES = {
+    "RESOURCE_EXHAUSTED",
+    "UNAVAILABLE",
+    "UNAUTHENTICATED",
+    "PERMISSION_DENIED",
+}
+
+
+def _provider_http_exception(error: Exception) -> HTTPException:
+    """Translate failures from the provider boundary to stable HTTP semantics.
+
+    Provider messages may contain request/configuration details, so responses
+    deliberately expose only a generic Vietnamese message.  Inspect the full
+    exception chain because transport libraries commonly wrap their original
+    timeout/network exception.
+    """
+    if isinstance(error, HTTPException):
+        return error
+
+    chain: list[BaseException] = []
+    current: BaseException | None = error
+    seen: set[int] = set()
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        chain.append(current)
+        current = current.__cause__ or current.__context__
+
+    if any(isinstance(item, _PROVIDER_TIMEOUT_EXCEPTIONS) for item in chain):
+        return HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail=(
+                "Dịch vụ AI phản hồi quá thời gian cho phép. "
+                "Vui lòng thử lại sau."
+            ),
+        )
+
+    api_error = next(
+        (item for item in chain if isinstance(item, genai_errors.APIError)),
+        None,
+    )
+    if api_error is not None:
+        provider_code = getattr(api_error, "code", None)
+        provider_status = str(getattr(api_error, "status", "") or "").upper()
+        if (
+            provider_code in _PROVIDER_TIMEOUT_CODES
+            or provider_status in _PROVIDER_TIMEOUT_STATUSES
+        ):
+            return HTTPException(
+                status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+                detail=(
+                    "Dịch vụ AI phản hồi quá thời gian cho phép. "
+                    "Vui lòng thử lại sau."
+                ),
+            )
+        if (
+            provider_code in _PROVIDER_UNAVAILABLE_CODES
+            or provider_status in _PROVIDER_UNAVAILABLE_STATUSES
+        ):
+            return HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=(
+                    "Dịch vụ AI tạm thời không khả dụng hoặc đã đạt giới hạn. "
+                    "Vui lòng thử lại sau."
+                ),
+            )
+
+    if any(isinstance(item, _PROVIDER_NETWORK_EXCEPTIONS) for item in chain):
+        return HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                "Dịch vụ AI tạm thời không khả dụng hoặc đã đạt giới hạn. "
+                "Vui lòng thử lại sau."
+            ),
+        )
+
+    return HTTPException(
+        status_code=status.HTTP_502_BAD_GATEWAY,
+        detail="Dịch vụ AI trả về phản hồi không hợp lệ. Vui lòng thử lại sau.",
+    )
+
 class AIService:
     """
     AIService chịu trách nhiệm giao tiếp với mô hình AI (Google Gemini)
     thông qua SDK mới (google.genai) để phân tích dữ liệu bãi đỗ xe,
     tạo báo cáo tự động và hỗ trợ truy vấn ngôn ngữ tự nhiên.
 
-    BACKLOG (P3, maintainability — KHÔNG thuộc phạm vi Đợt 10C):
-    năm phương thức bên dưới lặp lại cùng một khối
-    `client.models.generate_content(...)` -> `response.text.strip()` ->
-    `save_ai_report(...)`. Có thể gom vào một private seam dùng chung, ví dụ
-    `_generate_text(prompt: str) -> str`, để mọi thay đổi contract phía
-    provider chỉ phải sửa một chỗ. Chưa refactor vì không cần thiết cho tính
-    đúng đắn của đợt migration này.
+    Mọi lời gọi provider đi qua `_generate_text()`, nên contract model/SDK và
+    chính sách không truyền sampling parameters chỉ có một điểm bảo trì.
     """
 
     def __init__(self, db: Session, api_key: str):
@@ -34,6 +126,15 @@ class AIService:
         Thiếu API key -> trả 503 rõ ràng, KHÔNG làm hỏng các chức năng
         thống kê cơ bản (chúng chạy độc lập với AI).
         """
+        if not settings.AI_ENABLED:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=(
+                    "Chức năng AI đang tắt (AI_ENABLED=false). Chỉ bật sau "
+                    "khi môi trường và quyền gọi provider đã được phê duyệt."
+                ),
+            )
+
         if not api_key or not api_key.strip():
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -48,6 +149,23 @@ class AIService:
         self.client = genai.Client(api_key=api_key)
         # Model cấu hình được để nâng cấp không cần sửa code.
         self.model_name = settings.GEMINI_MODEL
+
+    def _generate_text(self, prompt: str) -> str:
+        """Một seam duy nhất cho provider; test luôn mock client tại đây.
+
+        Dự án chủ động không truyền ``config``/sampling parameters cho
+        gemini-3.7-flash và dùng thinking level mặc định của model.
+        """
+        try:
+            response = self.client.models.generate_content(
+                model=self.model_name,
+                contents=prompt,
+            )
+            return response.text.strip()
+        except HTTPException:
+            raise
+        except Exception as error:
+            raise _provider_http_exception(error) from error
 
     def generate_daily_report(self, target_date: date, parking_stats: Dict[str, Any], user_id: int) -> str:
         """
@@ -82,12 +200,7 @@ DỮ LIỆU ĐẦU VÀO CHO NGÀY {target_date.strftime('%Y-%m-%d')}:
             # tại của gemini-3.7-flash. Dự án CHỌN không truyền `config` ở
             # cả năm luồng để dùng thinking level mặc định `medium` — đây là
             # lựa chọn của dự án, không phải provider cấm mọi `config`.
-            response = self.client.models.generate_content(
-                model=self.model_name,
-                contents=final_prompt,
-            )
-
-            report_text = response.text.strip()
+            report_text = self._generate_text(final_prompt)
 
             # Tự động lưu lịch sử vào database
             self.save_ai_report(
@@ -99,6 +212,8 @@ DỮ LIỆU ĐẦU VÀO CHO NGÀY {target_date.strftime('%Y-%m-%d')}:
 
             return report_text
 
+        except HTTPException:
+            raise
         except Exception as e:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -126,12 +241,7 @@ DỮ LIỆU TUẦN TỪ {start_date.strftime('%Y-%m-%d')} ĐẾN {end_date.strft
 
             final_prompt = f"{system_prompt}\n\n{user_prompt}"
 
-            response = self.client.models.generate_content(
-                model=self.model_name,
-                contents=final_prompt,
-            )
-
-            report_text = response.text.strip()
+            report_text = self._generate_text(final_prompt)
 
             self.save_ai_report(
                 report_type="WEEKLY_REPORT",
@@ -142,6 +252,8 @@ DỮ LIỆU TUẦN TỪ {start_date.strftime('%Y-%m-%d')} ĐẾN {end_date.strft
 
             return report_text
 
+        except HTTPException:
+            raise
         except Exception as e:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -174,12 +286,7 @@ CÂU HỎI:
 """
             final_prompt = f"{system_prompt}\n\n{user_prompt}"
 
-            response = self.client.models.generate_content(
-                model=self.model_name,
-                contents=final_prompt,
-            )
-
-            answer = response.text.strip()
+            answer = self._generate_text(final_prompt)
 
             self.save_ai_report(
                 report_type="Q_A",
@@ -190,6 +297,8 @@ CÂU HỎI:
 
             return answer
 
+        except HTTPException:
+            raise
         except Exception as e:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -202,7 +311,12 @@ CÂU HỎI:
         """
         try:
             parking_service = ParkingService(self.db)
-            dashboard_data = parking_service.get_dashboard_data()
+            dashboard_data = {
+                **parking_service.get_dashboard_data(),
+                # Câu hỏi quản trị có cả tình trạng chỗ trống theo khu vực;
+                # không bắt Gemini suy ra từ một tỷ lệ lấp đầy tổng quát.
+                "parking_availability": parking_service.get_available_slots_summary(),
+            }
             
             data_json = json.dumps(dashboard_data, ensure_ascii=False, indent=2)
 
@@ -225,12 +339,7 @@ CÂU HỎI:
 """
             final_prompt = f"{system_prompt}\n\n{user_prompt}"
 
-            response = self.client.models.generate_content(
-                model=self.model_name,
-                contents=final_prompt,
-            )
-
-            answer = response.text.strip()
+            answer = self._generate_text(final_prompt)
 
             self.save_ai_report(
                 report_type="DASHBOARD_QA",
@@ -241,6 +350,8 @@ CÂU HỎI:
 
             return answer
 
+        except HTTPException:
+            raise
         except Exception as e:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -283,12 +394,7 @@ DỮ LIỆU ĐẦU VÀO ĐỂ PHÂN TÍCH:
 
             final_prompt = f"{system_prompt}\n\n{user_prompt}"
 
-            response = self.client.models.generate_content(
-                model=self.model_name,
-                contents=final_prompt,
-            )
-
-            schedule_result = response.text.strip()
+            schedule_result = self._generate_text(final_prompt)
 
             self.save_ai_report(
                 report_type="STAFF_SCHEDULE",
@@ -299,6 +405,8 @@ DỮ LIỆU ĐẦU VÀO ĐỂ PHÂN TÍCH:
 
             return schedule_result
 
+        except HTTPException:
+            raise
         except Exception as e:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -335,6 +443,8 @@ DỮ LIỆU ĐẦU VÀO ĐỂ PHÂN TÍCH:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Lỗi cơ sở dữ liệu khi lưu lịch sử AI: {str(db_err)}"
             )
+        except HTTPException:
+            raise
         except Exception as e:
             self.db.rollback()
             raise HTTPException(

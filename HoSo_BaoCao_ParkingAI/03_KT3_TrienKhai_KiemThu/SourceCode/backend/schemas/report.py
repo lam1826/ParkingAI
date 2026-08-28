@@ -9,7 +9,7 @@ class RevenueReportResponse(BaseModel):
     start_date: datetime = Field(..., description="Thời gian bắt đầu thống kê")
     end_date: datetime = Field(..., description="Thời gian kết thúc thống kê")
     total_trips: int = Field(..., description="Tổng lượt gửi xe hoàn tất")
-    total_revenue: float = Field(..., description="Tổng doanh thu")
+    total_revenue: int = Field(..., description="Tổng doanh thu VND")
     average_fee: float = Field(..., description="Trung bình phí mỗi lượt")
     most_frequent_vehicle_type: Optional[str] = Field(
         None,

@@ -4,10 +4,11 @@ from typing import Optional, Any, Dict
 
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
-from sqlalchemy import select, func, extract, desc, asc
+from sqlalchemy import asc, desc, extract, func, select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from core.clock import business_today, day_bounds
+from core.money import MAX_EXACT_VND, sum_exact_vnd
 from crud import parking_session as crud_parking_session
 from crud.parking_session import claim_parking_slot, map_check_in_integrity_error
 
@@ -15,8 +16,8 @@ from models.vehicle import Vehicle
 from models.vehicle_type import VehicleType
 from models.parking_slot import ParkingSlot
 from models.parking_session import ParkingSession
-from models.price_config import PriceConfig
 from models.monthly_pass import MonthlyPass
+from models.price_config import PriceConfig
 from models.zone import Zone
 from models.user import User
 
@@ -72,8 +73,9 @@ class ParkingService:
         vehicle_id: int,
         vehicle_type_id: int,
         time_in: datetime,
-        time_out: datetime
-    ) -> float:
+        time_out: datetime,
+        monthly_pass_id: int | None = None,
+    ) -> int:
 
         try:
             seconds = (time_out - time_in).total_seconds()
@@ -84,19 +86,28 @@ class ParkingService:
                     detail="Thời gian không hợp lệ."
                 )
 
-            # Kiểm tra vé tháng (dùng first() để không crash nếu dữ liệu cũ
-            # lỡ có 2 vé active chồng lấn)
-            stmt = select(MonthlyPass).where(
-                MonthlyPass.vehicle_id == vehicle_id,
-                MonthlyPass.is_active == True,
-                MonthlyPass.start_date <= time_out.date(),
-                MonthlyPass.end_date >= time_out.date()
-            )
-
-            monthly_pass = self.db.execute(stmt).scalars().first()
-
-            if monthly_pass:
-                return 0.0
+            # ID quyền lợi được snapshot vào ParkingSession tại check-in. Các
+            # trường định danh/khoảng ngày của vé đã bị DB khóa sau khi có lịch
+            # sử, nên có thể xác minh lại mà không trao quyền hồi tố. Việc tắt
+            # is_active sau check-in không thu hồi quyền đã ghi nhận, nhưng vé
+            # phải còn bao phủ cả ngày check-out; phiên kéo dài quá ngày hết
+            # hạn sẽ quay về luồng tính phí thường.
+            if monthly_pass_id is not None:
+                monthly_pass = self.db.get(MonthlyPass, monthly_pass_id)
+                if monthly_pass is None or monthly_pass.vehicle_id != vehicle_id:
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail=(
+                            "Dữ liệu quyền lợi vé tháng của phiên gửi xe "
+                            "không hợp lệ."
+                        ),
+                    )
+                if (
+                    monthly_pass.start_date
+                    <= time_out.date()
+                    <= monthly_pass.end_date
+                ):
+                    return 0
 
             # Lấy cấu hình giá
             stmt = select(PriceConfig).where(
@@ -113,16 +124,38 @@ class ParkingService:
                     detail="Chưa cấu hình bảng giá."
                 )
 
+            # Tiền VND là số nguyên không âm. Migration chặn dữ liệu legacy
+            # không tương thích ngay khi khởi động; guard này bảo đảm một
+            # đường ghi ngoài ứng dụng cũng không bị ép int/làm tròn âm thầm.
+            try:
+                unit_price = int(price.price)
+            except (TypeError, ValueError, OverflowError) as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Bảng giá chứa đơn giá VND không hợp lệ.",
+                ) from exc
+            if unit_price < 0 or price.price != unit_price:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Bảng giá chứa đơn giá VND không phải số nguyên không âm.",
+                )
+
             if price.ticket_type.upper() == "HOURLY":
-                return math.ceil(seconds / 3600) * float(price.price)
-
+                fee = math.ceil(seconds / 3600) * unit_price
             elif price.ticket_type.upper() == "DAILY":
-                return math.ceil(seconds / 86400) * float(price.price)
+                fee = math.ceil(seconds / 86400) * unit_price
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Billing mode không được hỗ trợ."
+                )
 
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Billing mode không được hỗ trợ."
-            )
+            if fee > MAX_EXACT_VND:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail="Phí gửi xe vượt phạm vi VND được hệ thống hỗ trợ.",
+                )
+            return fee
 
         except HTTPException:
             raise
@@ -226,7 +259,36 @@ class ParkingService:
                         detail="Vị trí đỗ không thuộc khu vực đã chọn."
                     )
 
-                if not claim_parking_slot(self.db, slot.id):
+            else:
+                # Preserve the established "lot full" result before checking
+                # billing configuration, but do not claim the candidate yet.
+                slot = self.find_available_slot(vehicle_type_id, zone_id)
+                if slot is None:
+                    raise HTTPException(
+                        status_code=404,
+                        detail="Không còn chỗ trống."
+                    )
+
+            # Sample the business clock exactly once. Before any slot claim,
+            # either snapshot a valid monthly-pass entitlement or prove that
+            # a non-monthly checkout rate is already active/effective.
+            check_in_time = crud_parking_session.server_now()
+            monthly_pass_id = (
+                crud_parking_session.resolve_check_in_monthly_pass_id(
+                    self.db,
+                    vehicle_id=vehicle.id,
+                    vehicle_type_id=vehicle_type_id,
+                    check_in_time=check_in_time,
+                )
+            )
+
+            if parking_slot_id is not None:
+                if not claim_parking_slot(
+                    self.db,
+                    slot.id,
+                    expected_zone_id=slot.zone_id,
+                    expected_vehicle_type_id=vehicle_type_id,
+                ):
                     # Thua race: slot vừa bị request khác chiếm giữa lúc đọc
                     # và lúc UPDATE. Transaction chưa ghi gì khác nên trả 409.
                     self.db.rollback()
@@ -239,48 +301,35 @@ class ParkingService:
                 # Tự động cấp chỗ: candidate có thể bị request khác chiếm ngay
                 # trước khi mình claim -> thử lại có giới hạn với candidate
                 # kế tiếp; hết lượt thì báo hết chỗ thay vì retry vô hạn.
-                slot = None
                 for _ in range(3):
-                    candidate = self.find_available_slot(vehicle_type_id, zone_id)
-                    if candidate is None:
+                    if claim_parking_slot(
+                        self.db,
+                        slot.id,
+                        expected_zone_id=slot.zone_id,
+                        expected_vehicle_type_id=vehicle_type_id,
+                    ):
+                        break
+                    # Candidate vừa bị chiếm: làm mới trạng thái ORM để vòng
+                    # lặp sau không chọn lại bản ghi cũ trong identity map.
+                    self.db.expire(slot)
+                    slot = self.find_available_slot(vehicle_type_id, zone_id)
+                    if slot is None:
                         raise HTTPException(
                             status_code=404,
                             detail="Không còn chỗ trống."
                         )
-                    if claim_parking_slot(self.db, candidate.id):
-                        slot = candidate
-                        break
-                    # Candidate vừa bị chiếm: làm mới trạng thái ORM để vòng
-                    # lặp sau không chọn lại bản ghi cũ trong identity map.
-                    self.db.expire(candidate)
 
-                if slot is None:
+                else:
                     raise HTTPException(
                         status_code=409,
                         detail="Các vị trí trống đang được cấp phát đồng thời. "
                                "Vui lòng thử lại."
                     )
 
-            # Đồng hồ server lấy ĐÚNG MỘT LẦN: cùng timestamp dùng cho
-            # check_in_time, ngày tra vé tháng và response — không thể lệch
-            # ngày giữa session và vé tháng khi check-in sát nửa đêm.
-            check_in_time = crud_parking_session.server_now()
-            check_in_date = check_in_time.date()
-
-            # Gắn vé tháng còn hiệu lực (nếu có) vào phiên gửi để truy vết
-            monthly_pass = self.db.execute(
-                select(MonthlyPass).where(
-                    MonthlyPass.vehicle_id == vehicle.id,
-                    MonthlyPass.is_active == True,
-                    MonthlyPass.start_date <= check_in_date,
-                    MonthlyPass.end_date >= check_in_date
-                )
-            ).scalars().first()
-
             session = ParkingSession(
                 vehicle_id=vehicle.id,
                 parking_slot_id=slot.id,
-                monthly_pass_id=monthly_pass.id if monthly_pass else None,
+                monthly_pass_id=monthly_pass_id,
                 check_in_time=check_in_time,
                 status="active",
                 staff_in_id=staff_id
@@ -303,7 +352,21 @@ class ParkingService:
                 "status": session.status
             }
 
+        except crud_parking_session.MissingEffectiveCheckInPriceError:
+            self.db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "Loại xe chưa có bảng giá đang áp dụng cho ngày check-in. "
+                    "Hãy cấu hình bảng giá trước khi nhận xe."
+                ),
+            )
+
         except HTTPException:
+            # Một HTTP error có thể xảy ra sau khi INSERT/flush xe mới hoặc
+            # conditional slot claim. Rollback bảo đảm request bị từ chối
+            # không để lại xe/session/slot ở trạng thái dở dang.
+            self.db.rollback()
             raise
 
         except IntegrityError as db_err:
@@ -386,7 +449,7 @@ class ParkingService:
 
             session, vehicle = result
 
-            # Claim NGUYÊN TỬ active -> completed TRƯỚC khi tính phí: hai
+            # Claim NGUYÊN TỬ active -> checking_out TRƯỚC khi tính phí: hai
             # request cùng thấy session active thì chỉ một UPDATE có điều kiện
             # thành công; request thua không được tính phí lần hai hay ghi đè
             # thời gian/nhân viên của winner. Claim + phí + slot cùng một
@@ -410,17 +473,26 @@ class ParkingService:
             # Đồng hồ server, lấy ĐÚNG MỘT LẦN: response, tính phí và DB dùng
             # cùng một giá trị.
             check_out_time = crud_parking_session.server_now()
-            session.check_out_time = check_out_time
 
+            # KHÔNG gán check_out_time trước bước này. `SessionLocal` production
+            # dùng autoflush mặc định (True), mà `calculate_fee` có truy vấn DB
+            # (vé tháng, bảng giá) -> một gán sớm sẽ bị flush thành
+            # `UPDATE parking_sessions SET check_out_time=?` khi phiên còn đang
+            # `checking_out`, và trigger state chặn đúng theo bất biến
+            # "phiên chưa completed không được có billing" -> 500.
+            # Gán trọn bộ billing SAU khi có phí, giống hệt endpoint
+            # PUT /api/v1/parking-sessions/{id}/check-out.
             fee = self.calculate_fee(
                 vehicle_id=vehicle.id,
                 vehicle_type_id=vehicle.vehicle_type_id,
                 time_in=session.check_in_time,
-                time_out=check_out_time
+                time_out=check_out_time,
+                monthly_pass_id=session.monthly_pass_id,
             )
 
+            session.check_out_time = check_out_time
             session.parking_fee = fee
-            session.status = "completed"  # đồng bộ ORM với UPDATE claim ở trên
+            session.status = "completed"  # hoàn tất cùng billing trong một UPDATE
             session.staff_out_id = staff_id
 
             if slot is not None:
@@ -463,7 +535,8 @@ class ParkingService:
     def get_parking_statistics(self, target_date=None) -> Dict[str, Any]:
         """Thống kê hoạt động trong 1 ngày (mặc định: hôm nay)."""
         try:
-            today = target_date or business_today()
+            current_business_date = business_today()
+            today = target_date or current_business_date
 
             start_day, end_day = day_bounds(today)
 
@@ -474,35 +547,17 @@ class ParkingService:
                 )
             ).scalar() or 0
 
-            total_revenue = self.db.execute(
-                select(func.sum(ParkingSession.parking_fee)).where(
+            revenue_values = self.db.execute(
+                select(ParkingSession.parking_fee).where(
                     ParkingSession.check_out_time >= start_day,
                     ParkingSession.check_out_time < end_day,
                     ParkingSession.status == "completed"
                 )
-            ).scalar() or 0.0
-
-            slot_stats = self.db.execute(
-                select(
-                    ParkingSlot.is_occupied,
-                    func.count(ParkingSlot.id)
-                )
-                .join(Zone, ParkingSlot.zone_id == Zone.id)
-                .where(
-                    ParkingSlot.is_active == True,
-                    Zone.is_active == True,
-                )
-                .group_by(ParkingSlot.is_occupied)
-            ).all()
-
-            available = 0
-            occupied = 0
-
-            for is_occupied, count in slot_stats:
-                if is_occupied:
-                    occupied = count
-                else:
-                    available = count
+            ).scalars()
+            total_revenue = sum_exact_vnd(
+                revenue_values,
+                label="Tổng doanh thu",
+            )
 
             peak_stmt = (
                 select(
@@ -525,14 +580,46 @@ class ParkingService:
             else:
                 peak_hour = "Chưa có dữ liệu"
 
-            return {
+            result = {
                 "date": str(today),
                 "total_vehicles_today": total_vehicles,
-                "total_revenue_today": float(total_revenue),
-                "available_slots": available,
-                "occupied_slots": occupied,
+                "total_revenue_today": total_revenue,
                 "peak_hour": peak_hour
             }
+
+            if today == current_business_date:
+                slot_stats = self.db.execute(
+                    select(
+                        ParkingSlot.is_occupied,
+                        func.count(ParkingSlot.id)
+                    )
+                    .join(Zone, ParkingSlot.zone_id == Zone.id)
+                    .where(
+                        ParkingSlot.is_active == True,
+                        Zone.is_active == True,
+                    )
+                    .group_by(ParkingSlot.is_occupied)
+                ).all()
+                available = 0
+                occupied = 0
+                for is_occupied, count in slot_stats:
+                    if is_occupied:
+                        occupied = count
+                    else:
+                        available = count
+                result.update({
+                    "available_slots": available,
+                    "occupied_slots": occupied,
+                    "slot_state_as_of": str(current_business_date),
+                })
+            else:
+                result["slot_state_note"] = (
+                    "Hệ thống không lưu snapshot tình trạng chỗ đỗ lịch sử; "
+                    "available_slots và occupied_slots được chủ động bỏ khỏi "
+                    "báo cáo để không gán trạng thái hiện tại cho ngày đã chọn."
+                )
+
+            return result
 
         except SQLAlchemyError as db_err:
             raise HTTPException(
@@ -569,19 +656,28 @@ class ParkingService:
             exits_stmt = (
                 select(
                     func.strftime("%Y-%m-%d", ParkingSession.check_out_time).label("day"),
-                    func.count(ParkingSession.id).label("exits"),
-                    func.coalesce(func.sum(ParkingSession.parking_fee), 0.0).label("revenue"),
+                    ParkingSession.parking_fee,
                 )
                 .where(
                     ParkingSession.status == "completed",
                     ParkingSession.check_out_time >= range_start,
                     ParkingSession.check_out_time < range_end,
                 )
-                .group_by("day")
             )
+            exit_fees: dict[str, list] = {}
+            exit_counts: dict[str, int] = {}
+            for row in self.db.execute(exits_stmt):
+                exit_counts[row.day] = exit_counts.get(row.day, 0) + 1
+                exit_fees.setdefault(row.day, []).append(row.parking_fee)
             exits = {
-                r.day: {"exits": r.exits, "revenue": float(r.revenue)}
-                for r in self.db.execute(exits_stmt).all()
+                day: {
+                    "exits": exit_counts[day],
+                    "revenue": sum_exact_vnd(
+                        fees,
+                        label="Tổng doanh thu",
+                    ),
+                }
+                for day, fees in exit_fees.items()
             }
 
             summaries = []
@@ -592,7 +688,7 @@ class ParkingService:
                     "date": key,
                     "total_entries": entries.get(key, 0),
                     "total_exits": exits.get(key, {}).get("exits", 0),
-                    "revenue": exits.get(key, {}).get("revenue", 0.0),
+                    "revenue": exits.get(key, {}).get("revenue", 0),
                 })
                 current += timedelta(days=1)
 
@@ -820,7 +916,7 @@ class ParkingService:
                     "zone_name": zone_name,
                     "check_in_time": session.check_in_time,
                     "check_out_time": session.check_out_time,
-                    "parking_fee": session.parking_fee or 0.0,
+                    "parking_fee": session.parking_fee or 0,
                     "status": session.status,
                     "handled_by_staff": staff_info
                 })
@@ -857,13 +953,17 @@ class ParkingService:
         ).scalar() or 0
 
         # 2. Tổng doanh thu hôm nay
-        total_revenue_today = self.db.execute(
-            select(func.sum(ParkingSession.parking_fee)).where(
+        revenue_values = self.db.execute(
+            select(ParkingSession.parking_fee).where(
                 ParkingSession.check_out_time >= start_of_day,
                 ParkingSession.check_out_time < end_of_day,
                 ParkingSession.status == "completed"
             )
-        ).scalar() or 0.0
+        ).scalars()
+        total_revenue_today = sum_exact_vnd(
+            revenue_values,
+            label="Tổng doanh thu",
+        )
 
         # 3. Xe đang trong bãi
         vehicles_currently_inside = self.db.execute(
@@ -935,7 +1035,7 @@ class ParkingService:
 
         return {
             "total_vehicles_today": total_vehicles_today,
-            "total_revenue_today": float(total_revenue_today),
+            "total_revenue_today": total_revenue_today,
             "vehicles_currently_inside": vehicles_currently_inside,
             "vehicles_checked_out_today": vehicles_checked_out_today,
             "occupancy_rate_percentage": round(occupancy_rate, 2),
@@ -944,11 +1044,11 @@ class ParkingService:
 
     def get_ai_insight_data(self) -> Dict[str, Any]:
         """
-        Phân tích và đưa ra gợi ý thông minh dựa trên dữ liệu bãi đỗ xe hiện tại.
+        Tổng hợp gợi ý vận hành theo quy tắc từ dữ liệu bãi đỗ.
+
+        Luồng này chỉ áp dụng ngưỡng tỷ lệ lấp đầy, không gọi AI provider.
         """
         try:
-            # Bạn có thể tích hợp gọi Gemini API trực tiếp tại đây,
-            # hoặc trả về một phân tích tổng hợp thông minh dựa trên số liệu thực tế từ DB.
             # Lấy số xe đang trong bãi hiện tại
             current_inside = self.db.execute(
                 select(func.count(ParkingSession.id)).where(ParkingSession.status == "active")
@@ -983,7 +1083,7 @@ class ParkingService:
         except SQLAlchemyError as db_err:
             raise HTTPException(
                 status_code=500,
-                detail=f"Lỗi khi tổng hợp AI Insight: {db_err}"
+                detail=f"Lỗi khi tổng hợp gợi ý vận hành: {db_err}"
             )
 
     def get_recent_sessions(self, limit: int = 10) -> list:
@@ -1031,25 +1131,35 @@ class ParkingService:
         try:
             today = business_today()
             start_date, _ = day_bounds(today - timedelta(days=6))
+            _, end_exclusive = day_bounds(today)
 
             stmt = (
                 select(
                     func.strftime("%Y-%m-%d", ParkingSession.check_out_time).label("day"),
-                    func.coalesce(func.sum(ParkingSession.parking_fee), 0.0).label("revenue"),
+                    ParkingSession.parking_fee,
                 )
                 .where(
                     ParkingSession.status == "completed",
                     ParkingSession.check_out_time >= start_date,
+                    ParkingSession.check_out_time < end_exclusive,
                 )
-                .group_by("day")
             )
-            rows = {r.day: float(r.revenue) for r in self.db.execute(stmt).all()}
+            fees_by_day: dict[str, list] = {}
+            for row in self.db.execute(stmt):
+                fees_by_day.setdefault(row.day, []).append(row.parking_fee)
+            rows = {
+                day: sum_exact_vnd(
+                    fees,
+                    label="Tổng doanh thu",
+                )
+                for day, fees in fees_by_day.items()
+            }
 
             result = []
             for i in range(7):
                 d = today - timedelta(days=6 - i)
                 key = d.strftime("%Y-%m-%d")
-                result.append({"day": d.strftime("%d/%m"), "revenue": rows.get(key, 0.0)})
+                result.append({"day": d.strftime("%d/%m"), "revenue": rows.get(key, 0)})
             return result
         except SQLAlchemyError as db_err:
             raise HTTPException(
