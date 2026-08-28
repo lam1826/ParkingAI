@@ -70,6 +70,7 @@ SAFE_UNTRACKED_PATHS = {
     Path("backend/Dockerfile"),
     Path("backend/alembic.ini"),
     Path("backend/alembic/script.py.mako"),
+    Path("backend/fly.toml"),
     Path("deploy/.env.production.example"),
     Path("deploy/Caddyfile.blue"),
     Path("deploy/Caddyfile.green"),

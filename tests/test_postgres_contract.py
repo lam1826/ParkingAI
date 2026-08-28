@@ -1,4 +1,5 @@
 from pathlib import Path
+import tomllib
 
 from sqlalchemy.dialects import postgresql, sqlite
 
@@ -89,16 +90,38 @@ def test_postgres_baseline_declares_every_readiness_backstop():
     assert "TG_OP = 'INSERT' AND NEW.monthly_pass_id IS NOT NULL" in migration
 
 
-def test_delivery_is_fail_closed_until_production_is_explicitly_enabled():
+def test_delivery_targets_fly_after_verified_main_ci():
     workflow = (
         Path(__file__).parents[1] / ".github" / "workflows" / "delivery.yml"
     ).read_text(encoding="utf-8")
-    assert "if: vars.STAGING_DEPLOY_ENABLED == 'true'" in workflow
-    assert "if: vars.PRODUCTION_DEPLOY_ENABLED == 'true'" in workflow
     assert "environment: production" in workflow
-    assert "@${IMAGE_DIGEST}" in workflow
-    assert "migrate.sh' '$RELEASE_IMAGE' &&" not in workflow
-    assert "write-runtime-config.mjs" in workflow
+    assert "superfly/flyctl-actions/setup-flyctl@master" in workflow
+    assert "FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}" in workflow
+    assert "flyctl deploy" in workflow
+    assert "--remote-only" in workflow
+    assert '--env "RELEASE_ID=$RELEASE_SHA"' in workflow
+    assert "https://api.parkingai.am" in workflow
+    assert "https://parkingai.am" in workflow
+    assert "DEPLOY_SSH_PRIVATE_KEY" not in workflow
+    assert "docker/build-push-action" not in workflow
+
+
+def test_fly_config_runs_migrations_and_keeps_one_machine_warm():
+    path = Path(__file__).parents[1] / "backend" / "fly.toml"
+    raw = path.read_text(encoding="utf-8")
+    config = tomllib.loads(raw)
+
+    assert config["app"] == "parkingai-api-lam1826"
+    assert config["primary_region"] == "sin"
+    assert config["build"]["dockerfile"] == "Dockerfile"
+    assert config["deploy"]["release_command"] == (
+        "alembic -c alembic.ini upgrade head"
+    )
+    assert config["http_service"]["force_https"] is True
+    assert config["http_service"]["min_machines_running"] == 1
+    assert config["http_service"]["checks"][0]["path"] == "/ready"
+    assert "DATABASE_URL" not in raw
+    assert "SECRET_KEY" not in raw
 
 
 def test_blue_green_release_contract_is_locked_and_digest_only():

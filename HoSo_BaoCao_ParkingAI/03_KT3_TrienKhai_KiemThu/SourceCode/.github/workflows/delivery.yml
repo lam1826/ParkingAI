@@ -7,20 +7,20 @@ on:
   workflow_dispatch:
     inputs:
       commit_sha:
-        description: Optional main commit to rebuild; defaults to current main
+        description: Optional main commit to deploy; defaults to current main
         required: false
         type: string
 
 permissions:
   contents: read
-  packages: write
 
 concurrency:
-  group: parkingai-continuous-delivery
+  group: parkingai-fly-production
   cancel-in-progress: false
 
 env:
-  IMAGE_REPOSITORY: ghcr.io/lam1826/parkingai-backend
+  FLY_APP: parkingai-api-lam1826
+  PUBLIC_API_URL: https://api.parkingai.am
 
 jobs:
   build-release:
@@ -30,10 +30,9 @@ jobs:
        github.event.workflow_run.event == 'push' &&
        github.event.workflow_run.head_branch == 'main')
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 15
     outputs:
-      commit_sha: ${{ steps.release.outputs.commit_sha }}
-      image: ${{ steps.release.outputs.image }}
+      commit_sha: ${{ steps.resolve.outputs.sha }}
 
     steps:
       - name: Resolve immutable release commit
@@ -70,13 +69,15 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
-      - name: Build immutable frontend artifact
+      - name: Build frontend against the public API domain
         working-directory: frontend
+        env:
+          VITE_API_URL: ${{ env.PUBLIC_API_URL }}
         run: |
           npm ci
           npm run build
 
-      - name: Upload frontend artifact
+      - name: Upload immutable frontend build evidence
         uses: actions/upload-artifact@v4
         with:
           name: parkingai-frontend-${{ steps.resolve.outputs.sha }}
@@ -84,170 +85,66 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build and publish backend image
-        id: backend
-        uses: docker/build-push-action@v6
-        with:
-          context: backend
-          file: backend/Dockerfile
-          push: true
-          tags: ${{ env.IMAGE_REPOSITORY }}:${{ steps.resolve.outputs.sha }}
-          provenance: mode=max
-          sbom: true
-
-      - name: Publish immutable release coordinates
-        id: release
-        env:
-          RELEASE_SHA: ${{ steps.resolve.outputs.sha }}
-          IMAGE_DIGEST: ${{ steps.backend.outputs.digest }}
-        run: |
-          echo "commit_sha=$RELEASE_SHA" >> "$GITHUB_OUTPUT"
-          echo "image=${IMAGE_REPOSITORY}@${IMAGE_DIGEST}" >> "$GITHUB_OUTPUT"
-
-  deploy-staging:
-    if: vars.STAGING_DEPLOY_ENABLED == 'true'
+  deploy-production:
     needs: build-release
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    environment: staging
-
-    steps:
-      - name: Checkout deployment controls
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ needs.build-release.outputs.commit_sha }}
-
-      - name: Download immutable frontend artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: parkingai-frontend-${{ needs.build-release.outputs.commit_sha }}
-          path: frontend-dist
-
-      - name: Configure SSH trust
-        env:
-          SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
-          SSH_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
-        run: |
-          install -d -m 700 ~/.ssh
-          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/parkingai_deploy
-          chmod 600 ~/.ssh/parkingai_deploy
-          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
-          chmod 600 ~/.ssh/known_hosts
-
-      - name: Upload deployment controls
-        env:
-          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
-          DEPLOY_PORT: ${{ vars.DEPLOY_PORT }}
-          DEPLOY_USER: ${{ vars.DEPLOY_USER }}
-          DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
-        run: |
-          ssh -i ~/.ssh/parkingai_deploy -p "$DEPLOY_PORT" \
-            "$DEPLOY_USER@$DEPLOY_HOST" "mkdir -p '$DEPLOY_PATH/control'"
-          rsync -az -e "ssh -i ~/.ssh/parkingai_deploy -p $DEPLOY_PORT" \
-            deploy/ "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/control/"
-
-      - name: Migrate and deploy staging backend blue-green
-        env:
-          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
-          DEPLOY_PORT: ${{ vars.DEPLOY_PORT }}
-          DEPLOY_USER: ${{ vars.DEPLOY_USER }}
-          DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
-          RELEASE_IMAGE: ${{ needs.build-release.outputs.image }}
-        run: |
-          ssh -i ~/.ssh/parkingai_deploy -p "$DEPLOY_PORT" \
-            "$DEPLOY_USER@$DEPLOY_HOST" \
-            "PARKINGAI_STATE_DIR='$DEPLOY_PATH/state' sh '$DEPLOY_PATH/control/scripts/deploy.sh' '$RELEASE_IMAGE'"
-
-      - name: Write staging runtime API configuration
-        env:
-          PUBLIC_API_URL: ${{ vars.PUBLIC_API_URL }}
-        run: node frontend/scripts/write-runtime-config.mjs frontend-dist/config.js
-
-      - name: Deploy frontend to Cloudflare Pages staging branch
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: >-
-            pages deploy frontend-dist
-            --project-name=${{ vars.CLOUDFLARE_PAGES_PROJECT }}
-            --branch=${{ vars.CLOUDFLARE_PAGES_BRANCH }}
-
-  deploy-production:
-    if: vars.PRODUCTION_DEPLOY_ENABLED == 'true'
-    needs: [build-release, deploy-staging]
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
     environment: production
+    env:
+      RELEASE_SHA: ${{ needs.build-release.outputs.commit_sha }}
 
     steps:
-      - name: Checkout deployment controls
+      - name: Checkout exact release source
         uses: actions/checkout@v4
         with:
           ref: ${{ needs.build-release.outputs.commit_sha }}
 
-      - name: Download the exact staging-tested frontend artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: parkingai-frontend-${{ needs.build-release.outputs.commit_sha }}
-          path: frontend-dist
+      - name: Set up flyctl
+        uses: superfly/flyctl-actions/setup-flyctl@master
 
-      - name: Configure SSH trust
+      - name: Deploy backend and migrate Supabase schema
+        working-directory: backend
         env:
-          SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
-          SSH_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: >-
+          flyctl deploy
+          --remote-only
+          --app "$FLY_APP"
+          --config fly.toml
+          --env "RELEASE_ID=$RELEASE_SHA"
+          --strategy rolling
+          --release-command-timeout 10m
+          --wait-timeout 10m
+          --yes
+
+      - name: Verify release, readiness, and browser CORS
         run: |
-          install -d -m 700 ~/.ssh
-          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/parkingai_deploy
-          chmod 600 ~/.ssh/parkingai_deploy
-          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
-          chmod 600 ~/.ssh/known_hosts
+          ready_url="$PUBLIC_API_URL/ready"
+          root_url="$PUBLIC_API_URL/"
+          curl --fail --silent --show-error \
+            --retry 12 --retry-delay 5 --retry-all-errors \
+            "$ready_url" >/tmp/parkingai-ready.json
+          python -c \
+            'import json; assert json.load(open("/tmp/parkingai-ready.json", encoding="utf-8"))["status"] == "ready"'
 
-      - name: Upload deployment controls
+          curl --fail --silent --show-error \
+            --retry 6 --retry-delay 5 --retry-all-errors \
+            "$root_url" >/tmp/parkingai-root.json
+          ACTUAL_RELEASE="$(python -c \
+            'import json; print(json.load(open("/tmp/parkingai-root.json", encoding="utf-8"))["release_id"])')"
+          test "$ACTUAL_RELEASE" = "$RELEASE_SHA"
+
+          curl --fail --silent --show-error \
+            --request OPTIONS \
+            --header 'Origin: https://parkingai.am' \
+            --header 'Access-Control-Request-Method: GET' \
+            --dump-header /tmp/parkingai-cors.txt \
+            --output /dev/null \
+            "$PUBLIC_API_URL/api/v1/zones"
+          grep -Eiq '^access-control-allow-origin: https://parkingai\.am\r?$' \
+            /tmp/parkingai-cors.txt
+
+      - name: Record Fly deployment status
         env:
-          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
-          DEPLOY_PORT: ${{ vars.DEPLOY_PORT }}
-          DEPLOY_USER: ${{ vars.DEPLOY_USER }}
-          DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
-        run: |
-          ssh -i ~/.ssh/parkingai_deploy -p "$DEPLOY_PORT" \
-            "$DEPLOY_USER@$DEPLOY_HOST" "mkdir -p '$DEPLOY_PATH/control'"
-          rsync -az -e "ssh -i ~/.ssh/parkingai_deploy -p $DEPLOY_PORT" \
-            deploy/ "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/control/"
-
-      - name: Migrate and deploy production backend blue-green
-        env:
-          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
-          DEPLOY_PORT: ${{ vars.DEPLOY_PORT }}
-          DEPLOY_USER: ${{ vars.DEPLOY_USER }}
-          DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
-          RELEASE_IMAGE: ${{ needs.build-release.outputs.image }}
-        run: |
-          ssh -i ~/.ssh/parkingai_deploy -p "$DEPLOY_PORT" \
-            "$DEPLOY_USER@$DEPLOY_HOST" \
-            "PARKINGAI_STATE_DIR='$DEPLOY_PATH/state' sh '$DEPLOY_PATH/control/scripts/deploy.sh' '$RELEASE_IMAGE'"
-
-      - name: Write production runtime API configuration
-        env:
-          PUBLIC_API_URL: ${{ vars.PUBLIC_API_URL }}
-        run: node frontend/scripts/write-runtime-config.mjs frontend-dist/config.js
-
-      - name: Deploy frontend to Cloudflare Pages production branch
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: >-
-            pages deploy frontend-dist
-            --project-name=${{ vars.CLOUDFLARE_PAGES_PROJECT }}
-            --branch=${{ vars.CLOUDFLARE_PAGES_BRANCH }}
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: flyctl status --app "$FLY_APP"

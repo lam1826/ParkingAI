@@ -148,7 +148,8 @@ Thiết kế 3NF và ERD tự chứa nằm tại [docs/KT1_Database_Design.md](d
 Chi tiết kiến trúc, prompt và minh chứng dùng AI trong SDLC nằm tại [docs/AI_SDLC.md](docs/AI_SDLC.md).
 Checklist backup, UAT, rollout và rollback SQLite nằm tại [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
-Kiến trúc production (frontend Cloudflare CDN, hai backend container,
-PostgreSQL managed, GitHub Actions Continuous Delivery và Blue/Green) cùng
-runbook bootstrap/rollback nằm tại
+Kiến trúc production dùng Cloudflare Pages cho frontend, Fly.io cho API,
+Supabase PostgreSQL cho dữ liệu và GitHub Actions để triển khai Fly theo SHA
+đã vượt CI. Domain public là `parkingai.am` và `api.parkingai.am`; runbook
+bootstrap/rollback nằm tại
 [docs/PRODUCTION_DEPLOYMENT.md](docs/PRODUCTION_DEPLOYMENT.md).
