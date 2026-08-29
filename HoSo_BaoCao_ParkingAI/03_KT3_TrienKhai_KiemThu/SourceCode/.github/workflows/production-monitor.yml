@@ -66,13 +66,19 @@ jobs:
           tr -d '\r' <"$probe_dir/cors.txt" >"$probe_dir/cors-normalized.txt"
           grep -Eiq '^access-control-allow-origin: https://parkingai\.am$' "$probe_dir/cors-normalized.txt"
 
-          curl --fail --silent --show-error --max-time 10 \
+          evil_status="$(curl --silent --show-error --max-time 10 \
             --request OPTIONS \
             --header 'Origin: https://evil.example' \
             --header 'Access-Control-Request-Method: GET' \
             --dump-header "$probe_dir/evil-cors.txt" \
-            --output /dev/null \
-            https://api.parkingai.am/api/v1/zones
+            --output "$probe_dir/evil-cors-body.txt" \
+            --write-out '%{http_code}' \
+            https://api.parkingai.am/api/v1/zones)"
+          if ! test "$evil_status" = "400"; then
+            echo "Expected CORS rejection with HTTP 400, received $evil_status" >&2
+            cat "$probe_dir/evil-cors-body.txt" >&2
+            exit 1
+          fi
           if tr -d '\r' <"$probe_dir/evil-cors.txt" | \
             grep -Eiq '^access-control-allow-origin:'; then
             echo "Unexpected CORS access for an untrusted origin" >&2
