@@ -86,7 +86,7 @@ jobs:
 
   release-safety-windows:
     runs-on: windows-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
 
     steps:
       - name: Checkout source

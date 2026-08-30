@@ -1576,3 +1576,16 @@ def test_ci_has_windows_release_safety_job() -> None:
 
     assert "windows-latest" in workflow
     assert "tests/test_release_safety.py" in workflow
+
+
+def test_windows_release_safety_job_has_enough_time_to_finish() -> None:
+    """Cold Windows runners must not cancel the rollout gate mid-test."""
+    project_root = Path(__file__).resolve().parents[1]
+    workflow = (project_root / ".github" / "workflows" / "ci.yml").read_text(
+        encoding="utf-8"
+    )
+    job_header = workflow.split("release-safety-windows:", 1)[1].split(
+        "steps:", 1
+    )[0]
+
+    assert "timeout-minutes: 15" in job_header
