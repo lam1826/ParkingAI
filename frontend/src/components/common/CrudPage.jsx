@@ -36,6 +36,7 @@ export default function CrudPage({ title, fields, service, canEdit = true }) {
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState({});
   const [notice, setNotice] = useState({ open: false, severity: "success", message: "" });
+  const firstTextFieldName = fields.find((field) => field.type !== "boolean")?.name;
 
   const notify = (message, severity = "success") => setNotice({ open: true, message, severity });
   const load = useCallback(async () => {
@@ -153,6 +154,7 @@ export default function CrudPage({ title, fields, service, canEdit = true }) {
           ) : (
             // Input date native luôn vẽ sẵn khung dd/mm/yyyy nên label phải shrink cố định
             <TextField key={field.name} select={field.type === "select"} type={field.type || "text"}
+              name={field.name} autoFocus={field.name === firstTextFieldName}
               label={field.label} required={field.required} value={form[field.name] ?? ""}
               slotProps={field.type === "date" ? { inputLabel: { shrink: true } } : undefined}
               onChange={(event) => setForm({ ...form, [field.name]: event.target.value })}>
