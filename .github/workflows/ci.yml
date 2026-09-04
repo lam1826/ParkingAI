@@ -62,7 +62,7 @@ jobs:
         run: python -m pytest tests/test_postgres_integration.py -q
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: "20"
           cache: npm
