@@ -1,3 +1,4 @@
+from checkout_helpers import quote_confirmation, service_confirmation
 import datetime
 import pytest
 from fastapi.testclient import TestClient
@@ -95,7 +96,8 @@ def test_check_out_success(
         "license_plate": vehicle.license_plate
     }
 
-    response = client.post("/parking/check-out", json=payload, headers=auth_headers)
+    confirmation = quote_confirmation(client, auth_headers, parking_session.id)
+    response = client.post("/parking/check-out", json={**payload, **confirmation}, headers=auth_headers)
 
     assert response.status_code == 200
     data = response.json()
@@ -116,9 +118,9 @@ def test_check_out_non_existent_vehicle(
 
     response = client.post("/parking/check-out", json=payload, headers=auth_headers)
 
-    assert response.status_code == 404
-    detail_msg = response.json().get("detail", "").lower()
-    assert "không tìm thấy" in detail_msg
+    assert response.status_code == 422  # Missing signed confirmation fails closed.
+    quote = client.get("/api/v1/parking-sessions/00000000-0000-0000-0000-000000000000/checkout-quote", headers=auth_headers)
+    assert quote.status_code == 404
 
 
 def test_check_out_already_checked_out(
@@ -128,18 +130,20 @@ def test_check_out_already_checked_out(
     parking_session: ParkingSession,
     price_config
 ):
-    """3. Kiểm thử check-out thất bại khi xe đã ra rồi (phiên đã kết thúc, không còn phiên active nào để tìm)."""
+    """The legacy route retries the exact confirmed session, even after departure."""
     payload = {
         "license_plate": vehicle.license_plate
     }
 
     # Check-out lần 1 (thành công)
-    response_1 = client.post("/parking/check-out", json=payload, headers=auth_headers)
+    confirmation = quote_confirmation(client, auth_headers, parking_session.id)
+    response_1 = client.post("/parking/check-out", json={**payload, **confirmation}, headers=auth_headers)
     assert response_1.status_code == 200
 
-    # Check-out lần 2 (thất bại vì không còn phiên "active" nào cho biển số này)
-    response_2 = client.post("/parking/check-out", json=payload, headers=auth_headers)
-    assert response_2.status_code == 404
+    # Retry the same signed confirmation returns the original departure.
+    response_2 = client.post("/parking/check-out", json={**payload, **confirmation}, headers=auth_headers)
+    assert response_2.status_code == 200
+    assert response_2.json() == response_1.json()
 
 
 def test_check_out_monthly_pass(
@@ -188,7 +192,8 @@ def test_check_out_monthly_pass(
     db_session.commit()
 
     payload = {"license_plate": plate}
-    response = client.post("/parking/check-out", json=payload, headers=auth_headers)
+    confirmation = quote_confirmation(client, auth_headers, session.id)
+    response = client.post("/parking/check-out", json={**payload, **confirmation}, headers=auth_headers)
 
     assert response.status_code == 200
     data = response.json()
@@ -235,9 +240,10 @@ def test_check_out_uses_monthly_pass_entitlement_snapshotted_at_check_in(
     monthly_pass.is_active = False
     db_session.commit()
 
+    confirmation = quote_confirmation(client, auth_headers, parking_session.id)
     response = client.put(
         f"/api/v1/parking-sessions/{parking_session.id}/check-out",
-        json={},
+        json=confirmation,
         headers=auth_headers,
     )
 
@@ -279,9 +285,10 @@ def test_pass_bought_after_check_in_does_not_retroactively_make_stay_free(
     ))
     db_session.commit()
 
+    confirmation = quote_confirmation(client, auth_headers, parking_session.id)
     response = client.put(
         f"/api/v1/parking-sessions/{parking_session.id}/check-out",
-        json={},
+        json=confirmation,
         headers=auth_headers,
     )
 
@@ -372,7 +379,8 @@ def test_check_out_fee_calculation(
     db_session.commit()
 
     payload = {"license_plate": plate}
-    response = client.post("/parking/check-out", json=payload, headers=auth_headers)
+    confirmation = quote_confirmation(client, auth_headers, session.id)
+    response = client.post("/parking/check-out", json={**payload, **confirmation}, headers=auth_headers)
 
     assert response.status_code == 200
     data = response.json()
@@ -398,7 +406,8 @@ def test_check_out_slot_becomes_available(
         "license_plate": vehicle.license_plate
     }
 
-    response = client.post("/parking/check-out", json=payload, headers=auth_headers)
+    confirmation = quote_confirmation(client, auth_headers, parking_session.id)
+    response = client.post("/parking/check-out", json={**payload, **confirmation}, headers=auth_headers)
 
     assert response.status_code == 200
 
@@ -417,7 +426,7 @@ def test_crud_check_out_server_calculates_fee(
     business_reference_now: datetime.datetime,
 ):
     """7. Kiểm thử đường check-out phụ /api/v1/parking-sessions/{id}/check-out:
-    phí do SERVER tính từ bảng giá; body rỗng; vị trí được giải phóng."""
+    phí do SERVER tính từ bảng giá; xác nhận quote; vị trí được giải phóng."""
     # Giờ vào = 30 phút trước reference instant. Trước đây dùng
     # `datetime.datetime.now()` (naive theo host) nên lệch 7 giờ so với
     # `server_now()` business-local khi CI chạy trên host UTC.
@@ -432,9 +441,10 @@ def test_crud_check_out_server_calculates_fee(
     db_session.add(parking_session)
     db_session.commit()
 
+    confirmation = quote_confirmation(client, auth_headers, parking_session.id)
     response = client.put(
         f"/api/v1/parking-sessions/{parking_session.id}/check-out",
-        json={},
+        json=confirmation,
         headers=auth_headers,
     )
 
@@ -457,9 +467,10 @@ def test_crud_check_out_is_idempotent(
 ):
     """8. PUT check-out là IDEMPOTENT: các lần gọi lại trả 200 với đúng dữ liệu
     đã persist — không tính lại phí, không đổi thời gian/nhân viên."""
+    confirmation = quote_confirmation(client, auth_headers, parking_session.id)
     first = client.put(
         f"/api/v1/parking-sessions/{parking_session.id}/check-out",
-        json={},
+        json=confirmation,
         headers=auth_headers,
     )
     assert first.status_code == 200
@@ -467,7 +478,7 @@ def test_crud_check_out_is_idempotent(
 
     second = client.put(
         f"/api/v1/parking-sessions/{parking_session.id}/check-out",
-        json={},
+        json=confirmation,
         headers=auth_headers,
     )
     assert second.status_code == 200

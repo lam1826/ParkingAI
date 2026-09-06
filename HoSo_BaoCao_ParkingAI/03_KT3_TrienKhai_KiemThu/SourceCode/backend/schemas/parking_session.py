@@ -1,6 +1,7 @@
 from pydantic import BaseModel, ConfigDict
 from typing import Optional
 from datetime import date, datetime
+from schemas.checkout import CheckoutConfirmation
 
 # Schema gốc (khớp với models/parking_session.py)
 class ParkingSessionBase(BaseModel):
@@ -26,11 +27,8 @@ class ParkingSessionCreate(BaseModel):
 # là rủi ro nếu ai đó nối lại vào router.
 
 
-# Body cho PUT /{id}/check-out: KHÔNG có field nào — check_out_time,
-# parking_fee, status và staff_out_id hoàn toàn do server quyết định.
-# extra="forbid" biến mọi nỗ lực gửi các field đó thành 422 nêu rõ tên field.
-class CheckOutBody(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+class CheckOutBody(CheckoutConfirmation):
+    """Confirm a signed quote; billing and exit time remain server-owned."""
 
 # Schema trả về
 class ParkingSessionResponse(ParkingSessionBase):

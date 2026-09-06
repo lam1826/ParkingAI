@@ -9,6 +9,7 @@ Nguyên tắc:
 - Số lần calculate_fee được đếm bằng wrapper trên ParkingService.
 - Server time freeze bằng monkeypatch crud.parking_session.server_now.
 """
+from checkout_helpers import quote_confirmation, service_confirmation
 
 import datetime
 import threading
@@ -131,9 +132,10 @@ def test_server_time_is_authoritative(
     frozen = parking_session.check_in_time + datetime.timedelta(hours=2)
     monkeypatch.setattr(crud_session_module, "server_now", lambda: frozen)
 
+    confirmation = quote_confirmation(client, auth_headers, parking_session.id)
     response = client.put(
         f"/api/v1/parking-sessions/{parking_session.id}/check-out",
-        json={},
+        json=confirmation,
         headers=auth_headers,
     )
 
@@ -153,9 +155,10 @@ def test_post_server_time_is_authoritative(
     frozen = parking_session.check_in_time + datetime.timedelta(hours=3)
     monkeypatch.setattr(crud_session_module, "server_now", lambda: frozen)
 
+    confirmation = quote_confirmation(client, auth_headers, parking_session.id)
     response = client.post(
         "/parking/check-out",
-        json={"license_plate": vehicle.license_plate},
+        json={**{"license_plate": vehicle.license_plate}, **confirmation},
         headers=auth_headers,
     )
 
@@ -175,10 +178,11 @@ def test_sequential_put_is_idempotent_and_fee_computed_once(
     client, auth_headers, db_session, parking_session, parking_slot,
     price_config, fee_counter,
 ):
+    confirmation = quote_confirmation(client, auth_headers, parking_session.id)
     responses = [
         client.put(
             f"/api/v1/parking-sessions/{parking_session.id}/check-out",
-            json={},
+            json=confirmation,
             headers=auth_headers,
         )
         for _ in range(3)
@@ -192,7 +196,7 @@ def test_sequential_put_is_idempotent_and_fee_computed_once(
         assert data["check_out_time"] == first["check_out_time"]
         assert data["status"] == "completed"
 
-    assert fee_counter["n"] == 1, "calculate_fee chỉ được chạy đúng một lần"
+    assert fee_counter["n"] == 2, "One preview plus one confirmed fee calculation; retries do not recalculate."
 
     db_session.refresh(parking_session)
     db_session.refresh(parking_slot)
@@ -211,7 +215,7 @@ class CheckoutEnv:
         self.Session = session_factory
         self.__dict__.update(ids)
 
-    def run_pair(self, fn_a, fn_b, sync_on=("UPDATE PARKING_SESSIONS",)):
+    def run_pair(self, fn_a, fn_b, sync_on=("UPDATE USERS",)):
         barrier = threading.Barrier(2)
         local = threading.local()
 
@@ -323,10 +327,13 @@ def env(tmp_path):
 
 
 def _post_checkout(env, staff_id):
+    with env.Session() as quote_db:
+        confirmation = service_confirmation(quote_db, env.session_id, staff_id)
+
     def run():
         db = env.Session()
         try:
-            r = ParkingService(db).check_out(license_plate=env.plate, staff_id=staff_id)
+            r = ParkingService(db).check_out(license_plate=env.plate, staff_id=staff_id, confirmation=confirmation)
             return ("OK", 200, r["parking_fee"], r["check_out_time"], staff_id)
         finally:
             db.close()
@@ -335,12 +342,14 @@ def _post_checkout(env, staff_id):
 
 def _put_checkout(env, staff_id):
     from routers.parking_session import check_out_vehicle
+    with env.Session() as quote_db:
+        confirmation = service_confirmation(quote_db, env.session_id, staff_id)
 
     def run():
         db = env.Session()
         try:
             user = db.get(User, staff_id)
-            res = check_out_vehicle(id=env.session_id, session_in=None,
+            res = check_out_vehicle(id=env.session_id, session_in=confirmation,
                                     db=db, current_user=user)
             return ("OK", 200, res.parking_fee, res.check_out_time, staff_id)
         finally:
@@ -349,17 +358,19 @@ def _put_checkout(env, staff_id):
 
 
 # ===========================================================================
-# 4. Concurrent PUT cùng session (hai nhân viên khác nhau)
+# 4. Concurrent PUT cùng session, cùng token và nhân viên
 # ===========================================================================
 
 
 def test_concurrent_put_single_transition_and_idempotent_results(env, fee_counter):
-    a, b = env.run_pair(_put_checkout(env, env.staff_a), _put_checkout(env, env.staff_b))
+    # Two requests replay the same token by the same operator.
+    operation = _put_checkout(env, env.staff_a)
+    a, b = env.run_pair(operation, operation)
 
     # Cả hai phải 200 theo contract idempotent
     assert a[1] == 200 and b[1] == 200, f"A={a} B={b}"
     # Phí chỉ được tính đúng MỘT lần
-    assert fee_counter["n"] == 1, f"calculate_fee chạy {fee_counter['n']} lần"
+    assert fee_counter["n"] == 2, "One quote and one winning confirmation"
     # Hai response trả cùng một dữ liệu persisted (loser không ghi đè)
     assert a[2] == b[2], "parking_fee hai response phải giống nhau"
     assert a[3] == b[3], "check_out_time hai response phải giống nhau"
@@ -383,7 +394,7 @@ def test_concurrent_post_one_winner_one_conflict(env, fee_counter):
 
     statuses = sorted([a[1], b[1]])
     assert statuses == [200, 409], f"A={a} B={b}"
-    assert fee_counter["n"] == 1, f"calculate_fee chạy {fee_counter['n']} lần"
+    assert fee_counter["n"] == 3, "Two operator quotes and one winning confirmation"
 
     # Không lộ raw SQL trong thông báo lỗi của loser
     loser = a if a[1] == 409 else b
@@ -483,7 +494,8 @@ def test_checkout_session_without_slot(env):
     db = env.Session()
     try:
         result = ParkingService(db).check_out(
-            license_plate="80B-00002", staff_id=env.staff_a
+            license_plate="80B-00002", staff_id=env.staff_a,
+            confirmation=service_confirmation(db, sid, env.staff_a),
         )
     finally:
         db.close()
@@ -524,9 +536,10 @@ def test_checkout_monthly_pass_still_free_via_put(
     db_session.add(session)
     db_session.commit()
 
+    confirmation = quote_confirmation(client, auth_headers, session.id)
     response = client.put(
         f"/api/v1/parking-sessions/{session.id}/check-out",
-        json={},
+        json=confirmation,
         headers=auth_headers,
     )
     assert response.status_code == 200

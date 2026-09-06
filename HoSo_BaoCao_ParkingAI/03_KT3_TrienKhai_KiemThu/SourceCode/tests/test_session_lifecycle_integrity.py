@@ -20,6 +20,7 @@ trigger, nên các WHEN được viết rời nhau — xem backend/database.py):
 Không test nào ở đây chạm hai database thật: toàn bộ dùng SQLite in-memory của
 conftest hoặc file trong `tmp_path` của pytest.
 """
+from checkout_helpers import quote_confirmation, service_confirmation
 
 import datetime
 from pathlib import Path
@@ -112,15 +113,16 @@ def test_post_checkout_goes_through_checking_out_to_completed(
 ):
     assert parking_session.status == "active"
 
+    confirmation = quote_confirmation(client, auth_headers, parking_session.id)
     response = client.post(
         "/parking/check-out",
-        json={"license_plate": vehicle.license_plate},
+        json={**{"license_plate": vehicle.license_plate}, **confirmation},
         headers=auth_headers,
     )
 
     assert response.status_code == 200
     # Trạng thái chuyển tiếp CÓ tồn tại trong transaction...
-    assert statuses_seen_while_billing == ["checking_out"]
+    assert statuses_seen_while_billing == ["active", "checking_out"]  # Preview then confirm.
 
     db_session.expire_all()
     persisted = db_session.get(ParkingSession, parking_session.id)
@@ -142,14 +144,15 @@ def test_put_checkout_goes_through_checking_out_to_completed(
     price_config: PriceConfig,
     statuses_seen_while_billing: list[str],
 ):
+    confirmation = quote_confirmation(client, auth_headers, parking_session.id)
     response = client.put(
         f"/api/v1/parking-sessions/{parking_session.id}/check-out",
-        json={},
+        json=confirmation,
         headers=auth_headers,
     )
 
     assert response.status_code == 200
-    assert statuses_seen_while_billing == ["checking_out"]
+    assert statuses_seen_while_billing == ["active", "checking_out"]  # Preview then confirm.
 
     db_session.expire_all()
     persisted = db_session.get(ParkingSession, parking_session.id)
@@ -179,17 +182,18 @@ def test_checkout_survives_production_autoflush_settings(
     check-out được kiểm ở cùng cấu hình session mà người dùng thật chạy.
     """
     db_session.autoflush = True
+    confirmation = quote_confirmation(client, auth_headers, parking_session.id)
     try:
         if endpoint == "post":
             response = client.post(
                 "/parking/check-out",
-                json={"license_plate": vehicle.license_plate},
+                json={**{"license_plate": vehicle.license_plate}, **confirmation},
                 headers=auth_headers,
             )
         else:
             response = client.put(
                 f"/api/v1/parking-sessions/{parking_session.id}/check-out",
-                json={},
+                json=confirmation,
                 headers=auth_headers,
             )
     finally:
@@ -217,6 +221,7 @@ def test_fee_failure_rolls_session_back_to_active(
     parking_slot: ParkingSlot,
     price_config: PriceConfig,
 ):
+    confirmation = quote_confirmation(client, auth_headers, parking_session.id)
     def failing_fee(self, *args, **kwargs):
         raise HTTPException(status_code=404, detail="Chưa cấu hình bảng giá.")
 
@@ -225,13 +230,13 @@ def test_fee_failure_rolls_session_back_to_active(
     if endpoint == "post":
         response = client.post(
             "/parking/check-out",
-            json={"license_plate": vehicle.license_plate},
+            json={**{"license_plate": vehicle.license_plate}, **confirmation},
             headers=auth_headers,
         )
     else:
         response = client.put(
             f"/api/v1/parking-sessions/{parking_session.id}/check-out",
-            json={},
+            json=confirmation,
             headers=auth_headers,
         )
 

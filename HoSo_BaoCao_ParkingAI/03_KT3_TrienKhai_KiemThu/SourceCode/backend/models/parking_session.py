@@ -8,6 +8,9 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from database import (
     Base,
+    CHECKOUT_CONFIRMATION_INSERT_TRIGGER_SQL,
+    CHECKOUT_CONFIRMATION_UPDATE_TRIGGER_SQL,
+    CHECKOUT_CONFIRMATION_POSTGRES_GUARD_SQL,
     PARKING_FEE_INTEGER_INSERT_TRIGGER_SQL,
     PARKING_FEE_INTEGER_UPDATE_TRIGGER_SQL,
     PARKING_FEE_SAFE_VND_INSERT_TRIGGER_SQL,
@@ -73,6 +76,10 @@ class ParkingSession(Base):
     # Snapshot of all consecutive prepaid card periods at admission. NULL
     # keeps the original-period billing policy for historical sessions.
     monthly_coverage_end: Mapped[Optional[date]] = mapped_column(Date)
+    # Exact accepted confirmation for safe retry, including free departures.
+    # Historical completed sessions remain NULL; confirmation is never invented.
+    checkout_quote_hash: Mapped[Optional[str]] = mapped_column(String(64))
+    checkout_payment_method: Mapped[Optional[str]] = mapped_column(String(8))
 
     # Đổi tên time_in/time_out -> check_in_time/check_out_time và fee -> parking_fee
     # để khớp với ParkingService.check_in/check_out và CheckOutResponse.
@@ -132,6 +139,10 @@ event.listen(
     "after_create",
     DDL(PARKING_FEE_INTEGER_UPDATE_TRIGGER_SQL).execute_if(dialect="sqlite"),
 )
+event.listen(ParkingSession.__table__, "after_create", DDL(CHECKOUT_CONFIRMATION_INSERT_TRIGGER_SQL).execute_if(dialect="sqlite"))
+event.listen(ParkingSession.__table__, "after_create", DDL(CHECKOUT_CONFIRMATION_UPDATE_TRIGGER_SQL).execute_if(dialect="sqlite"))
+event.listen(ParkingSession.__table__, "after_create", DDL(CHECKOUT_CONFIRMATION_POSTGRES_GUARD_SQL).execute_if(dialect="postgresql"))
+
 event.listen(
     ParkingSession.__table__,
     "after_create",

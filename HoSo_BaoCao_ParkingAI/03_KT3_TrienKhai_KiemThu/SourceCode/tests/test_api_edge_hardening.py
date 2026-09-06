@@ -1,3 +1,4 @@
+from checkout_helpers import quote_confirmation, service_confirmation
 from datetime import datetime
 from unittest.mock import MagicMock, patch
 
@@ -490,7 +491,8 @@ def test_audit_classifies_parking_session_id_check_out_as_domain_action(
     price_config,
 ):
     path = f"/api/v1/parking-sessions/{parking_session.id}/check-out"
-    response = client.put(path, headers=staff_headers, json={})
+    confirmation = quote_confirmation(client, staff_headers, parking_session.id)
+    response = client.put(path, headers=staff_headers, json=confirmation)
 
     assert response.status_code == 200, response.text
     audit = db_session.query(AuditLog).filter(AuditLog.path == path).one()
@@ -530,10 +532,11 @@ def test_audit_keeps_legacy_parking_check_out_domain_action(
     price_config,
 ):
     path = "/parking/check-out"
+    confirmation = quote_confirmation(client, staff_headers, parking_session.id)
     response = client.post(
         path,
         headers=staff_headers,
-        json={"license_plate": parking_session.vehicle.license_plate},
+        json={**{"license_plate": parking_session.vehicle.license_plate}, **confirmation},
     )
 
     assert response.status_code == 200, response.text

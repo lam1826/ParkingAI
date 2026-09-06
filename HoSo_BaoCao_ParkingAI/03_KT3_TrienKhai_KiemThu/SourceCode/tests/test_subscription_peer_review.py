@@ -1,4 +1,5 @@
 """Independent review checks for financial atomicity and malformed QR tokens."""
+from checkout_helpers import quote_confirmation, service_confirmation
 from datetime import timedelta
 from uuid import uuid4
 
@@ -37,10 +38,11 @@ def test_collection_failure_restores_session_and_slot(client, db_session, test_u
     def fail(*args, **kwargs):
         raise HTTPException(409, "Collection failed")
     monkeypatch.setattr(PaymentService, "record_receipt", fail)
+    confirmation = quote_confirmation(client, headers(test_user), session_id)
     if route.startswith("/parking/"):
-        result = client.post(route, headers=headers(test_user), json={"license_plate": vehicle.license_plate})
+        result = client.post(route, headers=headers(test_user), json={**{"license_plate": vehicle.license_plate}, **confirmation})
     else:
-        result = client.put(route.format(id=session_id), headers=headers(test_user))
+        result = client.put(route.format(id=session_id), headers=headers(test_user), json=confirmation)
     assert result.status_code == 409
     db_session.expire_all()
     session = db_session.get(ParkingSession, session_id)

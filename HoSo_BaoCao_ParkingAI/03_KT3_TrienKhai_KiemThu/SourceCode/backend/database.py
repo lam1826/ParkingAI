@@ -485,6 +485,74 @@ SESSION_MONTHLY_COVERAGE_UPDATE_TRIGGER_SQL = (
     "WHEN NEW.monthly_coverage_end IS NOT OLD.monthly_coverage_end "
     "BEGIN SELECT RAISE(ABORT, 'monthly coverage snapshot immutable'); END"
 )
+
+
+def _sqlite_checkout_confirmation_invalid(prefix: str = "") -> str:
+    """A NULL pair denotes legacy history, never an inferred confirmation."""
+    digest = prefix + "checkout_quote_hash"
+    method = prefix + "checkout_payment_method"
+    fee = prefix + "parking_fee"
+    return (
+        f"({digest} IS NULL AND {method} IS NOT NULL) OR "
+        f"({digest} IS NOT NULL AND (typeof({digest}) != 'text' "
+        f"OR length({digest}) != 64 OR length(CAST({digest} AS BLOB)) != 64 "
+        f"OR {digest} GLOB '*[^0-9a-f]*' "
+        f"OR {prefix}status IS NOT 'completed' OR {prefix}staff_out_id IS NULL "
+        f"OR {fee} IS NULL OR {fee} < 0 "
+        f"OR ({fee} = 0 AND {method} IS NOT NULL) "
+        f"OR ({fee} > 0 AND COALESCE({method}, '') NOT IN ('cash', 'transfer'))))"
+    )
+
+
+TRG_CHECKOUT_CONFIRMATION_INSERT = "trg_parking_sessions_checkout_confirmation_insert"
+TRG_CHECKOUT_CONFIRMATION_UPDATE = "trg_parking_sessions_checkout_confirmation_update"
+CHECKOUT_CONFIRMATION_INSERT_TRIGGER_SQL = (
+    f"CREATE TRIGGER IF NOT EXISTS {TRG_CHECKOUT_CONFIRMATION_INSERT} "
+    "BEFORE INSERT ON parking_sessions FOR EACH ROW "
+    "WHEN NEW.checkout_quote_hash IS NOT NULL OR NEW.checkout_payment_method IS NOT NULL "
+    "BEGIN SELECT RAISE(ABORT, 'checkout confirmation requires completion'); END"
+)
+CHECKOUT_CONFIRMATION_UPDATE_TRIGGER_SQL = (
+    f"CREATE TRIGGER IF NOT EXISTS {TRG_CHECKOUT_CONFIRMATION_UPDATE} "
+    "BEFORE UPDATE ON parking_sessions FOR EACH ROW WHEN ("
+    "(NEW.checkout_quote_hash IS NOT OLD.checkout_quote_hash "
+    "OR NEW.checkout_payment_method IS NOT OLD.checkout_payment_method) "
+    "AND NOT (OLD.status IS 'checking_out' AND NEW.status IS 'completed' "
+    "AND OLD.checkout_quote_hash IS NULL AND OLD.checkout_payment_method IS NULL)) "
+    f"OR ({_sqlite_checkout_confirmation_invalid('NEW.')}) "
+    "BEGIN SELECT RAISE(ABORT, 'checkout confirmation invalid or immutable'); END"
+)
+
+# Frozen independently in the released Alembic revision. Keep metadata-created
+# PostgreSQL databases and upgrades equivalent; the test compares both copies.
+CHECKOUT_CONFIRMATION_POSTGRES_GUARD_SQL = """
+CREATE OR REPLACE FUNCTION parking_checkout_confirmation_guard() RETURNS trigger AS $$
+BEGIN
+    IF TG_OP = 'INSERT' THEN
+        IF NEW.checkout_quote_hash IS NOT NULL OR NEW.checkout_payment_method IS NOT NULL THEN
+            RAISE EXCEPTION 'checkout confirmation requires completion' USING ERRCODE = '23514';
+        END IF;
+    ELSIF ROW(NEW.checkout_quote_hash, NEW.checkout_payment_method) IS DISTINCT FROM
+          ROW(OLD.checkout_quote_hash, OLD.checkout_payment_method) AND NOT (
+              OLD.status IS NOT DISTINCT FROM 'checking_out' AND NEW.status IS NOT DISTINCT FROM 'completed'
+              AND OLD.checkout_quote_hash IS NULL AND OLD.checkout_payment_method IS NULL) THEN
+        RAISE EXCEPTION 'checkout confirmation invalid or immutable' USING ERRCODE = '23514';
+    END IF;
+    IF (NEW.checkout_quote_hash IS NULL AND NEW.checkout_payment_method IS NOT NULL) OR
+       (NEW.checkout_quote_hash IS NOT NULL AND (
+           length(NEW.checkout_quote_hash) != 64 OR NEW.checkout_quote_hash !~ '^[0-9a-f]{64}$'
+           OR NEW.status IS DISTINCT FROM 'completed'
+           OR NEW.staff_out_id IS NULL OR NEW.parking_fee IS NULL OR NEW.parking_fee < 0
+           OR (NEW.parking_fee = 0 AND NEW.checkout_payment_method IS NOT NULL)
+           OR (NEW.parking_fee > 0 AND COALESCE(NEW.checkout_payment_method, '') NOT IN ('cash', 'transfer')))) THEN
+        RAISE EXCEPTION 'checkout confirmation invalid or immutable' USING ERRCODE = '23514';
+    END IF;
+    RETURN NEW;
+END; $$ LANGUAGE plpgsql;
+CREATE TRIGGER trg_parking_sessions_checkout_confirmation_guard BEFORE INSERT OR UPDATE ON parking_sessions
+FOR EACH ROW EXECUTE FUNCTION parking_checkout_confirmation_guard();
+"""
+
 SESSION_RATE_INSERT_VALIDATION_TRIGGER_SQL = (
     f"CREATE TRIGGER IF NOT EXISTS {TRG_SESSION_RATE_INSERT_VALIDATION} "
     "BEFORE INSERT ON parking_sessions FOR EACH ROW "
@@ -981,6 +1049,14 @@ def run_sqlite_migrations(target_engine=engine) -> None:
             if "monthly_coverage_end" not in vehicle_session_columns:
                 conn.exec_driver_sql("ALTER TABLE parking_sessions ADD COLUMN monthly_coverage_end DATE")
             conn.exec_driver_sql(SESSION_MONTHLY_COVERAGE_UPDATE_TRIGGER_SQL)
+            for confirmation_column, sql_type in (
+                ("checkout_quote_hash", "VARCHAR(64)"),
+                ("checkout_payment_method", "VARCHAR(8)"),
+            ):
+                if confirmation_column not in vehicle_session_columns:
+                    conn.exec_driver_sql(
+                        f"ALTER TABLE parking_sessions ADD COLUMN {confirmation_column} {sql_type}"
+                    )
         vehicle_pass_columns = {
             row[1]
             for row in conn.exec_driver_sql("PRAGMA table_info(monthly_passes)")
@@ -1375,6 +1451,18 @@ def run_sqlite_migrations(target_engine=engine) -> None:
             conn.exec_driver_sql(SESSION_STATUS_INSERT_VALIDATION_TRIGGER_SQL)
             conn.exec_driver_sql(SESSION_STATUS_UPDATE_VALIDATION_TRIGGER_SQL)
             if session_lifecycle_ready:
+                invalid_confirmation = conn.exec_driver_sql(
+                    "SELECT id FROM parking_sessions WHERE "
+                    + _sqlite_checkout_confirmation_invalid()
+                    + " ORDER BY id LIMIT 1"
+                ).first()
+                if invalid_confirmation:
+                    raise RuntimeError(
+                        "Bất biến checkout confirmation không hợp lệ; cần xử lý thủ công: "
+                        f"{tuple(invalid_confirmation)}"
+                    )
+                conn.exec_driver_sql(CHECKOUT_CONFIRMATION_INSERT_TRIGGER_SQL)
+                conn.exec_driver_sql(CHECKOUT_CONFIRMATION_UPDATE_TRIGGER_SQL)
                 conn.exec_driver_sql(SESSION_IDENTITY_IMMUTABLE_TRIGGER_SQL)
                 conn.exec_driver_sql(
                     SESSION_COMPLETED_BILLING_IMMUTABLE_TRIGGER_SQL

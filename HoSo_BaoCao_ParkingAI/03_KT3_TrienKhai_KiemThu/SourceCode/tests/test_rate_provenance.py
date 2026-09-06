@@ -4,6 +4,7 @@ The public seams are the two check-in APIs and the price-config mutation API.
 Every stay must have one effective active fallback rate at entry; while that
 stay is open, the rate that checkout may use cannot be rewritten or removed.
 """
+from checkout_helpers import quote_confirmation, service_confirmation
 
 import datetime
 import sqlite3
@@ -328,9 +329,10 @@ def test_price_edit_between_entry_and_exit_is_blocked_and_original_fee_persists(
     assert price_config.price == 25_000
 
     frozen_clock(business_reference_now + datetime.timedelta(hours=2))
+    confirmation = quote_confirmation(client, _headers(test_user), parking_session.id)
     checked_out = client.put(
         f"/api/v1/parking-sessions/{parking_session.id}/check-out",
-        json={},
+        json=confirmation,
         headers=_headers(test_user),
     )
 

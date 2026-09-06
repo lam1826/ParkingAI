@@ -14,9 +14,12 @@ Hệ thống quản lý bãi đỗ xe dùng FastAPI, React, SQLite và Gemini. H
   `is_active` và `effective_date <= ngày check-in`.** Nhờ vậy nếu vé tháng hết hạn giữa lượt gửi
   thì lúc tính phí vẫn còn một hợp đồng giá ổn định để dùng; DB backstop bằng trigger, không chỉ
   kiểm ở tầng ứng dụng.
-- Check-out, miễn phí khi vé tháng đã gắn lúc check-in vẫn bao phủ ngày xe ra;
-  nếu ở quá ngày hết hạn thì làm tròn phí theo giờ/ngày từ bảng giá cấu hình
-  trong DB, sau đó giải phóng vị trí.
+- Xem phí trước khi xe ra, chọn tiền mặt/chuyển khoản và xác nhận đã thu tiền.
+  Báo phí có hiệu lực 120 giây; phí thay đổi phải được xem và xác nhận lại.
+  Vé tháng đã gắn lúc check-in còn bao phủ ngày xe ra được xác nhận miễn phí;
+  nếu quá hạn thì tính theo bảng giá. Ghi thu, hoàn tất lượt và trả chỗ là một
+  giao dịch; thử lại đúng yêu cầu không thu trùng.
+  Xem [hướng dẫn xác nhận xe ra](docs/CHECKOUT_CONFIRMATION.md).
 - Vòng đời phiên gửi xe: trạng thái được LƯU chỉ gồm `active`, `completed`, `cancelled`.
   `checking_out` là trạng thái chuyển tiếp CHỈ tồn tại bên trong transaction check-out
   (`active -> checking_out -> completed`): nó được claim nguyên tử để hai request đồng thời

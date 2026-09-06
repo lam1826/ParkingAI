@@ -6,6 +6,7 @@
   check-in thành công; cùng timestamp dùng cho session, ngày tra vé tháng và
   response. Freeze bằng monkeypatch, không đổi đồng hồ hệ thống.
 """
+from checkout_helpers import quote_confirmation, service_confirmation
 
 import datetime
 
@@ -195,15 +196,16 @@ def test_fee_computed_from_server_check_in_time(
 
     # Checkout đúng 2 giờ sau theo đồng hồ SERVER
     calls_out = frozen_clock(check_in_at + datetime.timedelta(hours=2))
+    confirmation = quote_confirmation(client, auth_headers, session_id)
     checked_out = client.put(
         f"/api/v1/parking-sessions/{session_id}/check-out",
-        json={},
+        json=confirmation,
         headers=auth_headers,
     )
 
     assert checked_out.status_code == 200
     assert checked_out.json()["parking_fee"] == price_config.price * 2
-    assert calls_out["n"] == 1
+    assert calls_out["n"] == 2  # Quote and confirmation each sample server time once.
 
 
 # ===========================================================================
@@ -312,9 +314,10 @@ def test_api_v1_check_in_snapshots_monthly_pass_for_later_checkout(
     monthly_pass.is_active = False
     db_session.commit()
 
+    confirmation = quote_confirmation(client, auth_headers, session.id)
     checked_out = client.put(
         f"/api/v1/parking-sessions/{session.id}/check-out",
-        json={},
+        json=confirmation,
         headers=auth_headers,
     )
     assert checked_out.status_code == 200

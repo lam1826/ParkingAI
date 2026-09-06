@@ -3,6 +3,7 @@ from typing import Literal, Optional, List
 from datetime import datetime
 
 from core.clock import BUSINESS_TZ
+from schemas.checkout import CheckoutConfirmation
 
 
 class CheckInRequest(BaseModel):
@@ -33,7 +34,7 @@ class CheckInRequest(BaseModel):
         return v.strip().upper()
 
 
-class CheckOutRequest(BaseModel):
+class CheckOutRequest(CheckoutConfirmation):
     """Schema validate dữ liệu đầu vào cho yêu cầu Check-out.
 
     extra="forbid": thời gian ra, phí, trạng thái và nhân viên xử lý hoàn toàn

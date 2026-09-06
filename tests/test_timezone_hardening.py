@@ -35,6 +35,7 @@ caller/test cũ đã có từ trước Đợt 10A — bản thân nó nay chỉ 
 sang business_now(), nên patch `core.clock.datetime` cũng cascade đúng qua
 server_now() mà không cần patch riêng.
 """
+from checkout_helpers import quote_confirmation, service_confirmation
 import datetime as dt
 from datetime import date, datetime, time, timedelta, timezone
 
@@ -382,7 +383,8 @@ def test_check_out_duration_correct_across_midnight_utc_boundary(
     session_id = ci.json()["session_id"]
 
     HostClockAtFixedInstant.FIXED_UTC = checkout_utc
-    co = client.put(f"/api/v1/parking-sessions/{session_id}/check-out", json={},
+    confirmation = quote_confirmation(client, auth_headers, session_id)
+    co = client.put(f"/api/v1/parking-sessions/{session_id}/check-out", json=confirmation,
                      headers=auth_headers)
     assert co.status_code == 200, co.text
     body = co.json()

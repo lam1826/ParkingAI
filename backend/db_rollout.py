@@ -19,6 +19,11 @@ import tempfile
 from sqlalchemy import UniqueConstraint, create_engine, inspect as sqlalchemy_inspect
 
 from database import (
+    CHECKOUT_CONFIRMATION_INSERT_TRIGGER_SQL,
+    CHECKOUT_CONFIRMATION_UPDATE_TRIGGER_SQL,
+    TRG_CHECKOUT_CONFIRMATION_INSERT,
+    TRG_CHECKOUT_CONFIRMATION_UPDATE,
+    _sqlite_checkout_confirmation_invalid,
     BOOLEAN_DOMAIN_COLUMNS,
     BOOLEAN_DOMAIN_TRIGGER_SQL,
     MONTHLY_PASS_DATE_RANGE_INSERT_TRIGGER_SQL,
@@ -242,6 +247,8 @@ _REQUIRED_TRIGGER_SQL = {
 }
 _REQUIRED_TRIGGER_SQL.update(BOOLEAN_DOMAIN_TRIGGER_SQL)
 _REQUIRED_TRIGGER_SQL.update({
+    TRG_CHECKOUT_CONFIRMATION_INSERT: CHECKOUT_CONFIRMATION_INSERT_TRIGGER_SQL,
+    TRG_CHECKOUT_CONFIRMATION_UPDATE: CHECKOUT_CONFIRMATION_UPDATE_TRIGGER_SQL,
     TRG_SESSION_MONTHLY_COVERAGE_INSERT: SESSION_MONTHLY_COVERAGE_INSERT_TRIGGER_SQL,
     TRG_SESSION_MONTHLY_COVERAGE_UPDATE: SESSION_MONTHLY_COVERAGE_UPDATE_TRIGGER_SQL,
 })
@@ -653,6 +660,16 @@ def verify_schema(target_engine) -> None:
 def _validate_business_invariants(connection) -> None:
     validate_finance_invariants(connection)
     """Validate denormalized state that schema shape alone cannot express."""
+    invalid_confirmation = connection.exec_driver_sql(
+        "SELECT id FROM parking_sessions WHERE "
+        + _sqlite_checkout_confirmation_invalid()
+        + " ORDER BY id LIMIT 1"
+    ).first()
+    if invalid_confirmation:
+        raise RuntimeError(
+            "Bất biến checkout confirmation không hợp lệ: "
+            f"{tuple(invalid_confirmation)}"
+        )
     for table_name, boolean_columns in BOOLEAN_DOMAIN_COLUMNS.items():
         invalid_predicate = " OR ".join(
             f"{column} IS NULL OR typeof({column}) != 'integer' "
@@ -911,6 +928,8 @@ def _initialize_candidate(target: Path) -> None:
             backfill_legacy_finance(connection)
             connection.exec_driver_sql(SESSION_MONTHLY_COVERAGE_INSERT_TRIGGER_SQL)
             connection.exec_driver_sql(SESSION_MONTHLY_COVERAGE_UPDATE_TRIGGER_SQL)
+            connection.exec_driver_sql(CHECKOUT_CONFIRMATION_INSERT_TRIGGER_SQL)
+            connection.exec_driver_sql(CHECKOUT_CONFIRMATION_UPDATE_TRIGGER_SQL)
             for statement in (*SHIFT_SQLITE_TRIGGERS, SHIFT_SQLITE_CLOSE_TRIGGER, *PAYMENT_SQLITE_TRIGGERS, *PAYMENT_SQLITE_SOURCE_TRIGGERS, *MONTHLY_CARD_SQLITE_TRIGGERS):
                 connection.exec_driver_sql(statement)
         verify_schema(target_engine)

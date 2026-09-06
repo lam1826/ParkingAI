@@ -96,7 +96,9 @@ def test_monthly_pass_expiring_during_stay_falls_back_to_regular_fee(
     db_session.commit()
     monkeypatch.setattr(crud_parking_session, "server_now", lambda: check_out_time)
 
-    result = ParkingService(db_session).check_out(vehicle.license_plate, test_user.id)
+    from checkout_helpers import service_confirmation
+    confirmation = service_confirmation(db_session, session.id, test_user.id)
+    result = ParkingService(db_session).check_out(vehicle.license_plate, test_user.id, confirmation)
 
     assert result["parking_fee"] == 2 * price_config.price
 

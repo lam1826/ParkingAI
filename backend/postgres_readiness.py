@@ -15,7 +15,12 @@ from sqlalchemy.engine import Engine
 from finance_rollout import validate_finance_invariants
 
 
-POSTGRES_SCHEMA_REVISION = "20260906_01"
+POSTGRES_SCHEMA_REVISION = "20260907_01"
+
+REQUIRED_COLUMN_CONTRACTS = frozenset({
+    "parking_sessions.checkout_quote_hash:character varying:64:YES",
+    "parking_sessions.checkout_payment_method:character varying:8:YES",
+})
 
 REQUIRED_TABLES = frozenset(
     {
@@ -96,6 +101,7 @@ REQUIRED_TRIGGERS = frozenset(
         "trg_parking_card_identity_guard",
         "trg_paid_parking_session_delete",
         "trg_monthly_coverage_guard",
+        "trg_parking_sessions_checkout_confirmation_guard",
     }
 )
 
@@ -126,6 +132,13 @@ def _validate_catalog(connection) -> None:
         )
     ).scalars()
     _require_all("bảng", tables, REQUIRED_TABLES)
+
+    column_contracts = connection.execute(text(
+        "SELECT table_name || '.' || column_name || ':' || data_type || ':' || "
+        "COALESCE(character_maximum_length::text, '') || ':' || is_nullable "
+        "FROM information_schema.columns WHERE table_schema = current_schema()"
+    )).scalars()
+    _require_all("column contract", column_contracts, REQUIRED_COLUMN_CONTRACTS)
 
     indexes = connection.execute(
         text(
@@ -171,6 +184,22 @@ def _first(connection, sql: str):
 
 def _validate_business_invariants(connection) -> None:
     validate_finance_invariants(connection)
+    invalid_confirmation = _first(connection, """
+        SELECT id FROM parking_sessions
+        WHERE (checkout_quote_hash IS NULL AND checkout_payment_method IS NOT NULL)
+           OR (checkout_quote_hash IS NOT NULL AND (
+               length(checkout_quote_hash) != 64 OR checkout_quote_hash !~ '^[0-9a-f]{64}$'
+               OR status IS DISTINCT FROM 'completed' OR staff_out_id IS NULL
+               OR parking_fee IS NULL OR parking_fee < 0
+               OR (parking_fee = 0 AND checkout_payment_method IS NOT NULL)
+               OR (parking_fee > 0 AND COALESCE(checkout_payment_method, '') NOT IN ('cash', 'transfer'))))
+        ORDER BY id LIMIT 1
+    """)
+    if invalid_confirmation:
+        raise RuntimeError(
+            "Bất biến checkout confirmation PostgreSQL không hợp lệ: "
+            f"{tuple(invalid_confirmation)}"
+        )
     invalid_session = _first(
         connection,
         """

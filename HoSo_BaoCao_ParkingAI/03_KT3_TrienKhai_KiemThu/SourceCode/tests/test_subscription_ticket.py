@@ -1,4 +1,5 @@
 """Paid renewal, rollback and signed ticket flows through the actual API."""
+from checkout_helpers import quote_confirmation, service_confirmation
 from datetime import timedelta
 from uuid import uuid4
 
@@ -100,8 +101,9 @@ def test_qr_requires_staff_rejects_tampering_and_checkout_collects_once(client, 
     assert client.get(resolve, headers=headers(test_user), params={"token": data["qr_payload"]}).json()["session_id"] == session_id
     assert client.get(resolve, headers=headers(test_user), params={"token": data["qr_payload"][:-1] + "X"}).status_code == 400
     assert db_session.get(ParkingSession, session_id).status == "active"
-    first = client.put(f"/api/v1/parking-sessions/{session_id}/check-out", headers=headers(test_user))
-    retry = client.put(f"/api/v1/parking-sessions/{session_id}/check-out", headers=headers(test_user))
+    confirmation = quote_confirmation(client, headers(test_user), session_id)
+    first = client.put(f"/api/v1/parking-sessions/{session_id}/check-out", headers=headers(test_user), json=confirmation)
+    retry = client.put(f"/api/v1/parking-sessions/{session_id}/check-out", headers=headers(test_user), json=confirmation)
     assert first.status_code == retry.status_code == 200, first.text
     assert first.json()["parking_fee"] == retry.json()["parking_fee"]
     assert db_session.query(Payment).filter(Payment.source_id == session_id).count() == 1

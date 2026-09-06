@@ -24,6 +24,20 @@ MONTHLY_CARD_SQLITE_TRIGGERS = (
 
 def validate_finance_invariants(connection) -> None:
     """Read-only checks shared by both database deployment gates."""
+    invalid_confirmation_receipt = connection.execute(text(
+        "SELECT session.id FROM parking_sessions session LEFT JOIN payments receipt "
+        "ON receipt.source_type = 'parking_session' AND receipt.source_id = session.id AND receipt.kind = 'receipt' "
+        "WHERE session.checkout_quote_hash IS NOT NULL AND ("
+        "(session.parking_fee = 0 AND receipt.id IS NOT NULL) OR "
+        "(session.parking_fee > 0 AND (receipt.id IS NULL OR receipt.amount != session.parking_fee "
+        "OR receipt.method != session.checkout_payment_method OR receipt.collected_by_id IS NULL "
+        "OR receipt.collected_by_id != session.staff_out_id))) ORDER BY session.id LIMIT 1"
+    )).first()
+    if invalid_confirmation_receipt:
+        raise RuntimeError(
+            "Bất biến checkout confirmation/phiếu thu không hợp lệ: "
+            f"{tuple(invalid_confirmation_receipt)}"
+        )
     invalid_coverage = connection.execute(text(
         "SELECT session.id FROM parking_sessions session LEFT JOIN monthly_passes period ON period.id = session.monthly_pass_id "
         "WHERE session.monthly_coverage_end IS NOT NULL AND (period.id IS NULL "
@@ -88,7 +102,7 @@ def backfill_legacy_finance(connection) -> None:
         connection.execute(text("UPDATE monthly_passes SET card_id = :card WHERE id = :id"), {"card": card_id, "id": period["id"]})
 
     sources = (
-        ("parking_session", "SELECT id, parking_fee AS amount, check_out_time AS collected_at FROM parking_sessions WHERE status = 'completed' AND parking_fee IS NOT NULL"),
+        ("parking_session", "SELECT id, parking_fee AS amount, check_out_time AS collected_at FROM parking_sessions WHERE status = 'completed' AND parking_fee IS NOT NULL AND checkout_quote_hash IS NULL"),
         ("monthly_pass", "SELECT id, price AS amount, created_at AS collected_at FROM monthly_passes"),
     )
     for source_type, source_sql in sources:

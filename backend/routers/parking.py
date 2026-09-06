@@ -65,13 +65,14 @@ def check_out_endpoint(
 ):
     """
     API xử lý xe rời bãi đỗ:
-    - Nhận biển số xe đã được validate qua Pydantic Schema.
-    - Tìm phiên đỗ xe hợp lệ đang hoạt động.
-    - Tính toán chi phí (Miễn phí nếu có vé tháng hợp lệ).
-    - Cập nhật trạng thái hóa đơn và giải phóng chỗ đỗ.
+    - Đối chiếu biển số với lượt gửi đã được xác định trong phiếu xem phí.
+    - Kiểm tra phí và xác nhận thu tiền hoặc miễn phí của nhân viên.
+    - Hoàn tất lượt gửi, ghi nhận khoản thu và giải phóng chỗ đỗ trong cùng giao dịch.
+    - Trả lại kết quả cũ khi thử lại đúng xác nhận đã hoàn tất.
     """
     service = ParkingService(db)
-    return service.check_out(license_plate=body.license_plate, staff_id=current_user.id)
+    return service.check_out(license_plate=body.license_plate, staff_id=current_user.id,
+                             confirmation=body.model_dump(exclude={"license_plate"}))
 
 
 @router.get(

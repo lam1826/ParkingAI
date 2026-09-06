@@ -429,126 +429,19 @@ class ParkingService:
     # ==========================================================
     # CHECK OUT
     # ==========================================================
-    def check_out(self, license_plate: str, staff_id: int) -> Dict[str, Any]:
-        """
-        Thực hiện quy trình check-out:
-        1. Tìm ParkingSession đang ACTIVE.
-        2. Nếu không có thì trả lỗi.
-        3. Ghi time_out.
-        4. Kiểm tra vé tháng/tính phí.
-        5. Cập nhật ParkingSession.
-        6. Giải phóng ParkingSlot.
-        7. Trả hóa đơn.
-        """
-
-        try:
-            license_plate = license_plate.strip().upper()
-            stmt = (
-                select(ParkingSession, Vehicle)
-                .join(
-                    Vehicle,
-                    ParkingSession.vehicle_id == Vehicle.id
-                )
-                .where(
-                    Vehicle.license_plate == license_plate,
-                    ParkingSession.status == "active"
-                )
-            )
-
-            result = self.db.execute(stmt).first()
-
-            if not result:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail=f"Không tìm thấy phiên đỗ xe hoạt động nào cho biển số: {license_plate}"
-                )
-
-            session, vehicle = result
-
-            # Claim NGUYÊN TỬ active -> checking_out TRƯỚC khi tính phí: hai
-            # request cùng thấy session active thì chỉ một UPDATE có điều kiện
-            # thành công; request thua không được tính phí lần hai hay ghi đè
-            # thời gian/nhân viên của winner. Claim + phí + slot cùng một
-            # transaction — lỗi ở bất kỳ bước nào rollback về active.
-            if not crud_parking_session.claim_session_for_checkout(self.db, session.id):
-                self.db.rollback()
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail="Xe vừa được check-out bởi một yêu cầu khác. "
-                           "Vui lòng tải lại để xem kết quả."
-                )
-
-            # parking_slot_id là cột optional -> lấy slot riêng (nếu có) thay vì
-            # bắt buộc INNER JOIN, tránh loại bỏ nhầm các phiên hợp lệ không gắn slot.
-            slot = None
-            if session.parking_slot_id is not None:
-                slot = self.db.execute(
-                    select(ParkingSlot).where(ParkingSlot.id == session.parking_slot_id)
-                ).scalar_one_or_none()
-
-            # Đồng hồ server, lấy ĐÚNG MỘT LẦN: response, tính phí và DB dùng
-            # cùng một giá trị.
-            check_out_time = crud_parking_session.server_now()
-
-            # KHÔNG gán check_out_time trước bước này. `SessionLocal` production
-            # dùng autoflush mặc định (True), mà `calculate_fee` có truy vấn DB
-            # (vé tháng, bảng giá) -> một gán sớm sẽ bị flush thành
-            # `UPDATE parking_sessions SET check_out_time=?` khi phiên còn đang
-            # `checking_out`, và trigger state chặn đúng theo bất biến
-            # "phiên chưa completed không được có billing" -> 500.
-            # Gán trọn bộ billing SAU khi có phí, giống hệt endpoint
-            # PUT /api/v1/parking-sessions/{id}/check-out.
-            fee = self.calculate_fee(
-                vehicle_id=vehicle.id,
-                vehicle_type_id=vehicle.vehicle_type_id,
-                time_in=session.check_in_time,
-                time_out=check_out_time,
-                monthly_pass_id=session.monthly_pass_id,
-                monthly_coverage_end=session.monthly_coverage_end,
-            )
-
-            session.check_out_time = check_out_time
-            session.parking_fee = fee
-            session.status = "completed"  # hoàn tất cùng billing trong một UPDATE
-            session.staff_out_id = staff_id
-
-            if slot is not None:
-                slot.is_occupied = False
-
-            from services.payment_service import PaymentService
-            self.db.flush()
-            PaymentService.record_receipt(self.db, source_type="parking_session", source_id=session.id,
-                amount=fee, collected_by_id=staff_id, created_at=check_out_time)
-            self.db.commit()
-            self.db.refresh(session)
-
-            duration_minutes = int(
-                (check_out_time - session.check_in_time).total_seconds() / 60
-            )
-
-            return {
-                "session_id": session.id,
-                "license_plate": vehicle.license_plate,
-                "check_in_time": session.check_in_time,
-                "check_out_time": session.check_out_time,
-                "duration_minutes": duration_minutes,
-                "parking_fee": fee,
-                "status": session.status
-            }
-
-        except HTTPException:
-            # calculate_fee ném HTTPException (thiếu bảng giá...) SAU khi đã
-            # claim -> phải rollback để session trở lại active và slot giữ
-            # nguyên, cho phép retry sau khi nguyên nhân được xử lý.
-            self.db.rollback()
-            raise
-
-        except SQLAlchemyError:
-            self.db.rollback()
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Lỗi hệ thống trong quá trình check-out."
-            )
+    def check_out(self, license_plate: str, staff_id: int, confirmation) -> Dict[str, Any]:
+        """Compatibility response for the same signed, session-bound confirmation."""
+        from services.checkout_service import CheckoutService
+        from schemas.checkout import CheckoutConfirmation
+        confirmed = CheckoutConfirmation.model_validate(confirmation)
+        session = CheckoutService(self.db).confirm(confirmed, staff_id, license_plate=license_plate)
+        vehicle = self.db.get(Vehicle, session.vehicle_id)
+        return {
+            "session_id": session.id, "license_plate": vehicle.license_plate,
+            "check_in_time": session.check_in_time, "check_out_time": session.check_out_time,
+            "duration_minutes": int((session.check_out_time - session.check_in_time).total_seconds() / 60),
+            "parking_fee": session.parking_fee, "status": session.status,
+        }
 
     # ==========================================================
     # THỐNG KÊ

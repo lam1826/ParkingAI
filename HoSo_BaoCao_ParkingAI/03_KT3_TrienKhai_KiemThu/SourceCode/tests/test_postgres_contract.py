@@ -1,6 +1,8 @@
 from pathlib import Path
 import tomllib
 
+import pytest
+
 from sqlalchemy.dialects import postgresql, sqlite
 
 import database
@@ -10,6 +12,7 @@ from models.parking_session import ParkingSession
 from models.price_config import PriceConfig
 from postgres_readiness import (
     POSTGRES_SCHEMA_REVISION,
+    REQUIRED_COLUMN_CONTRACTS,
     REQUIRED_CONSTRAINTS,
     REQUIRED_INDEXES,
     REQUIRED_TABLES,
@@ -155,6 +158,11 @@ def test_production_release_gate_runs_deep_readiness_then_exact_revision(monkeyp
     calls = []
     monkeypatch.setattr(
         production_release_gate,
+        "validate_checkout_signing_configuration",
+        lambda: calls.append(("checkout-signing",)),
+    )
+    monkeypatch.setattr(
+        production_release_gate,
         "check_postgres_readiness",
         lambda engine, *, deep: calls.append(("readiness", engine, deep)),
     )
@@ -166,9 +174,33 @@ def test_production_release_gate_runs_deep_readiness_then_exact_revision(monkeyp
 
     assert production_release_gate.main() == 0
     assert calls == [
+        ("checkout-signing",),
         ("readiness", production_release_gate.engine, True),
         ("revision", production_release_gate.engine),
     ]
+
+
+@pytest.mark.parametrize("secret,valid", [("x" * 31, False), ("x" * 32, True), ("ắ" * 11, True)])
+def test_production_gate_validates_signing_key_bytes_without_disclosing_key(monkeypatch, capsys, secret, valid):
+    from fastapi import HTTPException
+    from core.config import settings
+    import production_release_gate
+
+    monkeypatch.setattr(settings, "SECRET_KEY", secret)
+    database_calls = []
+    monkeypatch.setattr(production_release_gate, "check_postgres_readiness", lambda *args, **kwargs: database_calls.append("readiness"))
+    monkeypatch.setattr(production_release_gate, "assert_postgres_release_revision", lambda *args: database_calls.append("revision"))
+    if valid:
+        assert production_release_gate.main() == 0
+        assert database_calls == ["readiness", "revision"]
+    else:
+        with pytest.raises(HTTPException) as rejected:
+            production_release_gate.main()
+        assert rejected.value.status_code == 503
+        assert secret not in str(rejected.value)
+        assert database_calls == []
+    captured = capsys.readouterr()
+    assert secret not in captured.out + captured.err
 
 
 def test_blue_green_release_contract_is_locked_and_digest_only():
@@ -185,7 +217,8 @@ def test_blue_green_release_contract_is_locked_and_digest_only():
     assert "compose up -d --no-deps backend_blue backend_green" in deploy
 
 
-def test_runtime_catalog_gate_accepts_future_expand_contract_revision():
+@pytest.mark.parametrize("missing_column", [False, True])
+def test_runtime_catalog_gate_requires_columns_and_accepts_future_expand_revision(missing_column):
     class Result:
         def __init__(self, value):
             self.value = value
@@ -205,6 +238,8 @@ def test_runtime_catalog_gate_accepts_future_expand_contract_revision():
                 return Result("20260828_02_future_expand")
             if "pg_catalog.pg_tables" in sql:
                 return Result(REQUIRED_TABLES)
+            if "information_schema.columns" in sql:
+                return Result(set() if missing_column else REQUIRED_COLUMN_CONTRACTS)
             if "pg_catalog.pg_indexes" in sql:
                 return Result(REQUIRED_INDEXES)
             if "pg_catalog.pg_constraint" in sql:
@@ -215,4 +250,8 @@ def test_runtime_catalog_gate_accepts_future_expand_contract_revision():
                 return Result(True)
             raise AssertionError(f"Unexpected catalog SQL: {sql}")
 
-    _validate_catalog(Connection())
+    if missing_column:
+        with pytest.raises(RuntimeError, match="column contract"):
+            _validate_catalog(Connection())
+    else:
+        _validate_catalog(Connection())
