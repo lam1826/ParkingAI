@@ -1,6 +1,6 @@
 from pydantic import BaseModel, ConfigDict
 from typing import Optional
-from datetime import datetime
+from datetime import date, datetime
 
 # Schema gốc (khớp với models/parking_session.py)
 class ParkingSessionBase(BaseModel):
@@ -35,5 +35,6 @@ class CheckOutBody(BaseModel):
 # Schema trả về
 class ParkingSessionResponse(ParkingSessionBase):
     id: str
+    monthly_coverage_end: Optional[date] = None
 
     model_config = ConfigDict(from_attributes=True)

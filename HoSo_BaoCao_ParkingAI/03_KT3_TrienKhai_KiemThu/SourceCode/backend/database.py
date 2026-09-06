@@ -459,6 +459,32 @@ SESSION_MONTHLY_PASS_INSERT_VALIDATION_TRIGGER_SQL = (
 TRG_SESSION_RATE_INSERT_VALIDATION = (
     "trg_parking_sessions_rate_insert_validation_v2"
 )
+
+# Additive guards preserve the previous identity-trigger definition so an
+# existing database passes rollout preflight without replacing old backstops.
+TRG_SESSION_MONTHLY_COVERAGE_INSERT = "trg_parking_sessions_monthly_coverage_insert"
+TRG_SESSION_MONTHLY_COVERAGE_UPDATE = "trg_parking_sessions_monthly_coverage_immutable"
+SESSION_MONTHLY_COVERAGE_INSERT_TRIGGER_SQL = (
+    f"CREATE TRIGGER IF NOT EXISTS {TRG_SESSION_MONTHLY_COVERAGE_INSERT} "
+    "BEFORE INSERT ON parking_sessions FOR EACH ROW "
+    "WHEN NEW.monthly_coverage_end IS NOT NULL AND ("
+    "typeof(NEW.monthly_coverage_end) != 'text' "
+    "OR NEW.monthly_coverage_end NOT GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]' "
+    "OR substr(NEW.monthly_coverage_end, 1, 4) = '0000' "
+    "OR date(NEW.monthly_coverage_end, '+0 days') IS NULL "
+    "OR date(NEW.monthly_coverage_end, '+0 days') != NEW.monthly_coverage_end "
+    "OR NEW.monthly_pass_id IS NULL "
+    "OR NEW.monthly_coverage_end < date(NEW.check_in_time) "
+    "OR NOT EXISTS (SELECT 1 FROM monthly_passes WHERE id = NEW.monthly_pass_id "
+    "AND end_date <= NEW.monthly_coverage_end)) "
+    "BEGIN SELECT RAISE(ABORT, 'monthly coverage snapshot invalid'); END"
+)
+SESSION_MONTHLY_COVERAGE_UPDATE_TRIGGER_SQL = (
+    f"CREATE TRIGGER IF NOT EXISTS {TRG_SESSION_MONTHLY_COVERAGE_UPDATE} "
+    "BEFORE UPDATE OF monthly_coverage_end ON parking_sessions FOR EACH ROW "
+    "WHEN NEW.monthly_coverage_end IS NOT OLD.monthly_coverage_end "
+    "BEGIN SELECT RAISE(ABORT, 'monthly coverage snapshot immutable'); END"
+)
 SESSION_RATE_INSERT_VALIDATION_TRIGGER_SQL = (
     f"CREATE TRIGGER IF NOT EXISTS {TRG_SESSION_RATE_INSERT_VALIDATION} "
     "BEFORE INSERT ON parking_sessions FOR EACH ROW "
@@ -838,6 +864,17 @@ def run_sqlite_migrations(target_engine=engine) -> None:
             for row in conn.exec_driver_sql("PRAGMA table_info(monthly_passes)")
         }
         if columns:
+            if "card_id" not in columns:
+                conn.exec_driver_sql(
+                    "ALTER TABLE monthly_passes ADD COLUMN card_id INTEGER REFERENCES parking_cards(id)"
+                )
+            if "renewal_key" not in columns:
+                conn.exec_driver_sql(
+                    "ALTER TABLE monthly_passes ADD COLUMN renewal_key VARCHAR(64)"
+                )
+            conn.exec_driver_sql(
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_monthly_passes_renewal_key ON monthly_passes(renewal_key)"
+            )
             if "pass_code" not in columns:
                 conn.exec_driver_sql(
                     "ALTER TABLE monthly_passes ADD COLUMN pass_code VARCHAR(50)"
@@ -940,10 +977,18 @@ def run_sqlite_migrations(target_engine=engine) -> None:
             row[1]
             for row in conn.exec_driver_sql("PRAGMA table_info(parking_sessions)")
         }
+        if vehicle_session_columns:
+            if "monthly_coverage_end" not in vehicle_session_columns:
+                conn.exec_driver_sql("ALTER TABLE parking_sessions ADD COLUMN monthly_coverage_end DATE")
+            conn.exec_driver_sql(SESSION_MONTHLY_COVERAGE_UPDATE_TRIGGER_SQL)
         vehicle_pass_columns = {
             row[1]
             for row in conn.exec_driver_sql("PRAGMA table_info(monthly_passes)")
         }
+        if {"monthly_pass_id", "check_in_time"} <= vehicle_session_columns and {
+            "id", "end_date"
+        } <= vehicle_pass_columns:
+            conn.exec_driver_sql(SESSION_MONTHLY_COVERAGE_INSERT_TRIGGER_SQL)
         if vehicle_columns and vehicle_session_columns and vehicle_pass_columns:
             conn.exec_driver_sql(VEHICLE_TYPE_IMMUTABLE_TRIGGER_SQL)
         if vehicle_columns and vehicle_session_columns:

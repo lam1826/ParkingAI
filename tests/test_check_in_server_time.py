@@ -36,6 +36,12 @@ FORBIDDEN_FIELDS = [
 
 
 @pytest.fixture
+def business_reference_now() -> datetime.datetime:
+    """Create rate fixtures before this module's fixed September check-ins."""
+    return datetime.datetime(2026, 9, 1, 0, 0, 0)
+
+
+@pytest.fixture
 def auth_headers(test_user: User) -> dict:
     token = AuthService().create_access_token(
         user_id=test_user.id, username=test_user.username, role=str(test_user.role)
@@ -208,12 +214,12 @@ def test_fee_computed_from_server_check_in_time(
 def test_monthly_pass_attached_using_frozen_date_at_midnight_boundary(
     client: TestClient, auth_headers, db_session: Session,
     customer, vehicle: Vehicle, vehicle_type: VehicleType,
-    parking_slot: ParkingSlot, price_config: PriceConfig, frozen_clock,
+    parking_slot: ParkingSlot, price_config: PriceConfig, frozen_clock, business_reference_now,
 ):
     """Vé CHỈ hiệu lực đúng một ngày D trong tương lai; check-in frozen tại
     D 23:59:59 phải gắn được vé — chứng minh ngày tra vé lấy từ chính
     timestamp T (một lần gọi clock), không phải một datetime.now() thứ hai."""
-    pass_day = datetime.date.today() + datetime.timedelta(days=30)
+    pass_day = business_reference_now.date() + datetime.timedelta(days=30)
     frozen = datetime.datetime.combine(pass_day, datetime.time(23, 59, 59))
 
     db_session.add(MonthlyPass(
@@ -244,9 +250,9 @@ def test_monthly_pass_attached_using_frozen_date_at_midnight_boundary(
 def test_expired_monthly_pass_not_attached_with_frozen_clock(
     client: TestClient, auth_headers, db_session: Session,
     customer, vehicle: Vehicle, vehicle_type: VehicleType,
-    parking_slot: ParkingSlot, price_config, frozen_clock,
+    parking_slot: ParkingSlot, price_config, frozen_clock, business_reference_now,
 ):
-    pass_day = datetime.date.today() + datetime.timedelta(days=30)
+    pass_day = business_reference_now.date() + datetime.timedelta(days=30)
     frozen = datetime.datetime.combine(pass_day, datetime.time(0, 0, 1))
 
     db_session.add(MonthlyPass(

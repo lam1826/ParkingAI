@@ -1,6 +1,6 @@
 import logging
 import math
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Optional, Any, Dict
 
 from fastapi import HTTPException, status
@@ -83,6 +83,7 @@ class ParkingService:
         time_in: datetime,
         time_out: datetime,
         monthly_pass_id: int | None = None,
+        monthly_coverage_end: date | None = None,
     ) -> int:
 
         try:
@@ -97,9 +98,9 @@ class ParkingService:
             # ID quyền lợi được snapshot vào ParkingSession tại check-in. Các
             # trường định danh/khoảng ngày của vé đã bị DB khóa sau khi có lịch
             # sử, nên có thể xác minh lại mà không trao quyền hồi tố. Việc tắt
-            # is_active sau check-in không thu hồi quyền đã ghi nhận, nhưng vé
-            # phải còn bao phủ cả ngày check-out; phiên kéo dài quá ngày hết
-            # hạn sẽ quay về luồng tính phí thường.
+            # is_active sau check-in không thu hồi quyền đã ghi nhận. Phiên mới
+            # chốt ngày bao phủ liên tục của các kỳ cùng thẻ tại lúc vào; phiên
+            # legacy NULL tiếp tục dùng ngày hết hạn của kỳ gốc.
             if monthly_pass_id is not None:
                 monthly_pass = self.db.get(MonthlyPass, monthly_pass_id)
                 if monthly_pass is None or monthly_pass.vehicle_id != vehicle_id:
@@ -113,7 +114,7 @@ class ParkingService:
                 if (
                     monthly_pass.start_date
                     <= time_out.date()
-                    <= monthly_pass.end_date
+                    <= (monthly_coverage_end or monthly_pass.end_date)
                 ):
                     return 0
 
@@ -291,6 +292,9 @@ class ParkingService:
                     check_in_time=check_in_time,
                 )
             )
+            monthly_coverage_end = crud_parking_session.resolve_check_in_monthly_coverage_end(
+                self.db, monthly_pass_id=monthly_pass_id, check_in_time=check_in_time,
+            )
 
             if parking_slot_id is not None:
                 if not claim_parking_slot(
@@ -340,6 +344,7 @@ class ParkingService:
                 vehicle_id=vehicle.id,
                 parking_slot_id=slot.id,
                 monthly_pass_id=monthly_pass_id,
+                monthly_coverage_end=monthly_coverage_end,
                 check_in_time=check_in_time,
                 status="active",
                 staff_in_id=staff_id
@@ -358,6 +363,7 @@ class ParkingService:
                 "slot_id": slot.id,
                 "slot_name": slot.slot_name,
                 "monthly_pass_id": session.monthly_pass_id,
+                "monthly_coverage_end": session.monthly_coverage_end,
                 "check_in_time": session.check_in_time,
                 "status": session.status
             }
@@ -498,6 +504,7 @@ class ParkingService:
                 time_in=session.check_in_time,
                 time_out=check_out_time,
                 monthly_pass_id=session.monthly_pass_id,
+                monthly_coverage_end=session.monthly_coverage_end,
             )
 
             session.check_out_time = check_out_time
@@ -508,6 +515,10 @@ class ParkingService:
             if slot is not None:
                 slot.is_occupied = False
 
+            from services.payment_service import PaymentService
+            self.db.flush()
+            PaymentService.record_receipt(self.db, source_type="parking_session", source_id=session.id,
+                amount=fee, collected_by_id=staff_id, created_at=check_out_time)
             self.db.commit()
             self.db.refresh(session)
 
@@ -557,17 +568,8 @@ class ParkingService:
                 )
             ).scalar() or 0
 
-            revenue_values = self.db.execute(
-                select(ParkingSession.parking_fee).where(
-                    ParkingSession.check_out_time >= start_day,
-                    ParkingSession.check_out_time < end_day,
-                    ParkingSession.status == "completed"
-                )
-            ).scalars()
-            total_revenue = sum_exact_vnd(
-                revenue_values,
-                label="Tổng doanh thu",
-            )
+            from services.payment_service import PaymentService
+            total_revenue = PaymentService.revenue_breakdown(self.db, start_day, end_day)["total_revenue"]
 
             peak_stmt = (
                 select(
@@ -692,6 +694,8 @@ class ParkingService:
                 for day, fees in exit_fees.items()
             }
 
+            from services.payment_service import PaymentService
+            revenue_by_day = PaymentService.revenue_by_day(self.db, range_start, range_end)
             summaries = []
             current = start_date
             while current <= end_date:
@@ -700,7 +704,7 @@ class ParkingService:
                     "date": key,
                     "total_entries": entries.get(key, 0),
                     "total_exits": exits.get(key, {}).get("exits", 0),
-                    "revenue": exits.get(key, {}).get("revenue", 0),
+                    "revenue": revenue_by_day.get(key, 0),
                 })
                 current += timedelta(days=1)
 
@@ -980,17 +984,8 @@ class ParkingService:
         ).scalar() or 0
 
         # 2. Tổng doanh thu hôm nay
-        revenue_values = self.db.execute(
-            select(ParkingSession.parking_fee).where(
-                ParkingSession.check_out_time >= start_of_day,
-                ParkingSession.check_out_time < end_of_day,
-                ParkingSession.status == "completed"
-            )
-        ).scalars()
-        total_revenue_today = sum_exact_vnd(
-            revenue_values,
-            label="Tổng doanh thu",
-        )
+        from services.payment_service import PaymentService
+        total_revenue_today = PaymentService.revenue_breakdown(self.db, start_of_day, end_of_day)["total_revenue"]
 
         # 3. Xe đang trong bãi
         vehicles_currently_inside = self.db.execute(
@@ -1164,27 +1159,8 @@ class ParkingService:
             start_date, _ = day_bounds(today - timedelta(days=6))
             _, end_exclusive = day_bounds(today)
 
-            stmt = (
-                select(
-                    day_bucket(ParkingSession.check_out_time).label("day"),
-                    ParkingSession.parking_fee,
-                )
-                .where(
-                    ParkingSession.status == "completed",
-                    ParkingSession.check_out_time >= start_date,
-                    ParkingSession.check_out_time < end_exclusive,
-                )
-            )
-            fees_by_day: dict[str, list] = {}
-            for row in self.db.execute(stmt):
-                fees_by_day.setdefault(row.day, []).append(row.parking_fee)
-            rows = {
-                day: sum_exact_vnd(
-                    fees,
-                    label="Tổng doanh thu",
-                )
-                for day, fees in fees_by_day.items()
-            }
+            from services.payment_service import PaymentService
+            rows = PaymentService.revenue_by_day(self.db, start_date, end_exclusive)
 
             result = []
             for i in range(7):

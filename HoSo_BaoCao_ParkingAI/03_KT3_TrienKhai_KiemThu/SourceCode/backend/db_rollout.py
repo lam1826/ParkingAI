@@ -49,6 +49,8 @@ from database import (
     SESSION_DATETIME_UPDATE_VALIDATION_TRIGGER_SQL,
     SESSION_IDENTITY_IMMUTABLE_TRIGGER_SQL,
     SESSION_MONTHLY_PASS_INSERT_VALIDATION_TRIGGER_SQL,
+    SESSION_MONTHLY_COVERAGE_INSERT_TRIGGER_SQL,
+    SESSION_MONTHLY_COVERAGE_UPDATE_TRIGGER_SQL,
     SESSION_RATE_ACTIVATION_VALIDATION_TRIGGER_SQL,
     SESSION_RATE_INSERT_VALIDATION_TRIGGER_SQL,
     SESSION_SLOT_ADMISSION_ACTIVATION_VALIDATION_TRIGGER_SQL,
@@ -85,6 +87,8 @@ from database import (
     TRG_SESSION_DATETIME_UPDATE_VALIDATION,
     TRG_SESSION_IDENTITY_IMMUTABLE,
     TRG_SESSION_MONTHLY_PASS_INSERT_VALIDATION,
+    TRG_SESSION_MONTHLY_COVERAGE_INSERT,
+    TRG_SESSION_MONTHLY_COVERAGE_UPDATE,
     TRG_SESSION_RATE_ACTIVATION_VALIDATION,
     TRG_SESSION_RATE_INSERT_VALIDATION,
     TRG_SESSION_SLOT_ADMISSION_ACTIVATION_VALIDATION,
@@ -111,6 +115,9 @@ from database import (
     run_sqlite_migrations,
 )
 from models import Base
+from models.cash_shift import SHIFT_SQLITE_CLOSE_TRIGGER, SHIFT_SQLITE_TRIGGERS
+from models.payment import PAYMENT_SQLITE_SOURCE_TRIGGERS, PAYMENT_SQLITE_TRIGGERS
+from finance_rollout import MONTHLY_CARD_SQLITE_TRIGGERS, backfill_legacy_finance, validate_finance_invariants
 
 
 _REQUIRED_TRIGGER_SQL = {
@@ -234,6 +241,12 @@ _REQUIRED_TRIGGER_SQL = {
     ),
 }
 _REQUIRED_TRIGGER_SQL.update(BOOLEAN_DOMAIN_TRIGGER_SQL)
+_REQUIRED_TRIGGER_SQL.update({
+    TRG_SESSION_MONTHLY_COVERAGE_INSERT: SESSION_MONTHLY_COVERAGE_INSERT_TRIGGER_SQL,
+    TRG_SESSION_MONTHLY_COVERAGE_UPDATE: SESSION_MONTHLY_COVERAGE_UPDATE_TRIGGER_SQL,
+})
+for _finance_trigger in (*SHIFT_SQLITE_TRIGGERS, SHIFT_SQLITE_CLOSE_TRIGGER, *PAYMENT_SQLITE_TRIGGERS, *PAYMENT_SQLITE_SOURCE_TRIGGERS, *MONTHLY_CARD_SQLITE_TRIGGERS):
+    _REQUIRED_TRIGGER_SQL[_finance_trigger.split("IF NOT EXISTS ", 1)[1].split()[0]] = _finance_trigger
 
 _REQUIRED_INDEX_SQL = {
     UQ_ROLES_NAME: f"CREATE UNIQUE INDEX {UQ_ROLES_NAME} ON roles(name)",
@@ -270,6 +283,8 @@ _REQUIRED_INDEX_SQL = {
         f"CREATE UNIQUE INDEX {UQ_CUSTOMERS_PHONE_NORMALIZED} "
         "ON customers(unicode_casefold(phone_number))"
     ),
+    "uq_payment_source_receipt": "CREATE UNIQUE INDEX uq_payment_source_receipt ON payments(source_type, source_id) WHERE kind = 'receipt'",
+    "uq_cash_shift_one_open_per_staff": "CREATE UNIQUE INDEX uq_cash_shift_one_open_per_staff ON cash_shifts(staff_id) WHERE status = 'open'",
 }
 
 # Hai cột tiền tệ này từng được khai báo FLOAT trong schema legacy. Trigger
@@ -636,6 +651,7 @@ def verify_schema(target_engine) -> None:
 
 
 def _validate_business_invariants(connection) -> None:
+    validate_finance_invariants(connection)
     """Validate denormalized state that schema shape alone cannot express."""
     for table_name, boolean_columns in BOOLEAN_DOMAIN_COLUMNS.items():
         invalid_predicate = " OR ".join(
@@ -891,6 +907,12 @@ def _initialize_candidate(target: Path) -> None:
         )
         run_sqlite_migrations(target_engine)
         Base.metadata.create_all(bind=target_engine)
+        with target_engine.begin() as connection:
+            backfill_legacy_finance(connection)
+            connection.exec_driver_sql(SESSION_MONTHLY_COVERAGE_INSERT_TRIGGER_SQL)
+            connection.exec_driver_sql(SESSION_MONTHLY_COVERAGE_UPDATE_TRIGGER_SQL)
+            for statement in (*SHIFT_SQLITE_TRIGGERS, SHIFT_SQLITE_CLOSE_TRIGGER, *PAYMENT_SQLITE_TRIGGERS, *PAYMENT_SQLITE_SOURCE_TRIGGERS, *MONTHLY_CARD_SQLITE_TRIGGERS):
+                connection.exec_driver_sql(statement)
         verify_schema(target_engine)
         check_database_readiness(target_engine)
     finally:

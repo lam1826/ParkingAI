@@ -1,8 +1,8 @@
 import uuid
 from typing import Optional
-from datetime import datetime
+from datetime import date, datetime
 
-from sqlalchemy import DDL, String, ForeignKey, DateTime, Index, event, text
+from sqlalchemy import DDL, String, ForeignKey, Date, DateTime, Index, event, text
 from sqlalchemy.sql import func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -18,6 +18,8 @@ from database import (
     SESSION_DATETIME_UPDATE_VALIDATION_TRIGGER_SQL,
     SESSION_IDENTITY_IMMUTABLE_TRIGGER_SQL,
     SESSION_MONTHLY_PASS_INSERT_VALIDATION_TRIGGER_SQL,
+    SESSION_MONTHLY_COVERAGE_INSERT_TRIGGER_SQL,
+    SESSION_MONTHLY_COVERAGE_UPDATE_TRIGGER_SQL,
     SESSION_RATE_ACTIVATION_VALIDATION_TRIGGER_SQL,
     SESSION_RATE_INSERT_VALIDATION_TRIGGER_SQL,
     SESSION_SLOT_ADMISSION_ACTIVATION_VALIDATION_TRIGGER_SQL,
@@ -68,6 +70,9 @@ class ParkingSession(Base):
     # services/parking_service.py và schemas/parking.py đang sử dụng.
     parking_slot_id: Mapped[Optional[int]] = mapped_column(ForeignKey("parking_slots.id"))
     monthly_pass_id: Mapped[Optional[int]] = mapped_column(ForeignKey("monthly_passes.id"))
+    # Snapshot of all consecutive prepaid card periods at admission. NULL
+    # keeps the original-period billing policy for historical sessions.
+    monthly_coverage_end: Mapped[Optional[date]] = mapped_column(Date)
 
     # Đổi tên time_in/time_out -> check_in_time/check_out_time và fee -> parking_fee
     # để khớp với ParkingService.check_in/check_out và CheckOutResponse.
@@ -134,6 +139,8 @@ event.listen(
         dialect="sqlite"
     ),
 )
+event.listen(ParkingSession.__table__, "after_create", DDL(SESSION_MONTHLY_COVERAGE_INSERT_TRIGGER_SQL).execute_if(dialect="sqlite"))
+event.listen(ParkingSession.__table__, "after_create", DDL(SESSION_MONTHLY_COVERAGE_UPDATE_TRIGGER_SQL).execute_if(dialect="sqlite"))
 event.listen(
     ParkingSession.__table__,
     "after_create",

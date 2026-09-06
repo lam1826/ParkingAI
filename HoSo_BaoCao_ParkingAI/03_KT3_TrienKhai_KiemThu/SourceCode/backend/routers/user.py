@@ -21,20 +21,25 @@ _ADMIN_INVARIANT_LOCK_KEY = 7_100_421
 def _ensure_active_admin_remains(
     db: Session,
     db_user: User,
-    user_in: user_schema.UserUpdate,
+    user_in: user_schema.UserUpdate | None = None,
 ) -> None:
-    """Serialize admin demotions/deactivations and preserve one active admin."""
-    update_data = user_in.model_dump(exclude_unset=True)
-    if not ({"is_active", "role_id"} & update_data.keys()):
+    """Preserve one active admin through updates and deletions (user_in=None)."""
+    deleting = user_in is None
+    update_data = user_in.model_dump(exclude_unset=True) if user_in is not None else {}
+    if not deleting and not ({"is_active", "role_id"} & update_data.keys()):
         return
 
-    # PostgreSQL advisory locks serialize all transactions that may reduce the
-    # active-admin set. SQLite is only used by the single-process test suite.
+    # Both routes share a database lock held until the mutation commits or the
+    # request rolls back. A process-local lock cannot protect multiple workers.
     if db.get_bind().dialect.name == "postgresql":
         db.execute(
             text("SELECT pg_advisory_xact_lock(:lock_key)"),
             {"lock_key": _ADMIN_INVARIANT_LOCK_KEY},
         )
+    elif db.get_bind().dialect.name == "sqlite":
+        # SQLite ignores FOR UPDATE. A no-op write takes its database write
+        # lock before reading/counting admins, including across connections.
+        db.execute(text("UPDATE roles SET name = name WHERE name = 'admin'"))
 
     db.refresh(db_user)
     current_role_name = db.execute(
@@ -44,7 +49,7 @@ def _ensure_active_admin_remains(
     next_role_name = db.execute(
         select(Role.name).where(Role.id == next_role_id)
     ).scalar_one()
-    next_is_active = update_data.get("is_active", db_user.is_active)
+    next_is_active = False if deleting else update_data.get("is_active", db_user.is_active)
 
     removes_active_admin = (
         db_user.is_active
@@ -62,7 +67,7 @@ def _ensure_active_admin_remains(
     if active_admin_count <= 1:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Không thể vô hiệu hóa hoặc đổi vai trò của admin hoạt động cuối cùng",
+            detail="Không thể xóa, vô hiệu hóa hoặc đổi vai trò của admin hoạt động cuối cùng",
         )
 
 @router.get("", response_model=List[user_schema.UserResponse])
@@ -145,6 +150,8 @@ def delete_user(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     if db_user.id == current_user.id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Không thể tự xóa tài khoản đang đăng nhập")
+
+    _ensure_active_admin_remains(db, db_user)
 
     try:
         crud_user.delete_user(db=db, db_user=db_user)

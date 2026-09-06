@@ -1398,6 +1398,7 @@ def test_readiness_rejects_nullable_text_primary_key(tmp_path: Path) -> None:
         connection.executescript(
             f"""
             PRAGMA foreign_keys=OFF;
+            DROP TRIGGER trg_payment_receipt_source;
             DROP TRIGGER trg_zones_operational_update_guard;
             DROP TRIGGER trg_parking_slots_operational_update_guard;
             DROP TRIGGER trg_parking_slots_zone_immutable_with_history;

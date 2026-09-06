@@ -73,7 +73,11 @@ class AuditLogMiddleware(BaseHTTPMiddleware):
         authorization = request.headers.get("authorization", "")
         user_id = None
         username = "anonymous"
-        if authorization.lower().startswith("bearer "):
+        is_public_auth = request.url.path.rstrip("/") in AUTH_PATHS
+        # Login/register authenticate their own credentials, not an optional
+        # Bearer header. Always account for these attempts anonymously: invalid,
+        # expired or stale tokens must not bypass the audit-backed rate limits.
+        if not is_public_auth and authorization.lower().startswith("bearer "):
             try:
                 payload = jwt.decode(
                     authorization.split(" ", 1)[1],
@@ -84,7 +88,7 @@ class AuditLogMiddleware(BaseHTTPMiddleware):
                 username = str(payload.get("username") or f"user-{user_id}")
             except (InvalidTokenError, KeyError, TypeError, ValueError):
                 return response
-        elif request.url.path not in AUTH_PATHS:
+        elif not is_public_auth:
             return response
 
         resource, resource_id = _extract_resource(request.url.path)

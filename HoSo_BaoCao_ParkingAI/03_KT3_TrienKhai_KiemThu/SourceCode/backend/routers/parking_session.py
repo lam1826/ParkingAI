@@ -14,6 +14,18 @@ from models.vehicle import Vehicle
 
 router = APIRouter()
 
+
+@router.get("/tickets/resolve")
+def resolve_parking_ticket(token: str = Query(min_length=1, max_length=128), db: Session = Depends(get_db)):
+    from services.ticket_service import resolve_ticket, get_ticket
+    return get_ticket(db, resolve_ticket(token))
+
+
+@router.get("/{id}/ticket")
+def read_parking_ticket(id: str, db: Session = Depends(get_db)):
+    from services.ticket_service import get_ticket
+    return get_ticket(db, id)
+
 @router.get("", response_model=List[session_schema.ParkingSessionResponse])
 def read_parking_sessions(
     skip: int = Query(0, ge=0),
@@ -73,6 +85,9 @@ def check_in_vehicle(
             vehicle_type_id=vehicle.vehicle_type_id,
             check_in_time=check_in_time,
         )
+        monthly_coverage_end = crud_session.resolve_check_in_monthly_coverage_end(
+            db, monthly_pass_id=monthly_pass_id, check_in_time=check_in_time,
+        )
     except crud_session.MissingEffectiveCheckInPriceError:
         db.rollback()
         raise HTTPException(
@@ -108,6 +123,7 @@ def check_in_vehicle(
             staff_in_id=current_user.id,
             check_in_time=check_in_time,
             monthly_pass_id=monthly_pass_id,
+            monthly_coverage_end=monthly_coverage_end,
         )
     except DBAPIError as exc:
         db.rollback()  # trả lại slot vừa claim trong cùng transaction
@@ -179,6 +195,7 @@ def check_out_vehicle(
             time_in=db_session.check_in_time,
             time_out=check_out_time,
             monthly_pass_id=db_session.monthly_pass_id,
+            monthly_coverage_end=db_session.monthly_coverage_end,
         )
 
         db_session.check_out_time = check_out_time
@@ -193,6 +210,10 @@ def check_out_vehicle(
             if slot:
                 slot.is_occupied = False
 
+        from services.payment_service import PaymentService
+        db.flush()
+        PaymentService.record_receipt(db, source_type="parking_session", source_id=db_session.id,
+            amount=fee, collected_by_id=current_user.id, created_at=check_out_time)
         db.commit()
     except HTTPException:
         # calculate_fee lỗi (thiếu bảng giá...) SAU claim -> rollback trả
@@ -215,6 +236,10 @@ def delete_parking_session(id: str, db: Session = Depends(get_db)):
     db_session = crud_session.get_parking_session(db, session_id=id)
     if not db_session:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Parking session not found")
+
+    from models.payment import Payment
+    if db.query(Payment.id).filter(Payment.source_type == "parking_session", Payment.source_id == id).first():
+        raise HTTPException(409, "Phiên đã có chứng từ thu tiền nên không thể xóa. Hãy dùng nghiệp vụ hoàn tiền.")
 
     # Nếu phiên vẫn đang active thì trả lại chỗ đỗ trước khi xóa
     if db_session.status == "active" and db_session.parking_slot_id is not None:

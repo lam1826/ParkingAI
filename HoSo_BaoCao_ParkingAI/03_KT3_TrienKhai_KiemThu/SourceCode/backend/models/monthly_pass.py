@@ -34,6 +34,13 @@ class MonthlyPass(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     customer_id: Mapped[int] = mapped_column(ForeignKey("customers.id"))
     vehicle_id: Mapped[int] = mapped_column(ForeignKey("vehicles.id"))
+    card_id: Mapped[Optional[int]] = mapped_column(ForeignKey("parking_cards.id"), nullable=True)
+    renewal_key: Mapped[Optional[str]] = mapped_column(String(64), unique=True, nullable=True)
+    card: Mapped[Optional["ParkingCard"]] = relationship(lazy="selectin")
+
+    @property
+    def card_code(self) -> Optional[str]:
+        return self.card.code if self.card else self.pass_code
     # Mã thẻ NFC/RFID — nullable để tương thích dữ liệu cũ; bản ghi mới bắt buộc qua API
     pass_code: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     # Số tiền thực thu (VND) — số nguyên, không dùng Float cho tiền tệ

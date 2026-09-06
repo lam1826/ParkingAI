@@ -11,6 +11,7 @@ from google.genai import types as genai_types
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
 from core.config import settings
+from core.clock import business_today
 from core.errors import internal_server_error
 
 # Import trực tiếp Model AiReport của bạn
@@ -21,6 +22,19 @@ from services.parking_service import ParkingService
 
 
 logger = logging.getLogger(__name__)
+
+
+def _report_context(prompt: str, *, source: str, start_date=None, end_date=None) -> str:
+    """Persist trustworthy provenance using the existing prompt history column."""
+    metadata = {"source": source}
+    if start_date is not None:
+        metadata.update(start_date=str(start_date), end_date=str(end_date or start_date))
+    return (
+        f"PARKINGAI_CONTEXT {json.dumps(metadata, ensure_ascii=False)}\n"
+        "Định nghĩa doanh thu: revenue/total_revenue/total_revenue_today là doanh thu thuần "
+        "sau hoàn tiền, có thể âm; parking_revenue và monthly_pass_revenue là số thu trước hoàn tiền.\n"
+        f"{prompt}"
+    )
 
 
 def _build_grounded_qa_prompt(
@@ -194,13 +208,16 @@ class AIService:
                 model=self.model_name,
                 contents=prompt,
             )
-            return response.text.strip()
+            text = response.text
+            if not isinstance(text, str) or not text.strip():
+                raise ValueError("Provider response contains no usable text")
+            return text.strip()
         except HTTPException:
             raise
         except Exception as error:
             raise _provider_http_exception(error) from error
 
-    def generate_daily_report(self, target_date: date, parking_stats: Dict[str, Any], user_id: int) -> str:
+    def generate_daily_report(self, target_date: date, parking_stats: Dict[str, Any], user_id: int, source: str = "custom") -> str:
         """
         Tạo báo cáo tổng kết hoạt động bãi đỗ xe trong ngày bằng AI.
         """
@@ -224,7 +241,7 @@ DỮ LIỆU ĐẦU VÀO CHO NGÀY {target_date.strftime('%Y-%m-%d')}:
 {stats_json}
 """
 
-            final_prompt = f"{system_prompt}\n\n{user_prompt}"
+            final_prompt = _report_context(f"{system_prompt}\n\n{user_prompt}", source=source, start_date=target_date)
 
             # Cú pháp gọi API mới qua client.models.generate_content.
             # Chính sách migration Đợt 10C (xem docs/AI_SDLC.md §3): các
@@ -255,18 +272,23 @@ DỮ LIỆU ĐẦU VÀO CHO NGÀY {target_date.strftime('%Y-%m-%d')}:
                 error=e,
             ) from e
 
-    def generate_weekly_report(self, start_date: date, end_date: date, weekly_data: List[Dict[str, Any]], user_id: int) -> str:
+    def generate_weekly_report(self, start_date: date, end_date: date, weekly_data: List[Dict[str, Any]], user_id: int, hourly_traffic=None, source: str = "custom") -> str:
         """
         Phân tích xu hướng và tạo báo cáo tổng kết tuần.
         """
         try:
-            data_json = json.dumps(weekly_data, ensure_ascii=False, indent=2)
+            report_data = {"daily_summaries": weekly_data}
+            if hourly_traffic is not None:
+                report_data["hourly_traffic"] = hourly_traffic
+            data_json = json.dumps(report_data, ensure_ascii=False, indent=2)
 
             system_prompt = (
                 "Bạn là chuyên gia phân tích vận hành bãi đỗ xe. "
                 "NGUYÊN TẮC TỐI THƯỢNG: "
                 "- KHÔNG ĐƯỢC tự bịa đặt dữ liệu ngoài dữ liệu tuần được cung cấp. "
-                "- So sánh sự biến động giữa các ngày, xác định xu hướng lưu lượng và doanh thu."
+                "- So sánh sự biến động giữa các ngày, xác định xu hướng lưu lượng và doanh thu. "
+                "- Xác định giờ cao điểm từ hourly_traffic; đó là tổng lượt xe VÀO theo giờ trong cả kỳ. "
+                "Nếu thiếu phân bố theo giờ hoặc không có lượt xe, phải nói chưa đủ dữ liệu để kết luận giờ cao điểm."
             )
 
             user_prompt = f"""
@@ -274,7 +296,7 @@ DỮ LIỆU TUẦN TỪ {start_date.strftime('%Y-%m-%d')} ĐẾN {end_date.strft
 {data_json}
 """
 
-            final_prompt = f"{system_prompt}\n\n{user_prompt}"
+            final_prompt = _report_context(f"{system_prompt}\n\n{user_prompt}", source=source, start_date=start_date, end_date=end_date)
 
             report_text = self._generate_text(final_prompt)
 
@@ -319,6 +341,7 @@ DỮ LIỆU TUẦN TỪ {start_date.strftime('%Y-%m-%d')} ĐẾN {end_date.strft
                 data_json=stats_json,
                 question=question,
             )
+            final_prompt = _report_context(final_prompt, source="custom")
 
             answer = self._generate_text(final_prompt)
 
@@ -371,6 +394,7 @@ DỮ LIỆU TUẦN TỪ {start_date.strftime('%Y-%m-%d')} ĐẾN {end_date.strft
                 data_json=data_json,
                 question=question,
             )
+            final_prompt = _report_context(final_prompt, source="database", start_date=business_today())
 
             answer = self._generate_text(final_prompt)
 
@@ -398,7 +422,8 @@ DỮ LIỆU TUẦN TỪ {start_date.strftime('%Y-%m-%d')} ĐẾN {end_date.strft
         hourly_traffic: List[Dict[str, Any]], 
         occupancy_rate: float, 
         revenue: float,
-        user_id: int
+        user_id: int,
+        source: str = "custom",
     ) -> str:
         """
         AI phân tích lưu lượng, tỷ lệ lấp đầy và doanh thu để gợi ý nhân sự.
@@ -419,7 +444,9 @@ DỮ LIỆU TUẦN TỪ {start_date.strftime('%Y-%m-%d')} ĐẾN {end_date.strft
                 "3. Gợi ý chia ca trực cụ thể (Shifts).\n\n"
                 "NGUYÊN TẮC TỐI THƯỢNG:\n"
                 "- TUYỆT ĐỐI KHÔNG tạo, bịa đặt hay ước lượng các số liệu lưu lượng hoặc doanh thu mới. "
-                "- Chỉ đưa ra quyết định dựa trên chính xác số liệu đầu vào được cung cấp."
+                "- Chỉ đưa ra quyết định dựa trên chính xác số liệu đầu vào được cung cấp. "
+                "- Nếu chưa có năng suất xử lý mỗi nhân viên, phải nêu rõ số nhân viên chỉ là gợi ý "
+                "và công khai giả định năng suất; không trình bày như số nhân sự tối ưu đã được chứng minh."
             )
 
             user_prompt = f"""
@@ -427,7 +454,7 @@ DỮ LIỆU ĐẦU VÀO ĐỂ PHÂN TÍCH:
 {data_json}
 """
 
-            final_prompt = f"{system_prompt}\n\n{user_prompt}"
+            final_prompt = _report_context(f"{system_prompt}\n\n{user_prompt}", source=source, start_date=business_today() if source == "database" else None)
 
             schedule_result = self._generate_text(final_prompt)
 

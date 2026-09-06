@@ -12,11 +12,18 @@ from .zone import Zone
 from .parking_slot import ParkingSlot
 from .customer import Customer
 from .vehicle import Vehicle
+from .parking_card import ParkingCard
 from .monthly_pass import MonthlyPass
 from .price_config import PriceConfig
 from .parking_session import ParkingSession
 from .ai_report import AiReport
 from .audit_log import AuditLog
+from .cash_shift import CashShift
+from .payment import Payment
+from finance_rollout import MONTHLY_CARD_SQLITE_TRIGGERS
+
+for _card_trigger_sql in MONTHLY_CARD_SQLITE_TRIGGERS:
+    event.listen(Base.metadata, "after_create", DDL(_card_trigger_sql).execute_if(dialect="sqlite"))
 
 
 # Cài canonical BOOLEAN backstop sau khi toàn bộ metadata đã tồn tại. Một
@@ -40,9 +47,12 @@ __all__ = [
     "ParkingSlot",
     "Customer",
     "Vehicle",
+    "ParkingCard",
     "MonthlyPass",
     "PriceConfig",
     "ParkingSession",
     "AiReport",
     "AuditLog",
+    "CashShift",
+    "Payment",
 ]

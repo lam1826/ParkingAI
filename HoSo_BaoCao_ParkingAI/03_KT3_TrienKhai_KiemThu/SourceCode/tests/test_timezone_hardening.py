@@ -54,6 +54,12 @@ from services.report_service import ReportService
 VN_TZ_OFFSET = timedelta(hours=7)  # Asia/Ho_Chi_Minh, không DST
 
 
+@pytest.fixture
+def business_reference_now() -> datetime:
+    """Anchor dependent rate fixtures before the fixed check-in boundaries."""
+    return datetime(2026, 9, 1, 0, 0, 0)
+
+
 def make_headers(user) -> dict:
     token = AuthService().create_access_token(
         user_id=user.id, username=user.username, role=str(user.role)

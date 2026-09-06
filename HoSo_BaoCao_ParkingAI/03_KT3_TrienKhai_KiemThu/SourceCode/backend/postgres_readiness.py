@@ -12,9 +12,10 @@ from collections.abc import Iterable
 
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
+from finance_rollout import validate_finance_invariants
 
 
-POSTGRES_SCHEMA_REVISION = "20260828_01"
+POSTGRES_SCHEMA_REVISION = "20260906_01"
 
 REQUIRED_TABLES = frozenset(
     {
@@ -30,6 +31,9 @@ REQUIRED_TABLES = frozenset(
         "parking_sessions",
         "ai_reports",
         "audit_logs",
+        "parking_cards",
+        "cash_shifts",
+        "payments",
     }
 )
 
@@ -44,6 +48,9 @@ REQUIRED_INDEXES = frozenset(
         "ix_monthly_passes_pass_code",
         "uq_parking_session_one_active_per_vehicle",
         "uq_parking_session_one_active_per_slot",
+        "uq_monthly_passes_renewal_key",
+        "uq_payment_source_receipt",
+        "uq_cash_shift_one_open_per_staff",
     }
 )
 
@@ -58,6 +65,19 @@ REQUIRED_CONSTRAINTS = frozenset(
         "ck_parking_sessions_status",
         "ck_parking_sessions_exact_vnd",
         "ck_parking_sessions_state",
+        "ck_parking_sessions_monthly_coverage",
+        "fk_monthly_passes_card",
+        "ck_shift_opening_cash",
+        "ck_shift_counted_cash",
+        "ck_shift_expected_cash",
+        "ck_shift_difference",
+        "ck_shift_state",
+        "ck_payment_amount",
+        "ck_payment_source",
+        "ck_payment_kind",
+        "ck_payment_method",
+        "ck_payment_legacy_unassigned",
+        "ck_payment_refund_reference",
     }
 )
 
@@ -70,6 +90,12 @@ REQUIRED_TRIGGERS = frozenset(
         "trg_zones_operational_update_guard",
         "trg_parking_slots_capacity_and_operation_guard",
         "trg_parking_sessions_validate",
+        "trg_payment_guard",
+        "trg_cash_shift_guard",
+        "trg_monthly_finance_guard",
+        "trg_parking_card_identity_guard",
+        "trg_paid_parking_session_delete",
+        "trg_monthly_coverage_guard",
     }
 )
 
@@ -144,6 +170,7 @@ def _first(connection, sql: str):
 
 
 def _validate_business_invariants(connection) -> None:
+    validate_finance_invariants(connection)
     invalid_session = _first(
         connection,
         """

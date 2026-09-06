@@ -69,14 +69,15 @@ def test_engine_factory_normalizes_plain_postgres_url_to_psycopg3(monkeypatch):
     assert captured["url"] == "postgresql+psycopg://example.invalid/parkingai"
 
 
-def test_postgres_baseline_declares_every_readiness_backstop():
-    migration = (
+def test_postgres_migration_chain_declares_every_readiness_backstop():
+    versions = (
         Path(__file__).parents[1]
         / "backend"
         / "alembic"
         / "versions"
-        / f"{POSTGRES_SCHEMA_REVISION}_initial_postgresql.py"
-    ).read_text(encoding="utf-8")
+    )
+    migration = "\n".join(path.read_text(encoding="utf-8") for path in sorted(versions.glob("*.py")))
+    assert list(versions.glob(f"{POSTGRES_SCHEMA_REVISION}_*.py")), "Release revision must resolve to a migration"
 
     for name in (
         *REQUIRED_TABLES,

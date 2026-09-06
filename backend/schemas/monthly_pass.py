@@ -1,5 +1,5 @@
 from pydantic import BaseModel, ConfigDict, Field, StrictInt, field_validator, model_validator
-from typing import Optional
+from typing import Literal, Optional
 from datetime import date
 from core.money import MAX_EXACT_VND
 
@@ -39,7 +39,22 @@ class MonthlyPassBase(BaseModel):
 
 # Schema cho POST (Thêm mới vé tháng)
 class MonthlyPassCreate(MonthlyPassBase):
-    pass
+    payment_method: Literal["cash", "transfer"] = "cash"
+
+
+class MonthlyPassRenew(BaseModel):
+    start_date: date
+    end_date: date
+    price: StrictInt = Field(ge=0, le=MAX_EXACT_VND)
+    payment_method: Literal["cash", "transfer"] = "cash"
+    request_id: str = Field(min_length=16, max_length=64, pattern=r"^[a-zA-Z0-9_-]+$")
+    model_config = ConfigDict(extra="forbid")
+
+    @model_validator(mode="after")
+    def validate_dates(self):
+        if self.end_date < self.start_date:
+            raise ValueError("Ngày kết thúc phải từ ngày bắt đầu trở đi")
+        return self
 
 # Schema cho PUT (Gia hạn, hủy kích hoạt hoặc cập nhật một phần)
 class MonthlyPassUpdate(BaseModel):
@@ -110,6 +125,8 @@ class MonthlyPassResponse(BaseModel):
     customer_id: int
     vehicle_id: int
     pass_code: Optional[str] = None  # bản ghi cũ (trước khi có cột) có thể NULL
+    card_id: Optional[int] = None
+    card_code: Optional[str] = None
     price: int = 0
     start_date: date
     end_date: date

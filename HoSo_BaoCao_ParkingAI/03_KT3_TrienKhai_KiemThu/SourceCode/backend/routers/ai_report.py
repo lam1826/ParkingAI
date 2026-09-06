@@ -2,18 +2,22 @@ import json
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
-from sqlalchemy import desc
+from sqlalchemy import desc, select, func
 from typing import List, Dict, Any
 from datetime import date
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from database import get_db
 from core.config import settings
+from core.clock import day_bounds
+from core.sql_time import hour_bucket
 from schemas import ai_report as ai_report_schema
 from services.ai_service import AIService
+from services.ai_validation import validate_statistics
 from services.parking_service import ParkingService
 from services.report_service import ReportService
 from models.ai_report import AiReport
+from models.parking_session import ParkingSession
 from typing import Optional
 
 # IMPORT ĐÚNG: Lấy hàm get_current_user độc lập từ services.auth_service
@@ -72,7 +76,7 @@ def _validate_custom_payload(
 
     try:
         encoded_size = len(
-            json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+            json.dumps(value, ensure_ascii=False, separators=(",", ":"), allow_nan=False).encode("utf-8")
         )
     except (TypeError, ValueError, RecursionError) as exc:
         raise ValueError(f"{field_name} không phải dữ liệu JSON hợp lệ") from exc
@@ -80,7 +84,7 @@ def _validate_custom_payload(
         raise ValueError(
             f"{field_name} vượt giới hạn {MAX_CUSTOM_JSON_BYTES} byte"
         )
-    return value
+    return validate_statistics(value, path=field_name, hourly=field_name == "hourly_traffic")
 
 # ==========================================
 # SCHEMAS DÀNH RIÊNG CHO REQUEST BODY
@@ -179,8 +183,15 @@ class StaffSuggestionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     hourly_traffic: Optional[List[Dict[str, Any]]] = Field(default=None, min_length=1, description="Dữ liệu lưu lượng xe ra vào theo giờ")
-    revenue: Optional[float] = Field(default=None, ge=0, description="Tổng doanh thu dự kiến hoặc hiện tại")
+    revenue: Optional[float] = Field(default=None, description="Doanh thu thuần bằng VND, có thể âm khi hoàn tiền lớn hơn thu")
     occupancy_rate: Optional[float] = Field(default=None, ge=0, le=100, description="Tỷ lệ lấp đầy bãi đỗ xe từ 0 đến 100%")
+
+    @field_validator("revenue", "occupancy_rate", mode="before")
+    @classmethod
+    def numeric_metrics(cls, value, info):
+        if value is not None:
+            validate_statistics({info.field_name: value})
+        return value
 
     @field_validator("hourly_traffic")
     @classmethod
@@ -214,7 +225,8 @@ def create_daily_report(
     report_text = ai_service.generate_daily_report(
         target_date=req.target_date,
         parking_stats=parking_stats,
-        user_id=current_user.id
+        user_id=current_user.id,
+        source="database" if req.parking_stats is None else "custom",
     )
     return {"message": "Tạo báo cáo thành công", "content": report_text}
 
@@ -229,17 +241,31 @@ def create_weekly_report(
     ai_service = AIService(db, api_key=settings.GEMINI_API_KEY)
 
     weekly_data = req.weekly_data
+    hourly_traffic = None
     if weekly_data is None:
         weekly_data = ParkingService(db).get_daily_summaries(
             start_date=req.start_date,
             end_date=req.end_date
         )
+        # Exact rolling seven-day interval; calendar-week reports use a different
+        # boundary and cannot substitute for the user's requested dates here.
+        range_start, _ = day_bounds(req.start_date)
+        _, range_end = day_bounds(req.end_date)
+        hour = hour_bucket(ParkingSession.check_in_time)
+        rows = db.execute(
+            select(hour.label("hour"), func.count(ParkingSession.id).label("count"))
+            .where(ParkingSession.check_in_time >= range_start, ParkingSession.check_in_time < range_end)
+            .group_by(hour).order_by(hour)
+        ).all()
+        hourly_traffic = [{"time_label": f"{int(row.hour):02d}:00", "total_vehicles": row.count} for row in rows]
 
     report_text = ai_service.generate_weekly_report(
         start_date=req.start_date,
         end_date=req.end_date,
         weekly_data=weekly_data,
-        user_id=current_user.id
+        user_id=current_user.id,
+        hourly_traffic=hourly_traffic,
+        source="database" if req.weekly_data is None else "custom",
     )
     return {"message": "Tạo báo cáo tuần thành công", "content": report_text}
 
@@ -319,7 +345,10 @@ def suggest_staff(
         hourly_traffic=hourly_traffic,
         occupancy_rate=occupancy_rate,
         revenue=revenue,
-        user_id=current_user.id
+        user_id=current_user.id,
+        source=("database" if all(value is None for value in (req.hourly_traffic, req.revenue, req.occupancy_rate))
+                else "custom" if all(value is not None for value in (req.hourly_traffic, req.revenue, req.occupancy_rate))
+                else "mixed"),
     )
     
     return {

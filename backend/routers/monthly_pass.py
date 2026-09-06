@@ -6,6 +6,8 @@ from database import get_db
 from schemas import monthly_pass as monthly_pass_schema
 from crud import monthly_pass as crud_monthly_pass
 from models.parking_session import ParkingSession
+from services.auth_service import get_current_user
+from services.monthly_subscription_service import create_subscription, renew_subscription, has_receipt
 
 router = APIRouter()
 
@@ -27,7 +29,7 @@ def read_monthly_pass(id: int, db: Session = Depends(get_db)):
     return db_pass
 
 @router.post("", response_model=monthly_pass_schema.MonthlyPassResponse, status_code=status.HTTP_201_CREATED)
-def create_monthly_pass(pass_in: monthly_pass_schema.MonthlyPassCreate, db: Session = Depends(get_db)):
+def create_monthly_pass(pass_in: monthly_pass_schema.MonthlyPassCreate, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
     """Đăng ký vé tháng mới"""
     # Mã thẻ NFC/RFID phải duy nhất toàn hệ thống (DB còn có unique index backstop)
     if crud_monthly_pass.get_pass_by_code(db, pass_code=pass_in.pass_code):
@@ -55,7 +57,13 @@ def create_monthly_pass(pass_in: monthly_pass_schema.MonthlyPassCreate, db: Sess
             ),
         )
 
-    return crud_monthly_pass.create_monthly_pass(db=db, pass_in=pass_in)
+    return create_subscription(db, pass_in, current_user.id)
+
+
+@router.post("/{id}/renew", response_model=monthly_pass_schema.MonthlyPassResponse, status_code=201)
+def renew_monthly_pass(id: int, renewal: monthly_pass_schema.MonthlyPassRenew,
+                      db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+    return renew_subscription(db, id, renewal, current_user.id)
 
 @router.put("/{id}", response_model=monthly_pass_schema.MonthlyPassResponse)
 def update_monthly_pass(id: int, pass_in: monthly_pass_schema.MonthlyPassUpdate, db: Session = Depends(get_db)):
@@ -81,13 +89,13 @@ def update_monthly_pass(id: int, pass_in: monthly_pass_schema.MonthlyPassUpdate,
         for field in immutable_fields.intersection(update_data)
         if update_data[field] != getattr(db_pass, field)
     ]
-    if changed_history_fields and db.query(ParkingSession.id).filter(
+    if changed_history_fields and (has_receipt(db, id) or db.query(ParkingSession.id).filter(
         ParkingSession.monthly_pass_id == id
-    ).first():
+    ).first()):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=(
-                "Vé tháng đã được dùng trong lịch sử gửi xe; chỉ được thay "
+                "Vé tháng đã thu tiền hoặc đã được sử dụng; chỉ được thay "
                 "đổi trạng thái hoạt động, không được sửa dữ liệu chứng từ."
             ),
         )
@@ -140,11 +148,11 @@ def delete_monthly_pass(id: int, db: Session = Depends(get_db)):
     db_pass = crud_monthly_pass.get_monthly_pass(db, pass_id=id)
     if not db_pass:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Monthly pass not found")
-    if db.query(ParkingSession.id).filter(ParkingSession.monthly_pass_id == id).first():
+    if has_receipt(db, id) or db.query(ParkingSession.id).filter(ParkingSession.monthly_pass_id == id).first():
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=(
-                "Vé tháng đã được sử dụng trong lịch sử gửi xe nên không thể xóa. "
+                "Vé tháng đã thu tiền hoặc đã sử dụng nên không thể xóa. "
                 "Hãy chuyển vé sang trạng thái ngừng hoạt động."
             ),
         )

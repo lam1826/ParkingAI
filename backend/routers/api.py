@@ -4,6 +4,7 @@ from services.auth_service import RoleChecker, get_current_user
 # Import các router con
 from routers import role, user, vehicle_type, zone, parking_slot, customer, vehicle
 from routers import monthly_pass, price_config, parking_session, audit_log
+from routers import cash_shift, payment
 # Lưu ý: ai_report được mount trực tiếp ở main.py (đã có prefix "/ai" riêng),
 # không include lại ở đây để tránh trùng prefix -> sai đường dẫn API.
 
@@ -32,5 +33,7 @@ api_router.include_router(monthly_pass.router, prefix="/monthly-passes", tags=["
 api_router.include_router(price_config.router, prefix="/price-configs", tags=["Price Configs"])
 api_router.include_router(parking_session.router, prefix="/parking-sessions", tags=["Parking Sessions"])
 api_router.include_router(audit_log.router, prefix="/audit-logs", tags=["Audit Logs"])
+api_router.include_router(cash_shift.router, prefix="/cash-shifts", tags=["Cash Shifts"])
+api_router.include_router(payment.router, prefix="/payments", tags=["Payments"])
 
 

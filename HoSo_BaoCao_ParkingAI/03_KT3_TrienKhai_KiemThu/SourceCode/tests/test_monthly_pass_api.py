@@ -813,7 +813,8 @@ def test_response_contract_includes_vehicle_and_customer(
 
     updated = client.put(
         f"/api/v1/monthly-passes/{created_body['id']}",
-        json={"end_date": (TODAY + datetime.timedelta(days=60)).isoformat()},
+        # Paid periods preserve their dates; PUT still supports deactivation.
+        json={"is_active": False},
         headers=headers,
     )
     assert updated.status_code == 200

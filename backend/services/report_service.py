@@ -13,6 +13,7 @@ from core.sql_time import day_bucket, hour_bucket, month_bucket, week_bucket
 from models.parking_session import ParkingSession
 from models.vehicle import Vehicle
 from models.vehicle_type import VehicleType
+from services.payment_service import PaymentService
 
 
 logger = logging.getLogger(__name__)
@@ -91,12 +92,12 @@ class ReportService:
             )).scalars().all()
             total_trips = len(fee_values)
             exact_fees = [fee for fee in fee_values if fee is not None]
-            total_revenue = sum_exact_vnd(
+            total_session_fees = sum_exact_vnd(
                 exact_fees,
                 label="Tổng doanh thu",
             )
             average_fee = (
-                round(total_revenue / len(exact_fees), 2)
+                round(total_session_fees / len(exact_fees), 2)
                 if exact_fees
                 else 0.0
             )
@@ -120,7 +121,7 @@ class ReportService:
                 "start_date": start_date,
                 "end_date": end_date,
                 "total_trips": total_trips,
-                "total_revenue": total_revenue,
+                **PaymentService.revenue_breakdown(self.db, start_date, end_exclusive),
                 "average_fee": average_fee,
                 "most_frequent_vehicle_type": vtype_res.name if vtype_res else "Chưa có dữ liệu"
             }

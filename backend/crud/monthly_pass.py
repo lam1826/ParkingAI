@@ -57,13 +57,14 @@ def get_monthly_passes(db: Session, skip: int = 0, limit: int = 100):
     stmt = (
         select(MonthlyPass)
         .options(selectinload(MonthlyPass.vehicle), selectinload(MonthlyPass.customer))
+        .order_by(MonthlyPass.id.desc())
         .offset(skip)
         .limit(limit)
     )
     return db.execute(stmt).scalars().all()
 
 def create_monthly_pass(db: Session, pass_in: monthly_pass_schema.MonthlyPassCreate) -> MonthlyPass:
-    db_pass = MonthlyPass(**pass_in.model_dump())
+    db_pass = MonthlyPass(**pass_in.model_dump(exclude={"payment_method"}))
     db.add(db_pass)
     try:
         db.commit()

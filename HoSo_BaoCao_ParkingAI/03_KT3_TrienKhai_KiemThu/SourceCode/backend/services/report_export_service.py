@@ -104,6 +104,9 @@ class ReportExportService:
             ("Tổng doanh thu", summary["total_revenue"], True),
             ("Phí trung bình", summary["average_fee"], True),
             ("Loại xe phổ biến", summary["most_frequent_vehicle_type"], False),
+            ("Thu từ lượt gửi xe", summary["parking_revenue"], True),
+            ("Thu từ vé tháng", summary["monthly_pass_revenue"], True),
+            ("Hoàn tiền", summary["refunds"], True),
         ]
         for label, value, monetary in rows:
             sheet.append((
@@ -112,6 +115,8 @@ class ReportExportService:
             ))
         sheet["B7"].number_format = '#,##0 "₫"'
         sheet["B8"].number_format = '#,##0 "₫"'
+        for row_number in (10, 11, 12):
+            sheet[f"B{row_number}"].number_format = '#,##0 "₫"'
         sheet.column_dimensions["A"].width = 24
         sheet.column_dimensions["B"].width = 32
 
@@ -191,6 +196,9 @@ class ReportExportService:
             ["Tổng doanh thu", f'{summary["total_revenue"]:,.0f} ₫'],
             ["Phí trung bình", f'{summary["average_fee"]:,.0f} ₫'],
             ["Loại xe phổ biến", escape(str(summary["most_frequent_vehicle_type"]))],
+            ["Thu từ lượt gửi xe", f'{summary["parking_revenue"]:,.0f} ₫'],
+            ["Thu từ vé tháng", f'{summary["monthly_pass_revenue"]:,.0f} ₫'],
+            ["Hoàn tiền", f'{summary["refunds"]:,.0f} ₫'],
         ]
         summary_table = Table(summary_rows, colWidths=[55 * mm, 105 * mm], repeatRows=1)
         summary_table.setStyle(self._pdf_table_style(font_name))

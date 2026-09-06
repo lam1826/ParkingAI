@@ -1,7 +1,8 @@
 from sqlalchemy.orm import Session
 from sqlalchemy import select, and_, update
 from sqlalchemy.exc import DBAPIError
-from datetime import datetime
+from datetime import date, datetime
+from fastapi import HTTPException
 from core.clock import business_now
 from crud import price_config as crud_price_config
 from models.parking_session import ParkingSession
@@ -160,6 +161,39 @@ def resolve_check_in_monthly_pass_id(
         return monthly_pass.id
     return None
 
+
+def resolve_check_in_monthly_coverage_end(
+    db: Session, *, monthly_pass_id: int | None, check_in_time: datetime,
+) -> date | None:
+    """Freeze continuous existing coverage; later renewals cannot extend a stay.
+
+    Periods are inclusive and only periods on the same physical card qualify.
+    Lock selected periods on PostgreSQL so deactivation cannot change a period
+    between reading its coverage and recording admission. No later query at
+    checkout may discover newly purchased entitlement for this session.
+    """
+    if monthly_pass_id is None:
+        return None
+    original = db.scalar(select(MonthlyPass).where(
+        MonthlyPass.id == monthly_pass_id,
+    ).with_for_update(read=True).execution_options(populate_existing=True))
+    if original is None or not original.is_active or not (original.start_date <= check_in_time.date() <= original.end_date):
+        raise HTTPException(409, "Vé tháng vừa thay đổi. Hãy kiểm tra lại trước khi nhận xe.")
+    coverage_end = original.end_date
+    if original.card_id is None:
+        return coverage_end
+    periods = db.scalars(select(MonthlyPass).where(
+        MonthlyPass.card_id == original.card_id,
+        MonthlyPass.vehicle_id == original.vehicle_id,
+        MonthlyPass.is_active.is_(True),
+        MonthlyPass.end_date > coverage_end,
+    ).order_by(MonthlyPass.start_date, MonthlyPass.id).with_for_update(read=True)).all()
+    for period in periods:
+        if (period.start_date - coverage_end).days > 1:
+            break
+        coverage_end = max(coverage_end, period.end_date)
+    return coverage_end
+
 def get_parking_session(db: Session, session_id: str) -> ParkingSession | None:
     stmt = select(ParkingSession).where(ParkingSession.id == session_id)
     return db.execute(stmt).scalar_one_or_none()
@@ -185,12 +219,14 @@ def create_parking_session(
     *,
     check_in_time: datetime,
     monthly_pass_id: int | None,
+    monthly_coverage_end: date | None = None,
 ) -> ParkingSession:
     """Persist a prepared check-in without sampling a second clock."""
     db_session = ParkingSession(
         vehicle_id=session_in.vehicle_id,
         parking_slot_id=session_in.parking_slot_id,
         monthly_pass_id=monthly_pass_id,
+        monthly_coverage_end=monthly_coverage_end,
         check_in_time=check_in_time,
         staff_in_id=staff_in_id,
         status="active"
