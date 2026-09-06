@@ -46,7 +46,7 @@ const MonthlyPassPage = () => {
         <DialogTitle fontWeight="bold">Xác nhận hủy vé</DialogTitle>
         <DialogContent>
           <DialogContentText>
-            Bạn có chắc chắn muốn hủy vé tháng có mã thẻ <strong>{selectedPass?.pass_code}</strong> không?
+            Ngừng hiệu lực kỳ vé của thẻ <strong>{selectedPass?.card_code || selectedPass?.pass_code}</strong>? Thao tác này không hoàn tiền. Quản lý có thể ghi nhận hoàn tiền tại mục Thu tiền &amp; Chốt ca.
           </DialogContentText>
         </DialogContent>
         <DialogActions sx={{ p: 2 }}>

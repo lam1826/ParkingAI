@@ -1,0 +1,11 @@
+@media print {
+  body:has(> .parking-ticket-dialog) > * { display: none !important; }
+  body:has(> .parking-ticket-dialog) > .parking-ticket-dialog { display: block !important; position: static !important; }
+  .parking-ticket-dialog .MuiBackdrop-root,
+  .parking-ticket-dialog .MuiDialogTitle-root,
+  .parking-ticket-dialog .MuiDialogActions-root { display: none !important; }
+  .parking-ticket-dialog .MuiDialog-container { display: block !important; height: auto !important; }
+  .parking-ticket-dialog .MuiDialog-paper { margin: 0 auto !important; box-shadow: none !important; max-height: none !important; width: 80mm !important; }
+  .parking-ticket-dialog .MuiDialogContent-root { overflow: visible !important; padding: 0 !important; }
+  .parking-ticket-print { color: #000 !important; background: #fff !important; }
+}

@@ -15,6 +15,7 @@
 // nửa đêm VN giữa lúc hàm được gọi.
 
 import { businessDateDaysAgo, toBusinessDateString } from "../utils/businessDate.js";
+import { buildAIQuestion } from "../utils/aiContext.js";
 
 export const AI_DAILY_REPORT_URL = "/ai/daily-report";
 export const AI_WEEKLY_REPORT_URL = "/ai/weekly-report";
@@ -22,6 +23,9 @@ export const AI_REQUEST_TIMEOUT_MS = 90_000;
 const WEEKLY_WINDOW_DAYS = 6;
 
 export function requestAI(apiClient, url, payload) {
+  if (url === "/ai/question" || url === "/ai/ask") {
+    payload = { ...payload, question: buildAIQuestion(payload.question) };
+  }
   return apiClient.post(url, payload, { timeout: AI_REQUEST_TIMEOUT_MS });
 }
 

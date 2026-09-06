@@ -29,6 +29,7 @@ const RolePage = lazy(() => import("../pages/Role/RolePage"));
 const ReportPage = lazy(() => import("../pages/Report/ReportPage"));
 const AuditLogPage = lazy(() => import("../pages/AuditLog/AuditLogPage"));
 const AIPage = lazy(() => import("../pages/AI/AIPage"));
+const FinancePage = lazy(() => import("../pages/Finance/index"));
 
 const AppRoutes = () => {
   return (
@@ -108,6 +109,7 @@ const AppRoutes = () => {
         <Route path="vehicle-types" element={<PermissionRoute minimumRole="staff"><VehicleTypePage /></PermissionRoute>} />
         <Route path="price-configs" element={<PermissionRoute minimumRole="staff"><PriceConfigPage /></PermissionRoute>} />
         <Route path="reports" element={<PermissionRoute minimumRole="staff"><ReportPage /></PermissionRoute>} />
+        <Route path="finance" element={<PermissionRoute minimumRole="staff"><FinancePage /></PermissionRoute>} />
         <Route path="audit-logs" element={<PermissionRoute minimumRole="manager"><AuditLogPage /></PermissionRoute>} />
         <Route path="ai" element={<PermissionRoute minimumRole="staff"><AIPage /></PermissionRoute>} />
         <Route path="roles" element={<PermissionRoute minimumRole="manager"><RolePage /></PermissionRoute>} />

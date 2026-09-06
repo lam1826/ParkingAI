@@ -23,8 +23,8 @@ const monthlyPassService = {
   },
 
   // API mở rộng: Gia hạn vé tháng
-  extendPass: async (id, months) => {
-    const response = await api.post(`/api/v1/monthly-passes/${id}/extend`, { months });
+  renew: async (id, data) => {
+    const response = await api.post(`/api/v1/monthly-passes/${id}/renew`, data);
     return response.data;
   }
 };

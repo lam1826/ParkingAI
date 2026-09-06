@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
 import {
   Avatar,
@@ -21,8 +21,11 @@ import DeleteOutlineIcon from "@mui/icons-material/DeleteOutlined";
 import SendRoundedIcon from "@mui/icons-material/SendRounded";
 import api from "../../services/api";
 import { requestAI, requestDailyReport, requestWeeklyReport } from "../../services/aiReportService";
+import { AuthContext } from "../../context/AuthContext";
+import { getErrorMessage } from "../../utils/errorMessage";
+import { clearAIChat, readAIChat, saveAIChat } from "../../utils/aiChatStorage";
+import { buildAIQuestion, questionLimit } from "../../utils/aiContext";
 
-const STORAGE_KEY = "parking_ai_chat_messages";
 const welcomeMessage = {
   id: "welcome",
   role: "assistant",
@@ -51,22 +54,22 @@ const pageContexts = [
   { match: "/", label: "Dashboard", prompts: ["Tình hình bãi xe hôm nay thế nào?", "Đề xuất bố trí nhân sự hôm nay"] },
 ];
 
-function readStoredMessages() {
-  try {
-    const parsed = JSON.parse(sessionStorage.getItem(STORAGE_KEY));
-    return Array.isArray(parsed) && parsed.length ? parsed : [welcomeMessage];
-  } catch {
-    return [welcomeMessage];
-  }
+export default function AIChatbot() {
+  const { user } = useContext(AuthContext);
+  return user ? <AccountChatbot key={user.id} userId={user.id} /> : null;
 }
 
-export default function AIChatbot() {
+function AccountChatbot({ userId }) {
   const location = useLocation();
   const [open, setOpen] = useState(false);
   const [question, setQuestion] = useState("");
   const [loading, setLoading] = useState(false);
-  const [messages, setMessages] = useState(readStoredMessages);
+  const [messages, setMessages] = useState(() => {
+    const stored = readAIChat(sessionStorage, userId);
+    return stored.length ? stored : [welcomeMessage];
+  });
   const messagesEndRef = useRef(null);
+  const requestVersion = useRef(0);
 
   const pageContext = useMemo(
     () => pageContexts.find((item) => item.match === "/" || location.pathname.startsWith(item.match)),
@@ -74,13 +77,21 @@ export default function AIChatbot() {
   );
 
   useEffect(() => {
-    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(messages));
-  }, [messages]);
+    saveAIChat(sessionStorage, userId, messages);
+  }, [messages, userId]);
 
   useEffect(() => {
-    const handleClear = () => setMessages([welcomeMessage]);
+    const handleClear = () => {
+      requestVersion.current += 1;
+      setMessages([welcomeMessage]);
+      setQuestion("");
+      setLoading(false);
+    };
     window.addEventListener("parking-ai-clear-chat", handleClear);
-    return () => window.removeEventListener("parking-ai-clear-chat", handleClear);
+    return () => {
+      requestVersion.current += 1;
+      window.removeEventListener("parking-ai-clear-chat", handleClear);
+    };
   }, []);
 
   useEffect(() => {
@@ -88,13 +99,13 @@ export default function AIChatbot() {
   }, [messages, loading, open]);
 
   const clearMessages = () => {
-    setMessages([welcomeMessage]);
-    sessionStorage.removeItem(STORAGE_KEY);
+    clearAIChat();
   };
 
   const sendMessage = async (presetQuestion) => {
     const text = (presetQuestion ?? question).trim();
-    if (!text || loading) return;
+    if (!text || loading || text.length > questionLimit(pageContext.label)) return;
+    const version = ++requestVersion.current;
 
     const userMessage = { id: `user-${Date.now()}`, role: "user", content: text };
     setMessages((current) => [...current, userMessage]);
@@ -102,29 +113,32 @@ export default function AIChatbot() {
     setLoading(true);
 
     try {
-      const contextualQuestion = `Ngữ cảnh giao diện hiện tại: ${pageContext.label}. Câu hỏi: ${text}`;
+      const contextualQuestion = buildAIQuestion(text, pageContext.label);
       const { data } = await requestAI(api, "/ai/question", { question: contextualQuestion });
+      if (version !== requestVersion.current) return;
       setMessages((current) => [
         ...current,
         { id: `assistant-${Date.now()}`, role: "assistant", content: data.content || "AI chưa trả về nội dung." },
       ]);
     } catch (error) {
+      if (version !== requestVersion.current) return;
       setMessages((current) => [
         ...current,
         {
           id: `error-${Date.now()}`,
           role: "assistant",
           error: true,
-          content: error.response?.data?.detail || "Không thể kết nối dịch vụ AI. Vui lòng thử lại.",
+          content: getErrorMessage(error, "Không thể kết nối dịch vụ AI. Vui lòng thử lại."),
         },
       ]);
     } finally {
-      setLoading(false);
+      if (version === requestVersion.current) setLoading(false);
     }
   };
 
   const runAIAction = async (action) => {
     if (loading) return;
+    const version = ++requestVersion.current;
     const actionInfo = aiActions.find((item) => item.id === action);
     setMessages((current) => [
       ...current,
@@ -144,6 +158,7 @@ export default function AIChatbot() {
         response = await requestAI(api, "/ai/staff-suggestion", {});
       }
 
+      if (version !== requestVersion.current) return;
       setMessages((current) => [
         ...current,
         {
@@ -153,17 +168,18 @@ export default function AIChatbot() {
         },
       ]);
     } catch (error) {
+      if (version !== requestVersion.current) return;
       setMessages((current) => [
         ...current,
         {
           id: `error-${Date.now()}`,
           role: "assistant",
           error: true,
-          content: error.response?.data?.detail || error.message || "Không thể thực hiện tác vụ AI.",
+          content: getErrorMessage(error, "Không thể thực hiện tác vụ AI."),
         },
       ]);
     } finally {
-      setLoading(false);
+      if (version === requestVersion.current) setLoading(false);
     }
   };
 
@@ -227,7 +243,7 @@ export default function AIChatbot() {
             </IconButton>
           </Box>
 
-          <Box sx={{ flexGrow: 1, overflowY: "auto", p: 2, bgcolor: "#f6f8fc" }}>
+          <Box role="log" aria-label="Hội thoại ParkingAI" aria-live="polite" sx={{ flexGrow: 1, overflowY: "auto", p: 2, bgcolor: "background.default" }}>
             <Stack spacing={1.5}>
               {messages.map((message) => (
                 <Box key={message.id} sx={{ display: "flex", justifyContent: message.role === "user" ? "flex-end" : "flex-start" }}>
@@ -288,15 +304,19 @@ export default function AIChatbot() {
               maxRows={3}
               size="small"
               placeholder="Nhập câu hỏi..."
+              label="Câu hỏi"
               value={question}
               onChange={(event) => setQuestion(event.target.value)}
               onKeyDown={handleKeyDown}
               disabled={loading}
+              error={question.trim().length > questionLimit(pageContext.label)}
+              helperText={`${question.length}/${questionLimit(pageContext.label)} ký tự`}
+              slotProps={{ htmlInput: { maxLength: questionLimit(pageContext.label) } }}
             />
             <IconButton
               color="primary"
               onClick={() => sendMessage()}
-              disabled={!question.trim() || loading}
+              disabled={!question.trim() || loading || question.trim().length > questionLimit(pageContext.label)}
               aria-label="Gửi câu hỏi"
               sx={{ mb: 0.25 }}
             >

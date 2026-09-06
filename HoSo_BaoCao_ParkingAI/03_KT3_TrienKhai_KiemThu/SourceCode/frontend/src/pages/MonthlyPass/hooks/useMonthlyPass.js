@@ -68,8 +68,8 @@ const useMonthlyPass = () => {
     setSubmitting(true);
     try {
       if (selectedPass) {
-        await monthlyPassService.update(selectedPass.id, formData);
-        showNotify("Cập nhật vé tháng thành công!", "success");
+        await monthlyPassService.renew(selectedPass.id, formData);
+        showNotify("Đã tạo kỳ gia hạn và ghi nhận khoản thu.", "success");
       } else {
         await monthlyPassService.create(formData);
         showNotify("Đăng ký vé tháng thành công!", "success");

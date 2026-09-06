@@ -29,6 +29,7 @@ const SessionTable = ({
   pageSize,
   onPaginationModelChange,
   onCheckOut,
+  onTicket,
   title = "Danh sách phiên gửi xe",
 }) => {
   const [selectedSession, setSelectedSession] = useState(null);
@@ -42,6 +43,8 @@ const SessionTable = ({
 
   // Lưu ý: MUI DataGrid v9 — valueGetter/valueFormatter nhận (value, row) thay vì params
   const columns = [
+    { field: "ticket", headerName: "Vé / Biên nhận", width: 140, sortable: false,
+      renderCell: ({ row }) => <Button size="small" onClick={() => onTicket(row.id)}>Xem vé QR</Button> },
     {
       field: "licensePlate",
       headerName: "Biển số",

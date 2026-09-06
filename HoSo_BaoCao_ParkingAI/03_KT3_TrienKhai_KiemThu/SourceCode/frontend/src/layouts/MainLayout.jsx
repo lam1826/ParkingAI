@@ -62,6 +62,7 @@ export default function MainLayout() {
     { text: "Phương tiện", icon: <DirectionsCarIcon />, path: "/vehicles", role: "staff" },
     { text: "Khách hàng", icon: <PeopleIcon />, path: "/customers", role: "staff" },
     { text: "Vé Tháng", icon: <CardMembershipIcon />, path: "/monthly-passes", role: "staff" },
+    { text: "Thu tiền & Chốt ca", icon: <PriceChangeIcon />, path: "/finance", role: "staff" },
     { text: "Bảng giá", icon: <PriceChangeIcon />, path: "/price-configs", role: "staff" },
     { text: "Báo cáo", icon: <AssessmentIcon />, path: "/reports", role: "staff" },
     { text: "AI Analytics", icon: <SmartToyIcon />, path: "/ai", role: "staff" },

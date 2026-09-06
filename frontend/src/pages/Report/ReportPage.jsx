@@ -6,6 +6,7 @@ import { reportService } from "./services/reportService";
 import { loadPeriodReport } from "./services/loadPeriodReport";
 import { extractReportDownloadErrorMessage } from "./services/reportDownloadError";
 import { createLatestRequestGate } from "../../utils/latestRequestGate";
+import { getErrorMessage } from "../../utils/errorMessage";
 
 export default function ReportPage() {
   const reportRequestGate = useRef(null);
@@ -37,7 +38,7 @@ export default function ReportPage() {
       })
       .catch((requestError) => {
         if (!requestGate.isCurrent(requestGeneration)) return;
-        setError(requestError.response?.data?.detail || "Không thể tải báo cáo.");
+        setError(getErrorMessage(requestError, "Không thể tải báo cáo."));
       })
       .finally(() => {
         if (requestGate.isCurrent(requestGeneration)) setLoading(false);
@@ -88,10 +89,16 @@ export default function ReportPage() {
     </Box>
     {error && <Alert severity="error">{error}</Alert>}
     {revenue && <Grid container spacing={2}>
-      {[['Tổng lượt xe', revenue.total_trips], ['Doanh thu', `${Number(revenue.total_revenue).toLocaleString('vi-VN')} ₫`],
-        ['Phí trung bình', `${Number(revenue.average_fee).toLocaleString('vi-VN')} ₫`], ['Loại xe phổ biến', revenue.most_frequent_vehicle_type]].map(([label, value]) =>
+      {[['Tổng lượt xe', revenue.total_trips], ['Doanh thu thuần', `${Number(revenue.total_revenue).toLocaleString('vi-VN')} ₫`],
+        ['Phí bình quân mỗi lượt', `${Number(revenue.average_fee).toLocaleString('vi-VN')} ₫`], ['Loại xe phổ biến', revenue.most_frequent_vehicle_type]].map(([label, value]) =>
         <Grid key={label} size={{ xs: 12, sm: 6, lg: 3 }}><Paper sx={{ p: 2 }}><Typography color="text.secondary">{label}</Typography><Typography variant="h6">{value}</Typography></Paper></Grid>)}
     </Grid>}
+    {revenue && <Paper sx={{ p: 2 }}><Typography variant="body2">
+      Phí lượt gửi: {Number(revenue.parking_revenue || 0).toLocaleString("vi-VN")} ₫
+      {" + Vé tháng: "}{Number(revenue.monthly_pass_revenue || 0).toLocaleString("vi-VN")} ₫
+      {" − Hoàn tiền: "}{Number(revenue.refunds || 0).toLocaleString("vi-VN")} ₫.
+      {" Doanh thu tính theo ngày thu/hoàn thực tế; phí bình quân chỉ tính các lượt gửi xe."}
+    </Typography></Paper>}
     <Paper sx={{ p: 3, height: 420 }}><Typography variant="h6" gutterBottom>Lưu lượng theo giờ</Typography>
       <ResponsiveContainer width="100%" height="90%"><BarChart data={traffic}><CartesianGrid strokeDasharray="3 3" />
         <XAxis dataKey="time_label" /><YAxis allowDecimals={false} /><Tooltip /><Bar dataKey="total_vehicles" name="Lượt xe" fill="#1976d2" /></BarChart></ResponsiveContainer>

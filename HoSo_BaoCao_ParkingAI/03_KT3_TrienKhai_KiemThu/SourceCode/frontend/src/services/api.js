@@ -1,5 +1,7 @@
 import axios from "axios";
 import { resolveApiBaseUrl } from "../utils/apiBaseUrl";
+import { clearAIChat } from "../utils/aiChatStorage";
+import { isCurrentAuthFailure, notifyAuthSessionChanged } from "./authSessionBoundary";
 
 // Khởi tạo instance của axios
 const api = axios.create({
@@ -46,12 +48,16 @@ api.interceptors.response.use(
 
       switch (status) {
         case 401:
+          // A late failure from a previous login must not sign out the next user.
+          if (!isCurrentAuthFailure(error.config?.headers?.Authorization, localStorage.getItem("token"))) break;
           // Lỗi 401 Unauthorized: Token hết hạn hoặc không hợp lệ
           console.warn("Phiên đăng nhập hết hạn. Đang đăng xuất...");
           
           // Xóa thông tin auth
           localStorage.removeItem("token");
           localStorage.removeItem("user");
+          clearAIChat();
+          notifyAuthSessionChanged();
           
           // Chuyển hướng về trang Login. 
           // (Dùng window.location vì useNavigate không hoạt động ngoài React Components)

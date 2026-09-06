@@ -9,12 +9,31 @@ import {
   MenuItem,
 } from "@mui/material";
 import RefreshIcon from "@mui/icons-material/Refresh";
+import { useState } from "react";
+import api from "../../services/api";
+import TicketDialog from "./components/TicketDialog";
 
 import CheckInCard from "./components/CheckInCard";
 import SessionTable from "./components/SessionTable";
 import useParkingSession from "./hooks/useParkingSession";
 
 export default function ParkingSessionPage() {
+  const [ticketId, setTicketId] = useState(null);
+  const [scan, setScan] = useState("");
+  const [scanError, setScanError] = useState("");
+  const [scanning, setScanning] = useState(false);
+  const resolveScan = async (event) => {
+    event.preventDefault();
+    if (scanning || !scan.trim()) return;
+    setScanning(true); setScanError("");
+    try {
+      const { data } = await api.get("/api/v1/parking-sessions/tickets/resolve", { params: { token: scan.trim() } });
+      setTicketId(data.session_id); setScan("");
+    } catch (error) {
+      const detail = error.response?.data?.detail;
+      setScanError(typeof detail === "string" ? detail : "Không tra được vé. Kiểm tra lại mã QR và thử lại.");
+    } finally { setScanning(false); }
+  };
   const {
     sessions,
     total,
@@ -84,9 +103,15 @@ export default function ParkingSessionPage() {
         vehicleTypes={vehicleTypes}
         zones={zones}
         availableSlots={availableSlots}
-        onSubmit={handleCheckIn}
+        onSubmit={async (...args) => { const id = await handleCheckIn(...args); if (id) setTicketId(id); }}
         submitting={submitting}
       />
+
+      <Stack component="form" onSubmit={resolveScan} direction={{ xs: "column", sm: "row" }} spacing={1} sx={{ mb: 3 }}>
+        <TextField fullWidth size="small" label="Quét hoặc dán mã vé QR" helperText={scanError || "Dùng máy quét mã như bàn phím, hoặc dán nội dung QR rồi tra vé."} error={Boolean(scanError)} value={scan} onChange={event => setScan(event.target.value)} slotProps={{ htmlInput: { maxLength: 128 } }} />
+        <Button type="submit" variant="outlined" disabled={scanning || !scan.trim()} sx={{ whiteSpace: "nowrap", alignSelf: "flex-start" }}>Tra vé</Button>
+      </Stack>
+      <TicketDialog sessionId={ticketId} onClose={() => setTicketId(null)} onCheckOut={handleCheckOut} />
 
       {/* Bộ lọc lịch sử gửi xe */}
       <Stack direction={{ xs: "column", sm: "row" }} spacing={2} sx={{ mb: 2 }}>
@@ -142,6 +167,7 @@ export default function ParkingSessionPage() {
         pageSize={pageSize}
         onPaginationModelChange={handlePaginationModelChange}
         onCheckOut={handleCheckOut}
+        onTicket={setTicketId}
         title={
           statusFilter === "active"
             ? "Danh sách xe đang đỗ trong bãi"

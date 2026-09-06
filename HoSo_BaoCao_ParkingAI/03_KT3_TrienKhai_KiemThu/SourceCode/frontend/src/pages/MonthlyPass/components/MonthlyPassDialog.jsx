@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Dialog, DialogTitle, DialogContent, DialogActions, Button, TextField, Grid, MenuItem, CircularProgress } from "@mui/material";
+import { Alert, Dialog, DialogTitle, DialogContent, DialogActions, Button, TextField, Grid, MenuItem, CircularProgress } from "@mui/material";
 
 const initialForm = {
   pass_code: "",
@@ -8,21 +8,29 @@ const initialForm = {
   start_date: "",
   end_date: "",
   price: 0,
+  payment_method: "cash",
 };
 
 const MonthlyPassDialog = ({ isOpen, onClose, onSave, pass, vehicles, customers, submitting }) => {
   const [form, setForm] = useState(initialForm);
+  const [requestId, setRequestId] = useState("");
 
   useEffect(() => {
+    setRequestId(crypto.randomUUID());
     if (pass) {
+      const nextStart = new Date(`${pass.end_date}T12:00:00Z`);
+      nextStart.setUTCDate(nextStart.getUTCDate() + 1);
+      const nextEnd = new Date(nextStart);
+      nextEnd.setUTCDate(nextEnd.getUTCDate() + 29);
       setForm({
-        pass_code: pass.pass_code || "",
+        pass_code: pass.card_code || pass.pass_code || "",
         vehicle_id: pass.vehicle_id || pass.vehicle?.id || "",
         customer_id: pass.customer_id || pass.customer?.id || "",
         // Xử lý cắt chuỗi ngày tháng để bind vào input type="date"
-        start_date: pass.start_date ? pass.start_date.split("T")[0] : "",
-        end_date: pass.end_date ? pass.end_date.split("T")[0] : "",
+        start_date: nextStart.toISOString().slice(0, 10),
+        end_date: nextEnd.toISOString().slice(0, 10),
         price: pass.price || 0,
+        payment_method: "cash",
       });
     } else {
       setForm(initialForm);
@@ -43,14 +51,17 @@ const MonthlyPassDialog = ({ isOpen, onClose, onSave, pass, vehicles, customers,
   const priceInvalid =
     form.price === "" || form.price === null ||
     !Number.isFinite(priceNumber) ||
-    !Number.isInteger(priceNumber) ||
+    !Number.isSafeInteger(priceNumber) ||
     priceNumber < 0;
 
   const handleSubmit = (e) => {
     e.preventDefault();
     if (dateRangeInvalid || priceInvalid) return;
     // Contract backend: price là số nguyên VND, pass_code được trim
-    onSave({
+    onSave(pass ? {
+      start_date: form.start_date, end_date: form.end_date, price: priceNumber,
+      payment_method: form.payment_method, request_id: requestId,
+    } : {
       ...form,
       pass_code: form.pass_code.trim(),
       price: priceNumber,
@@ -58,18 +69,22 @@ const MonthlyPassDialog = ({ isOpen, onClose, onSave, pass, vehicles, customers,
   };
 
   return (
-    <Dialog open={isOpen} onClose={onClose} maxWidth="sm" fullWidth>
+    <Dialog open={isOpen} onClose={submitting ? undefined : onClose} maxWidth="sm" fullWidth>
       <DialogTitle fontWeight="bold">
-        {pass ? "Cập nhật / Gia hạn Vé tháng" : "Đăng ký Vé tháng mới"}
+        {pass ? "Gia hạn vé tháng" : "Đăng ký vé tháng mới"}
       </DialogTitle>
       <form onSubmit={handleSubmit}>
         <DialogContent dividers>
+          <Alert severity="info" sx={{ mb: 2 }}>
+            {pass ? "Gia hạn tạo kỳ vé mới trên cùng mã thẻ. Lịch sử và khoản thu của kỳ cũ được giữ nguyên. Mặc định kỳ mới là 30 ngày; có thể chỉnh ngày." : "Xác nhận sẽ cấp vé và ghi nhận khoản thu vào sổ thu tiền."}
+          </Alert>
           <Grid container spacing={2}>
             <Grid size={{ xs: 12, sm: 6 }}>
               <TextField
                 fullWidth required size="small"
                 label="Mã thẻ (NFC/RFID)"
                 name="pass_code"
+                disabled={Boolean(pass)}
                 value={form.pass_code}
                 onChange={handleChange}
               />
@@ -83,7 +98,7 @@ const MonthlyPassDialog = ({ isOpen, onClose, onSave, pass, vehicles, customers,
                 onChange={handleChange}
                 error={priceInvalid}
                 helperText={priceInvalid ? "Số tiền phải là số nguyên VND không âm (không nhập số lẻ thập phân)" : undefined}
-                slotProps={{ htmlInput: { min: 0, step: 1000 } }}
+                slotProps={{ htmlInput: { min: 0, step: 1, max: Number.MAX_SAFE_INTEGER } }}
               />
             </Grid>
             <Grid size={{ xs: 12 }}>
@@ -91,6 +106,7 @@ const MonthlyPassDialog = ({ isOpen, onClose, onSave, pass, vehicles, customers,
                 fullWidth select required size="small"
                 label="Chọn Phương tiện"
                 name="vehicle_id"
+                disabled={Boolean(pass)}
                 value={form.vehicle_id}
                 onChange={handleChange}
               >
@@ -104,6 +120,7 @@ const MonthlyPassDialog = ({ isOpen, onClose, onSave, pass, vehicles, customers,
                 fullWidth select required size="small"
                 label="Chọn Khách hàng"
                 name="customer_id"
+                disabled={Boolean(pass)}
                 value={form.customer_id}
                 onChange={handleChange}
               >
@@ -135,14 +152,17 @@ const MonthlyPassDialog = ({ isOpen, onClose, onSave, pass, vehicles, customers,
               />
             </Grid>
           </Grid>
+          <TextField select fullWidth label="Hình thức thu tiền" name="payment_method" value={form.payment_method} onChange={handleChange} sx={{ mt: 2 }}>
+            <MenuItem value="cash">Tiền mặt</MenuItem><MenuItem value="transfer">Chuyển khoản</MenuItem>
+          </TextField>
         </DialogContent>
         <DialogActions sx={{ p: 2 }}>
           <Button onClick={onClose} variant="outlined" disabled={submitting}>Hủy</Button>
           <Button
-            type="submit" variant="contained" disabled={submitting}
+            type="submit" variant="contained" disabled={submitting || dateRangeInvalid || priceInvalid}
             startIcon={submitting && <CircularProgress size={18} color="inherit" />}
           >
-            {pass ? "Lưu thay đổi" : "Đăng ký"}
+            {pass ? "Gia hạn và ghi nhận thu" : "Đăng ký và ghi nhận thu"}
           </Button>
         </DialogActions>
       </form>

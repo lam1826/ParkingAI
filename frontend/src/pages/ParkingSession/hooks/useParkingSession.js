@@ -176,8 +176,10 @@ const useParkingSession = () => {
       setSlotId("");
       fetchSessions();
       fetchAvailableSlots();
+      return res.session_id || res.id;
     } catch (err) {
-      showNotify(err.response?.data?.detail || "Lỗi khi check-in xe", "error");
+      const detail = err.response?.data?.detail;
+      showNotify(typeof detail === "string" ? detail : "Lỗi khi check-in xe. Kiểm tra dữ liệu và thử lại.", "error");
     } finally {
       setSubmitting(false);
     }
@@ -190,8 +192,11 @@ const useParkingSession = () => {
       showNotify(`Xe ra thành công! Phí đỗ xe: ${fee} VNĐ`, "success");
       fetchSessions();
       fetchAvailableSlots();
+      return true;
     } catch (err) {
-      showNotify(err.response?.data?.detail || "Lỗi khi check-out xe", "error");
+      const detail = err.response?.data?.detail;
+      showNotify(typeof detail === "string" ? detail : "Lỗi khi check-out xe. Hãy tải lại để kiểm tra kết quả.", "error");
+      return false;
     }
   };
 

@@ -1,15 +1,16 @@
 import { Card, CardContent, Box, IconButton, Tooltip, Chip, Button } from "@mui/material";
 import { DataGrid } from "@mui/x-data-grid";
-import EditIcon from "@mui/icons-material/Edit";
+import AutorenewIcon from "@mui/icons-material/Autorenew";
 import DeleteIcon from "@mui/icons-material/Delete";
 import AddIcon from "@mui/icons-material/Add";
 import formatDate from "../../../utils/formatDate";
-import { isBusinessDateExpired } from "../../../utils/businessDate";
+import { isBusinessDateExpired, toBusinessDateString } from "../../../utils/businessDate";
 
 const MonthlyPassTable = ({ passes, loading, onAdd, onEdit, onDeactivate }) => {
   // Lưu ý: MUI DataGrid v9 — valueGetter/valueFormatter nhận (value, row) thay vì params
   const columns = [
-    { field: "pass_code", headerName: "Mã thẻ", width: 120, renderCell: ({ value }) => <strong>{value || "—"}</strong> },
+    { field: "card_code", headerName: "Mã thẻ", width: 130, valueGetter: (_value, row) => row.card_code || row.pass_code, renderCell: ({ value }) => <strong>{value || "—"}</strong> },
+    { field: "price", headerName: "Đã thu (đ)", width: 125, valueFormatter: value => Number(value || 0).toLocaleString("vi-VN") },
     {
       field: "license_plate",
       headerName: "Biển số xe",
@@ -49,10 +50,11 @@ const MonthlyPassTable = ({ passes, loading, onAdd, onEdit, onDeactivate }) => {
         }
         // Vé còn hiệu lực đến HẾT ngày end_date (23:59:59), khớp cách backend tính phí
         const isExpired = isBusinessDateExpired(row.end_date);
+        const isFuture = row.start_date > toBusinessDateString();
         return (
           <Chip
-            label={isExpired ? "Hết hạn" : "Đang hoạt động"}
-            color={isExpired ? "error" : "success"}
+            label={isExpired ? "Hết hạn" : isFuture ? "Chưa đến hạn" : "Đang hoạt động"}
+            color={isExpired ? "error" : isFuture ? "info" : "success"}
             size="small"
           />
         );
@@ -65,13 +67,13 @@ const MonthlyPassTable = ({ passes, loading, onAdd, onEdit, onDeactivate }) => {
       sortable: false,
       renderCell: (params) => (
         <Box>
-          <Tooltip title="Chỉnh sửa / Gia hạn">
-            <IconButton color="primary" size="small" onClick={() => onEdit(params.row)}>
-              <EditIcon fontSize="small" />
+          <Tooltip title="Gia hạn kỳ mới">
+            <IconButton aria-label={`Gia hạn thẻ ${params.row.card_code || params.row.pass_code}`} color="primary" size="small" onClick={() => onEdit(params.row)}>
+              <AutorenewIcon fontSize="small" />
             </IconButton>
           </Tooltip>
           <Tooltip title="Hủy vé">
-            <IconButton color="error" size="small" onClick={() => onDeactivate(params.row)}>
+            <IconButton aria-label="Ngừng hoạt động kỳ vé" disabled={!params.row.is_active} color="error" size="small" onClick={() => onDeactivate(params.row)}>
               <DeleteIcon fontSize="small" />
             </IconButton>
           </Tooltip>
