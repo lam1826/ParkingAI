@@ -1,5 +1,5 @@
 import api from "../../../services/api";
-import { requestSessionCheckout } from "./parkingSessionCheckout";
+import { requestCheckoutQuote, requestSessionCheckout } from "./parkingSessionCheckout";
 import { requestParkingSessionSearch } from "./parkingSessionSearch";
 
 const parkingSessionService = {
@@ -15,7 +15,8 @@ const parkingSessionService = {
       parking_slot_id: parkingSlotId || null,
     })
   ).data,
-  checkOut: async (sessionId) => requestSessionCheckout(api, sessionId),
+  getCheckoutQuote: async (sessionId) => requestCheckoutQuote(api, sessionId),
+  checkOut: async (sessionId, confirmation) => requestSessionCheckout(api, sessionId, confirmation),
 };
 
 export default parkingSessionService;

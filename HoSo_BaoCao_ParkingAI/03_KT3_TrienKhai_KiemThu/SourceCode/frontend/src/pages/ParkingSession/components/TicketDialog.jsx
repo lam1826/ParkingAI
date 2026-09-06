@@ -13,31 +13,18 @@ export default function TicketDialog({ sessionId, onClose, onCheckOut }) {
   const ticket = loadedTicket?.session_id === sessionId ? loadedTicket : null;
   const presentation = getTicketPresentation(ticket);
   const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
   useEffect(() => {
     if (!sessionId) return;
     let ignore = false;
     setTicket(null);
     setError("");
-    api.get(`/api/v1/parking-sessions/${sessionId}/ticket`).then(({ data }) => {
+    api.get(`/api/v1/parking-sessions/${encodeURIComponent(sessionId)}/ticket`).then(({ data }) => {
       if (!ignore) setTicket(data);
     }).catch(() => { if (!ignore) setError("Không tải được vé. Hãy đóng và thử lại."); });
     return () => { ignore = true; };
   }, [sessionId]);
 
-  const checkOut = async () => {
-    if (!sessionId || !presentation.canCheckOut || busy) return;
-    setBusy(true);
-    try {
-      const result = await onCheckOut(sessionId);
-      if (result !== false) {
-        const { data } = await api.get(`/api/v1/parking-sessions/${sessionId}/ticket`);
-        setTicket(data);
-      }
-    } catch { setError("Chưa xác nhận được kết quả xe ra. Hãy tải lại vé trước khi thao tác tiếp."); }
-    finally { setBusy(false); }
-  };
-  return <Dialog open={Boolean(sessionId)} onClose={busy ? undefined : onClose} maxWidth="xs" fullWidth className="parking-ticket-dialog">
+  return <Dialog open={Boolean(sessionId)} onClose={onClose} maxWidth="xs" fullWidth className="parking-ticket-dialog">
     <DialogTitle>{presentation.title}</DialogTitle>
     <DialogContent>
       {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
@@ -55,9 +42,9 @@ export default function TicketDialog({ sessionId, onClose, onCheckOut }) {
       </Stack>}
     </DialogContent>
     <DialogActions sx={{ flexWrap: "wrap", gap: 1, p: 2 }}>
-      <Button disabled={busy} onClick={onClose}>Đóng</Button>
-      {presentation.canCheckOut && onCheckOut && <Button color="error" disabled={busy} onClick={checkOut}>Xác nhận xe ra</Button>}
-      <Button variant="contained" startIcon={<PrintIcon />} disabled={!ticket || busy} onClick={() => window.print()}>In vé</Button>
+      <Button onClick={onClose}>Đóng</Button>
+      {presentation.canCheckOut && onCheckOut && <Button color="error" onClick={() => onCheckOut(sessionId)}>Xem phí và cho xe ra</Button>}
+      <Button variant="contained" startIcon={<PrintIcon />} disabled={!ticket} onClick={() => window.print()}>In vé</Button>
     </DialogActions>
   </Dialog>;
 }

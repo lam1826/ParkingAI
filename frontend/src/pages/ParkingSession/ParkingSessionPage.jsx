@@ -12,6 +12,7 @@ import RefreshIcon from "@mui/icons-material/Refresh";
 import { useState } from "react";
 import api from "../../services/api";
 import TicketDialog from "./components/TicketDialog";
+import CheckoutDialog from "./components/CheckoutDialog";
 
 import CheckInCard from "./components/CheckInCard";
 import SessionTable from "./components/SessionTable";
@@ -19,6 +20,8 @@ import useParkingSession from "./hooks/useParkingSession";
 
 export default function ParkingSessionPage() {
   const [ticketId, setTicketId] = useState(null);
+  const [checkoutId, setCheckoutId] = useState(null);
+  const openCheckout = (sessionId) => { setTicketId(null); setCheckoutId(sessionId); };
   const [scan, setScan] = useState("");
   const [scanError, setScanError] = useState("");
   const [scanning, setScanning] = useState(false);
@@ -63,7 +66,7 @@ export default function ParkingSessionPage() {
     handlePaginationModelChange,
     notify,
     handleCheckIn,
-    handleCheckOut,
+    handleCheckoutCompleted,
     fetchSessions,
     closeNotify,
   } = useParkingSession();
@@ -111,7 +114,12 @@ export default function ParkingSessionPage() {
         <TextField fullWidth size="small" label="Quét hoặc dán mã vé QR" helperText={scanError || "Dùng máy quét mã như bàn phím, hoặc dán nội dung QR rồi tra vé."} error={Boolean(scanError)} value={scan} onChange={event => setScan(event.target.value)} slotProps={{ htmlInput: { maxLength: 128 } }} />
         <Button type="submit" variant="outlined" disabled={scanning || !scan.trim()} sx={{ whiteSpace: "nowrap", alignSelf: "flex-start" }}>Tra vé</Button>
       </Stack>
-      <TicketDialog sessionId={ticketId} onClose={() => setTicketId(null)} onCheckOut={handleCheckOut} />
+      <TicketDialog sessionId={ticketId} onClose={() => setTicketId(null)} onCheckOut={openCheckout} />
+      {checkoutId && <CheckoutDialog key={checkoutId} sessionId={checkoutId} onClose={() => setCheckoutId(null)} onCompleted={result => {
+        handleCheckoutCompleted(result);
+        setCheckoutId(null);
+        setTicketId(result.id);
+      }} />}
 
       {/* Bộ lọc lịch sử gửi xe */}
       <Stack direction={{ xs: "column", sm: "row" }} spacing={2} sx={{ mb: 2 }}>
@@ -166,7 +174,7 @@ export default function ParkingSessionPage() {
         page={page}
         pageSize={pageSize}
         onPaginationModelChange={handlePaginationModelChange}
-        onCheckOut={handleCheckOut}
+        onCheckOut={openCheckout}
         onTicket={setTicketId}
         title={
           statusFilter === "active"

@@ -185,19 +185,11 @@ const useParkingSession = () => {
     }
   };
 
-  const handleCheckOut = async (sessionId) => {
-    try {
-      const res = await parkingSessionService.checkOut(sessionId);
-      const fee = res.parking_fee ? new Intl.NumberFormat("vi-VN").format(res.parking_fee) : 0;
-      showNotify(`Xe ra thành công! Phí đỗ xe: ${fee} VNĐ`, "success");
-      fetchSessions();
-      fetchAvailableSlots();
-      return true;
-    } catch (err) {
-      const detail = err.response?.data?.detail;
-      showNotify(typeof detail === "string" ? detail : "Lỗi khi check-out xe. Hãy tải lại để kiểm tra kết quả.", "error");
-      return false;
-    }
+  const handleCheckoutCompleted = (result) => {
+    const fee = new Intl.NumberFormat("vi-VN").format(result.parking_fee);
+    showNotify(`Xe ra thành công! Phí đỗ xe: ${fee} VND`, "success");
+    fetchSessions();
+    fetchAvailableSlots();
   };
 
   return {
@@ -229,7 +221,7 @@ const useParkingSession = () => {
     handlePaginationModelChange,
     notify,
     handleCheckIn,
-    handleCheckOut,
+    handleCheckoutCompleted,
     fetchSessions,
     closeNotify,
   };

@@ -1,4 +1,3 @@
-import { useState } from "react";
 import {
   Card,
   CardContent,
@@ -6,11 +5,6 @@ import {
   Box,
   Button,
   Chip,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  DialogContentText,
 } from "@mui/material";
 import { DataGrid } from "@mui/x-data-grid";
 import LogoutIcon from "@mui/icons-material/Logout";
@@ -32,15 +26,6 @@ const SessionTable = ({
   onTicket,
   title = "Danh sách phiên gửi xe",
 }) => {
-  const [selectedSession, setSelectedSession] = useState(null);
-
-  const handleConfirmCheckOut = () => {
-    if (selectedSession) {
-      onCheckOut(selectedSession.id);
-      setSelectedSession(null);
-    }
-  };
-
   // Lưu ý: MUI DataGrid v9 — valueGetter/valueFormatter nhận (value, row) thay vì params
   const columns = [
     { field: "ticket", headerName: "Vé / Biên nhận", width: 140, sortable: false,
@@ -121,9 +106,9 @@ const SessionTable = ({
             color="error"
             size="small"
             startIcon={<LogoutIcon />}
-            onClick={() => setSelectedSession(params.row)}
+            onClick={() => onCheckOut(params.row.id)}
           >
-            Check Out
+            Cho xe ra
           </Button>
         ) : null,
     },
@@ -158,23 +143,6 @@ const SessionTable = ({
         </CardContent>
       </Card>
 
-      {/* Dialog xác nhận cho xe ra */}
-      <Dialog open={Boolean(selectedSession)} onClose={() => setSelectedSession(null)}>
-        <DialogTitle fontWeight="bold">Xác nhận Check-out</DialogTitle>
-        <DialogContent>
-          <DialogContentText>
-            Bạn có chắc chắn muốn cho xe này ra khỏi bãi không? Hệ thống sẽ tính phí đỗ xe tự động.
-          </DialogContentText>
-        </DialogContent>
-        <DialogActions sx={{ p: 2 }}>
-          <Button onClick={() => setSelectedSession(null)} variant="outlined">
-            Hủy
-          </Button>
-          <Button onClick={handleConfirmCheckOut} color="error" variant="contained" autoFocus>
-            Xác nhận
-          </Button>
-        </DialogActions>
-      </Dialog>
     </>
   );
 };

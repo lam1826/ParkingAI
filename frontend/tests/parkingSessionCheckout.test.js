@@ -1,8 +1,7 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-import { requestSessionCheckout } from "../src/pages/ParkingSession/services/parkingSessionCheckout.js";
+import { requestCheckoutQuote, requestSessionCheckout } from "../src/pages/ParkingSession/services/parkingSessionCheckout.js";
 
 
 test("checkout dùng đúng session ID và endpoint idempotent", async () => {
@@ -14,27 +13,31 @@ test("checkout dùng đúng session ID và endpoint idempotent", async () => {
     },
   };
 
-  const result = await requestSessionCheckout(apiClient, "session-B");
+  const body = Object.freeze({ quote_token: "signed-Q", payment_confirmed: true, payment_method: "transfer" });
+  const result = await requestSessionCheckout(apiClient, "session-B", body);
 
   assert.deepEqual(calls, [{
     url: "/api/v1/parking-sessions/session-B/check-out",
-    body: {},
+    body,
   }]);
   assert.equal(result.id, "session-B");
 });
 
 
-test("wiring checkout giữ cả phiên được chọn, không tra lại theo biển số", async () => {
-  const [tableSource, hookSource, serviceSource] = await Promise.all([
-    readFile(new URL("../src/pages/ParkingSession/components/SessionTable.jsx", import.meta.url), "utf8"),
-    readFile(new URL("../src/pages/ParkingSession/hooks/useParkingSession.js", import.meta.url), "utf8"),
-    readFile(new URL("../src/pages/ParkingSession/services/parkingSessionService.js", import.meta.url), "utf8"),
-  ]);
+test("preview only reads the selected session without a payment write", async () => {
+  const calls = [];
+  const quote = await requestCheckoutQuote({ async get(url) { calls.push(url); return { data: { parking_fee: 25000 } }; } }, "session/B");
+  assert.deepEqual(calls, ["/api/v1/parking-sessions/session%2FB/checkout-quote"]);
+  assert.equal(quote.parking_fee, 25000);
+});
 
-  assert.match(tableSource, /setSelectedSession\(params\.row\)/);
-  assert.match(tableSource, /onCheckOut\(selectedSession\.id\)/);
-  assert.doesNotMatch(tableSource, /setSelectedPlate/);
-  assert.match(hookSource, /handleCheckOut = async \(sessionId\)/);
-  assert.match(serviceSource, /requestSessionCheckout\(api, sessionId\)/);
-  assert.doesNotMatch(serviceSource, /post\("\/parking\/check-out"/);
+test("missing confirmation cannot write; server errors reach the dialog unchanged", async () => {
+  let writes = 0;
+  const conflict = { response: { status: 409, data: { detail: "Phí đã thay đổi" } } };
+  const client = { async put() { writes += 1; throw conflict; } };
+  await assert.rejects(requestSessionCheckout(client, "A"), /xác nhận/i);
+  await assert.rejects(requestSessionCheckout(client, "A", { quote_token: "Q", payment_confirmed: false, payment_method: "cash" }), /xác nhận/i);
+  assert.equal(writes, 0);
+  await assert.rejects(requestSessionCheckout(client, "A", { quote_token: "Q", payment_confirmed: true, payment_method: null }), error => error === conflict);
+  assert.equal(writes, 1);
 });
