@@ -1,12 +1,12 @@
 # ParkingAI — release gate vòng 3, 08/09/2026
 
-**Nghiệm thu ba mục sửa: BLOCKED** ở lượt tạo kết quả Gemini tiếp theo do auto-review yêu cầu xác nhận cụ thể, dù người dùng đã trả lời “cho phép”. Bản `0b8c54c15d940face4ca30b2dfb4b6cc3509b9ad` đã phát hành, CI34268240778/CD34269857506 đạt; backup/restore37 bảng và SHA/ready/CORS/bundle đúng.62 API readonly/18 UI đạt. Đã sửa diễn giải tổng giờ của tuần, preflight model thật đạt; chưa dùng thay UAT ghi kết quả trên website. [Biên bản](CORE_AI_COMPLETION.md).
+**Nghiệm thu ba mục sửa: READY cho website đồ án**, ứng dụng `0b8c54c15d940face4ca30b2dfb4b6cc3509b9ad`. Ba nhóm Gemini thật đã được đọc/đối chiếu, gồm kỳ rỗng và nút sinh trên UI; Báo cáo/AI đúng quyền và lọc ngày đạt. Đã sửa lỗi diễn giải tổng giờ của tuần từ bằng chứng live. [CI 34268240778](https://github.com/lam1826/ParkingAI/actions/runs/34268240778) và [CD 34269857506](https://github.com/lam1826/ParkingAI/actions/runs/34269857506), backup/restore 37 bảng, đúng SHA/bundle/ready/CORS và recovery point đạt. [Biên bản](CORE_AI_COMPLETION.md).
 
-Backlog 19 ticket: 13 DONE, 4 IN_PROGRESS, 1 OPEN/FUTURE, 1 DEFERRED_BY_USER. PARK-217/218/219 đang theo dõi phần còn lại; chưa kết luận đủ toàn bộ đề gốc hoặc sẵn sàng vận hành bãi thật.
+Backlog 19 ticket: 14 DONE, 3 IN_PROGRESS, 1 OPEN/FUTURE, 1 DEFERRED_BY_USER. PARK-217 DONE; PARK-218 còn cấu hình loại xe/bảng giá của manager, PARK-219 còn UAT/hồ sơ toàn đề, PARK-209 còn điện thoại/ảnh đại diện. Chưa kết luận đủ toàn bộ đề gốc; vận hành bãi thật vẫn NOT READY.
 
 **Các kiểm tra phát hành trước vẫn hợp lệ trong phạm vi đã ghi:** ứng dụng `3afc56c` đã triển khai và qua kiểm thử demo vận hành/OCR; trạng thái ready của API và kết quả CI/CD không bị đổi thành thất bại. Tuy nhiên, các kết quả này chưa đủ kết luận đạt đề gốc. Phạm vi nộp là một bãi; QR/camera là phần bổ sung, ba luồng AI phân tích và nghiệp vụ quản lý là phần bắt buộc. Vận hành bãi thật vẫn NOT READY.
 
-## Bản tối ưu từ hệ thống AI tham khảo — hiện tại
+## Lịch sử bản tối ưu từ hệ thống AI tham khảo
 
 Đã tham khảo bảy hệ thống/dự án, sửa ba vấn đề có ca tái hiện: availability N+1, đọc BLOB thừa trong danh sách ảnh và đảo thứ tự chữ OCR. Không đổi schema, model, cấu hình Fly hoặc phạm vi một bãi. Bằng chứng nguồn, phép đo trước/sau và giới hạn: [SINGLE_SITE_OPTIMIZATION.md](SINGLE_SITE_OPTIMIZATION.md).
 

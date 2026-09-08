@@ -1,22 +1,6 @@
 # Hoàn thiện báo cáo, Gemini và tra cứu ngày cho một bãi
 
-Phạm vi: ba mục sửa theo đề gốc. Đã phát hành `0b8c54c15d940face4ca30b2dfb4b6cc3509b9ad`, gồm chỉnh prompt sau khi đọc kết quả Gemini thật. Báo cáo/AI đúng quyền và lọc ngày đã kiểm trên website. **Gate nghiệm thu đầy đủ: BLOCKED** bởi bộ duyệt tự động đối với lần ghi kết quả AI tiếp theo; người dùng đã cho phép nhưng bộ duyệt yêu cầu xác nhận cụ thể hơn. Chi tiết hiện tại ngay bên dưới, các mốc trước được giữ làm lịch sử.
-
-## Cập nhật sau xác nhận và bản chỉnh prompt — 09/09/2026
-
-Người dùng đã trả lời “cho phép” cho câu hỏi gửi thống kê tổng hợp bãi demo tới Gemini và lưu kết quả. Sau xác nhận, thử lại cùng UUID đã thành công: nhân sự 22,843 giây, kỳ rỗng 34,312 giây; API đạt111 kiểm tra. Tuy nhiên, đọc nội dung nhân sự phát hiện model gọi40 lượt cộng dồn theo cùng giờ trong tuần là “40 lượt/giờ”, đồng thời đề xuất bỏ trực khi0 lượt vào dù thiếu phân bố xe ra. Không coi HTTP201 là đạt chất lượng nội dung.
-
-Bản `0b8c54c15d940face4ca30b2dfb4b6cc3509b9ad` bổ sung định nghĩa tổng cộng dồn theo giờ trong toàn kỳ, không suy định biên từ tổng tuần và không suy0 xe ra từ0 xe vào. Test hợp đồng prompt từng RED; sau sửa99 test AI/quyền/đầu vào đạt, sáu kết hợp kind/period được kiểm lại. Preflight Gemini thật với snapshot demo đã được phép đã trả đúng161 lượt vào/160 lượt ra,17:00 có40 lượt cộng dồn tuần; nêu cần đo xe ra/năng suất trước khi chốt số người. Preflight không ghi lịch sử production và không thay bằng chứng thao tác website.
-
-[CI34268240778](https://github.com/lam1826/ParkingAI/actions/runs/34268240778) và [CD34269857506](https://github.com/lam1826/ParkingAI/actions/runs/34269857506) thành công. Linux1253 pass/22 skip; PostgreSQL16:18 pass; frontend142/lint/build; Windows191 pass/1 skip; OCR memory gate đạt. API đúng SHA,ready200,CORS và bundle `index-DFzXDObx.js` khớp. **Trên bản mới:62 kiểm tra API chỉ đọc và18 kiểm tra giao diện đạt**, không lỗi JavaScript/ghi nghiệp vụ. Ảnh viewport đã xem; không phải điện thoại vật lý.
-
-Backup mới trước chỉnh prompt: release038d6c9,revision20260908_03,1.903.576 bytes,SHA256 `e3ea0160413d4cbf58c525cee0627f38e0d434e490ab42385a7710176d0ca9cb`. Đã phục hồi37 bảng trên PostgreSQL17.11 riêng, khớp counts và hash sau migration no-op. Cluster Temp cũ thiếu pg_notify được giữ nguyên; tạo cluster mới để phục hồi và dừng sau kiểm thử. CD kiểm recovery point Supabase hoàn tất2026-09-08T16:54:37.981000+00:00. Không đổi schema/UI/model/Fly; rollback prompt về038d6c9 giữ nguyên dữ liệu.
-
-**Gate hiện tại: BLOCKED cho nghiệm thu đầy đủ sau chỉnh prompt.** Bộ duyệt tự động chặn lần gọi UAT mới dù đã có xác nhận. Đã trích hội thoại gốc: câu hỏi lúc17:24:37Z nêu Gemini và lưu kết quả, câu trả lời “cho phép” lúc19:12:09Z. Lần thử lại sau đối chiếu vẫn bị từ chối, lý do yêu cầu câu xác nhận nêu rõ payload/đích/side effect. Không đổi công cụ/endpoint để vượt chặn. Đã hỏi xác nhận cụ thể cho tối đa6 kết quả mới (5 API,1 UI), chỉ thống kê demo bãi2, không biển số/thông tin khách. Chưa có kết quả gọi mới trên bản0b8c54c.
-
-Còn thực hiện sau khi được duyệt: chạy `online_core_uat.py` (đã ghim SHA mới, UUID mới cho prompt thay đổi; các UUID cũ được giữ riêng), đọc năm kết quả, rồi `online_core_browser.cjs` sinh một báo cáo qua nút UI. Script có lưu kết quả để tránh sinh lặp khi tiếp tục. Finalizer READY chỉ chạy khi có bằng chứng đủ, không dùng preflight hay test mock thay UAT này. PARK-217 giữIN_PROGRESS; PARK-218 đã xong menu/lọc ngày nhưng còn loại xe/bảng giá manager ngoài ba mục sửa; PARK-219 còn UAT/hồ sơ toàn đề.
-
-Artifact tại `backend/artifacts/core-completion/` ngoài Git: `online-core-before-unit-fix.json`, `preflight-units-result.json`, `units-release-final.json`, `units-restore-evidence.json`, hai kết quả readonly và bằng chứng xác nhận trongprivate. Lỗi503 đầu và kết quả diễn giải sai được giữ để truy vết, không sửa lịch sử cho thành kết quả đạt. Không tăng tài nguyên hoặc thay key.
+Phạm vi: ba khoảng thiếu người dùng yêu cầu sửa sau lần đối chiếu đề gốc ngày 08/09/2026. **Release gate: READY cho ba mục sửa trên website trình diễn**, sau khi kiểm Gemini thật, quyền Báo cáo/AI và tra cứu ngày. Ứng dụng hiện tại `0b8c54c15d940face4ca30b2dfb4b6cc3509b9ad`. Không dùng kết luận này thay nghiệm thu toàn bộ đồ án hoặc vận hành bãi thật.
 
 ## Hành vi và quyền
 
@@ -59,23 +43,33 @@ Public-only dump không chứa định nghĩa managed extension. Đích phục h
 
 Revision 20260908_03 chỉ thêm bảng lịch sử. Nếu phải quay về app trước, rollback frontend tương ứng, tắt AI nếu cần và đưa marker về 20260908_02 bằng migration downgrade 03; migration giữ bảng và mọi kết quả. Triển khai image/SHA trước rồi kiểm readiness. Re-upgrade xác minh bảng được giữ. Không dùng migration tài chính cũ để xóa cột hay chứng từ.
 
-Gemini hiện đã bật (`AI_ENABLED=true`) bằng model hiện có; không in hoặc thay key qua chat. Defaults phát triển/test vẫn fail-closed khi AI tắt. QR mô phỏng, 1 GB Fly và model OCR giữ nguyên.
+Gemini đã bật bằng cấu hình hiện có trên website; key không thay đổi và không đưa vào chat/Git. Người dùng đã cho phép gửi thống kê tổng hợp bãi demo tới Gemini và lưu kết quả. Defaults phát triển/test vẫn fail-closed khi AI tắt. QR mô phỏng, 1 GB Fly và model OCR giữ nguyên.
 
 
-## Lịch sử nghiệm thu bản038d6c9 trước xác nhận tiếp tục
+## Nghiệm thu website ngày 09/09/2026
 
-Trạng thái bên dưới là mốc trước câu trả lời “cho phép”; cập nhật hiện tại nằm ở đầu tài liệu.
+Ứng dụng `0b8c54c15d940face4ca30b2dfb4b6cc3509b9ad` đã qua [CI 34268240778](https://github.com/lam1826/ParkingAI/actions/runs/34268240778) và [CD 34269857506](https://github.com/lam1826/ParkingAI/actions/runs/34269857506). Linux 1253 pass/22 skip; PostgreSQL 16: 18 pass; frontend 142 pass/lint/build; Windows 191 pass/1 skip; Docker/OCR memory gate đạt. API đúng SHA, readiness 200, CORS và checksum frontend khớp. Không đổi schema, UI hoặc model trong bản chỉnh prompt cuối.
 
-CI [34253340017](https://github.com/lam1826/ParkingAI/actions/runs/34253340017) và CD [34255366293](https://github.com/lam1826/ParkingAI/actions/runs/34255366293) thành công. Linux: 1253 pass/22 skip; PostgreSQL 16: 18 pass; frontend 142 pass/lint/build; Windows 191 pass/1 skip; Docker/OCR memory gate đạt. Supabase recovery gate xác nhận backup hoàn tất `2026-09-08T16:54:37.981000+00:00`. API đúng SHA, `/ready` 200, CORS và checksum bundle `index-DFzXDObx.js` khớp.
+API online đạt **111 kiểm tra**, gồm năm đầu ra Gemini thật: báo cáo ngày, báo cáo tuần, hỏi đáp của nhân viên, nhân sự và kỳ rỗng. Kiểm quyền quản lý/nhân viên/khách, cách ly dữ liệu, lịch sử của staff, retry cùng UUID và ngày đảo ngược đều đạt. Lưu lượng và histogram được so với session phân trang; doanh thu so với sổ thu. Cùng UUID trả cùng ID/nội dung, không tạo thêm bản ghi lịch sử. Thời gian của lượt chạy sau bản sửa (replay nếu có): daily: 17.188 giây, weekly: 27.781 giây, question: 10.656 giây, staffing: 15.797 giây, empty: 11.047 giây; đây không phải p95 hoặc kiểm thử tải.
 
-API online chỉ đọc đã đạt62 kiểm tra: đăng nhập, menu capability, quyền của quản lý/nhân viên/khách, cách ly bãi, báo cáo ngày/tuần, lọc ngày và từ chối khoảng đảo ngược. Lượt vào và histogram giờ được so với danh sách session có phân trang; doanh thu so với sổ thu. Giao diện online đạt 18 kiểm tra; đã đăng nhập ba vai trò, xem báo cáo, lịch sử AI thật và lọc ngày; không ghi tiền hoặc lượt xe. Log/ảnh ở `backend/artifacts/core-completion/`, ngoài Git.
+Giao diện online đạt **21 kiểm tra**: đăng nhập ba vai trò, mở Báo cáo/AI, đổi ngày/kỳ, xem lịch sử, một lần bấm sinh báo cáo gọi Gemini thật và tra cứu khoảng ngày rỗng. Không lỗi JavaScript hoặc ghi nghiệp vụ ngoài đăng nhập/lịch sử AI. Đã xem ảnh viewport 1440/390; không tính là thử điện thoại vật lý.
 
-Gemini `gemini-3.6-flash` đã bật bằng cấu hình có sẵn. **Báo cáo ngày, báo cáo tuần và hỏi đáp của staff đã gọi model thật thành công**, nội dung được đọc và đối chiếu snapshot. Dữ liệu đúng bãi DEMO đã seed; doanh thu thực bằng 0, QR mô phỏng được tách riêng; không có biển số, tên khách hoặc credentials trong ngữ cảnh AI. Model phân biệt hiện trạng chỗ trống với kỳ lịch sử. Ba kết quả được lưu, replay cùng UUID trả cùng ID/nội dung. Thời gian lần đầu lần lượt37,359 /44,797 /8,656 giây. Readiness trong lúc AI chạy vẫn 200 (ba mẫu 0,172–0,313 giây; không phải kiểm thử tải).
+Nội dung năm kết quả API và kết quả mới qua UI đã được đọc, đối chiếu với snapshot server. Báo cáo ngày có 3 lượt vào/2 lượt ra; kỳ 7 ngày có 161 lượt vào/160 lượt ra, khung 17:00 có 40 lượt vào cộng dồn toàn kỳ. Câu hỏi xác định đúng cao điểm/chỗ trống. Nhân sự chỉ đề xuất phân bổ và nêu dữ liệu còn thiếu trước khi chốt định biên. Kỳ rỗng nêu chưa đủ dữ liệu để xác định cao điểm; hiện trạng chỗ trống được tách khỏi kỳ lịch sử bằng thời điểm `as_of`. Doanh thu thật bằng 0; tiền QR demo tách riêng. Không có biển số, thông tin khách hoặc credentials trong ngữ cảnh gửi model.
 
-**Chưa nghiệm thu xong gợi ý nhân sự:** lần gọi đầu trả 503 sau khoảng37 giây, không có kết quả được lưu. Lỗi được giữ trong `online-core-attempt1-503.json` và log request `core-uat-2ea4475f70de4571b8611c30a066931e`. Chưa đủ bằng chứng phân biệt quota, mạng hay nhà cung cấp tạm thời không sẵn sàng; không coi nhánh này đã đạt.
+### Lỗi đã thấy và xử lý
 
-Bộ duyệt tự động ban đầu chặn việc gửi dữ liệu production tới Gemini. Sau62 kiểm tra chứng minh namespace demo/không PII/tiền thật 0, một lượt được duyệt và sinh ba kết quả trên. Tuy nhiên, lượt thử lại nhân sự tiếp tục bị từ chối với yêu cầu xác nhận riêng việc gửi thống kê demo sang Gemini và lưu lịch sử. Đã hỏi người dùng; chưa có xác nhận bổ sung tại thời điểm chốt biên bản. Không đổi endpoint, model hoặc chạy gián tiếp để vượt qua chặn.
+Lần đầu nhân sự trả HTTP503 sau khoảng 37 giây; retry sau khi người dùng xác nhận đã thành công bằng cùng UUID, không tạo trùng. Chưa đủ bằng chứng xác định nguyên nhân 503 cụ thể; không gọi đây là lỗi quota đã được chứng minh. API phản hồi lỗi rõ ràng, thống kê vẫn dùng được.
 
-Phần còn lại đã chuẩn bị: replay cùng UUID để thử nhân sự, báo cáo kỳ rỗng và một lần sinh qua nút giao diện; rồi kiểm lịch sử staff/manager. Chỉ thực hiện sau xác nhận. Do đó PARK-217 còn IN_PROGRESS. PARK-218 đã xong menu/báo cáo/lọc ngày, còn cấu hình loại xe/bảng giá cho manager ngoài ba mục sửa. PARK-219 tiếp tục theo dõi nghiệm thu/hồ sơ toàn đề. Điện thoại vật lý và vận hành bãi thật chưa được kết luận đạt.
+Khi đọc kết quả retry, phát hiện Gemini diễn giải 40 lượt cộng dồn cùng giờ trong tuần thành “40 lượt/giờ” và đề nghị bỏ trực làn khi không có xe vào, dù thiếu phân bố xe ra. Bản `0b8c54c` bổ sung định nghĩa đơn vị cùng giới hạn suy luận nhân sự vào prompt. Test prompt từng RED, sau sửa 99 test AI/quyền/đầu vào đạt; sáu kết hợp ngày/tuần và ba loại phân tích giữ hợp đồng này. Preflight Gemini và nghiệm thu lại trên website đạt. Đây là bằng chứng cho các mẫu đã kiểm, không cam kết mọi câu trả lời tương lai luôn đúng.
 
-Minh chứng SDLC: yêu cầu sửa ba điểm là prompt thực tế của task; 14 ca RED xác nhận route/lọc ngày thiếu,17 ca tập trung GREEN sau sửa; prompt thực thi ở `AIService.generate_scoped_analysis`. Unit test mock và kết quả Gemini thật tách riêng. Không sửa AGENTS/skills/hooks hoặc cấu hình điều phối agent nên không chạy regression suite agent mới theo sdlc-eval; test sản phẩm không được báo thành agent eval.
+Auto-review yêu cầu xác nhận riêng việc gửi thống kê demo/lưu lịch sử và vẫn chặn sau câu trả lời “cho phép” ban đầu, kể cả khi đã đối chiếu hội thoại gốc. Người dùng sau đó xác nhận cụ thể gửi thống kê bãi demo ID2 tới Google Gemini và lưu tối đa6 kết quả mới (5 API,1 UI); chỉ tiếp tục trong phạm vi này sau khi được duyệt. Kết quả thất bại/lỗi diễn giải cũ được giữ nguyên trong artifact riêng; không sửa nội dung lịch sử để làm thành kết quả đạt.
+
+### Backup và bàn giao
+
+Trước bản chỉnh prompt, đã backup lại release `038d6c9`, revision `20260908_03`: 1.903.576 bytes, SHA256 `e3ea0160413d4cbf58c525cee0627f38e0d434e490ab42385a7710176d0ca9cb`. Phục hồi 37 bảng vào PostgreSQL 17.11 riêng, khớp counts và hash dữ liệu sau migration no-op. Cluster Temp cũ thiếu thư mục nên đã giữ nguyên và tạo cluster mới; chỉ bản phục hồi mới được tính đạt. Cluster thử đã dừng. CD tiếp tục kiểm Supabase recovery point. Bản này chỉ chỉnh prompt: có thể rollback ứng dụng về `038d6c9` mà giữ nguyên schema/lịch sử.
+
+Tại website: quản lý/nhân viên chọn **Báo cáo** để xem số liệu; chọn **AI báo cáo & hỏi đáp**, ngày/kỳ rồi sinh báo cáo, hỏi hoặc gợi ý nhân sự. Khi provider báo lỗi, chờ rồi thử lại trong màn hình; cùng mã yêu cầu tránh trùng kết quả đã lưu. Tra cứu lượt gửi dùng **Ngày vào từ/đến → Tìm lượt gửi**; hai mốc tính trọn ngày Việt Nam.
+
+PARK-217 DONE. PARK-218 đã xong menu/báo cáo/lọc ngày; còn cấu hình loại xe/bảng giá cho manager ngoài ba mục sửa. PARK-219 giữ IN_PROGRESS cho UAT/hồ sơ toàn đề. Điện thoại vật lý, tập ảnh OCR đại diện và vận hành bãi thật vẫn chưa được kết luận đạt. Credentials, backup, prompt/output thô và ảnh màn hình ở `backend/artifacts/core-completion/` hoặc thư mục private hiện có, ngoài Git; hồ sơ Word vẫn chỉ cục bộ.
+
+Minh chứng SDLC: yêu cầu sửa ba điểm là prompt thực tế của task; 14 ca RED ở đợt bổ sung API/lọc ngày, 17 ca tập trung GREEN; lỗi diễn giải được phát hiện từ model thật và sửa tại `AIService.generate_scoped_analysis`. Mock và live được ghi riêng. Không đổi AGENTS/skills/hooks hay cấu hình điều phối nên không phát sinh suite agent theo sdlc-eval; không gọi test sản phẩm là agent eval.

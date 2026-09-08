@@ -1,6 +1,6 @@
 # Phạm vi nộp đồ án theo đề bài gốc
 
-Cập nhật09/09/2026: ứng dụng `0b8c54c` đã phát hành; mốc đối chiếu ban đầu `3afc56c`. Yêu cầu người dùng nhắc lại trong cuộc trao đổi là căn cứ ưu tiên, cao hơn các đề xuất mở rộng trước đó.
+Cập nhật 09/09/2026: ứng dụng `0b8c54c` đã phát hành và nghiệm thu ba mục sửa; mốc đối chiếu ban đầu `3afc56c`. Yêu cầu người dùng nhắc lại là căn cứ ưu tiên cao hơn các đề xuất mở rộng trước đó.
 
 ## 1. Mục tiêu bắt buộc
 
@@ -8,7 +8,7 @@ Một bãi đỗ xe gồm nhiều khu vực và vị trí, phục vụ hai vai t
 
 AI cốt lõi là **sinh báo cáo lưu lượng ngày/tuần, hỏi đáp dữ liệu bãi xe và gợi ý bố trí nhân sự theo cao điểm**. Backend tổng hợp số liệu từ CSDL; AI chỉ diễn giải dữ liệu được cung cấp. Phải phân biệt dữ liệu demo, thống kê thực, giả định về năng suất nhân viên và dữ liệu không đủ để kết luận.
 
-Giữ FastAPI/React, SQLite cho chạy cục bộ và PostgreSQL trên website. Dùng tích hợp AI Engine theo đề, không yêu cầu thay kiến trúc, huấn luyện model mới hoặc tăng gói Fly. Gemini đã bật theo yêu cầu sửa mới; báo cáo ngày/tuần và hỏi đáp đạt model thật. Nhân sự đã retry thành công sau xác nhận; phát hiện lỗi đơn vị giờ, đã sửa prompt/preflight. UAT tạo kết quả sau chỉnh prompt còn bị auto-review yêu cầu xác nhận cụ thể.
+Giữ FastAPI/React, SQLite cục bộ và PostgreSQL trên website. Gemini hiện có đã bật; ba nhóm AI đã kiểm model thật trên dữ liệu tổng hợp demo được người dùng cho phép gửi. Không yêu cầu thay kiến trúc, huấn luyện model mới hoặc tăng gói Fly.
 
 ## 2. Ma trận yêu cầu – mã – kiểm thử – khoảng thiếu
 
@@ -26,21 +26,21 @@ Giữ FastAPI/React, SQLite cho chạy cục bộ và PostgreSQL trên website. 
 | Lưu lượng, doanh thu, khung giờ cao điểm | `backend/services/report_service.py`, `backend/routers/report.py`, `backend/expansion/site_finance.py`; `tests/test_report_period_consistency.py` | Đã mở `/reports` theo capability/quyền bãi, thống kê ngày/7 ngày và tiền demo tách riêng; đối chiếu online với session/sổ thu đạt |
 | AI báo cáo ngày/tuần | `AIService.generate_daily_report`, `generate_weekly_report`; `backend/routers/ai_report.py`; `tests/test_ai.py`, `tests/test_ai_integrity.py` | Đã nghiệm thu ngày/tuần bằng Gemini thật qua API v2 theo bãi; legacy giữ guard. Service mới: generate_scoped_analysis(kind=report) |
 | AI hỏi đáp cao điểm/chỗ trống | `AIService.answer_question`, `ask_dashboard_question`; `tests/test_ai.py`, `tests/test_ai_integrity.py` | Đã mở menu và API đúng quyền; staff hỏi Gemini thật, câu trả lời khớp số lượt/cao điểm/chỗ trống có thời điểm riêng |
-| AI gợi ý nhân sự | `AIService.suggest_staff_schedule`; `tests/test_ai.py`, `tests/test_ai_provider_fail_closed.py` | kind=staff đã gọi Gemini thật; lỗi diễn giải giờ được sửa tại0b8c54c và preflight đạt. Còn UAT tạo kết quả sau chỉnh prompt; staff-plan quy tắc không thay phần này |
+| AI gợi ý nhân sự | `AIService.suggest_staff_schedule`; `tests/test_ai.py`, `tests/test_ai_provider_fail_closed.py` | Đã nghiệm thu kind=staff bằng Gemini thật; phân biệt tổng cùng giờ của cả tuần, dữ liệu xe ra/năng suất còn thiếu. staff-plan quy tắc không thay phần này |
 | Test cho vào/ra, phí, chỗ trống, AI | Các file test ở trên; `tests/conftest.py` chặn provider thật trong pytest | Giữ kiểm thử tự động; ghi riêng phiên chạy model thật, không gọi mock là kết quả live |
 | AI trong SDLC: KT1/KT2/KT3/cuối kỳ | `docs/AI_SDLC.md`, `docs/EXPANSION_SDLC.md`, code/test/commit | Minh chứng chính phải bám nghiệp vụ và AI báo cáo. Phân biệt prompt tái lập với bản ghi prompt đã thực sự sử dụng; không tạo lại lịch sử như bằng chứng gốc |
 
-## 3. Kết quả sửa và phần còn chờ
+## 3. Kết quả ba mục sửa
 
-Menu Báo cáo/AI, API đúng quyền và lọc ngày đã phát hành/kiểm thử online. Báo cáo ngày/tuần và hỏi đáp đã có kết quả Gemini thật được đối chiếu. Không xóa bãi cũ hoặc bỏ guard legacy. [Biên bản](CORE_AI_COMPLETION.md) phân biệt rõ phát hành thành công với nghiệm thu AI chưa hoàn tất.
+**READY cho ba mục người dùng yêu cầu sửa:** Gemini thật cho báo cáo ngày/tuần, hỏi đáp và nhân sự; Báo cáo/AI đúng quyền quản lý–nhân viên; lọc ngày vào trong lịch sử. Đã kiểm kỳ rỗng, retry, lịch sử và một lần sinh qua giao diện. Đọc kết quả live phát hiện lỗi đơn vị giờ, đã sửa prompt rồi nghiệm thu lại. [Biên bản](CORE_AI_COMPLETION.md) có bằng chứng và giới hạn.
 
-Người dùng đã cho phép; nhân sự/kỳ rỗng thành công, nhưng đọc nội dung phát hiện lỗi diễn giải tổng tuần thành lượt/giờ. Bản0b8c54c sửa prompt và preflight đạt;62 API readonly/18 UI trên bản mới đạt. Bộ duyệt vẫn chặn lượt tạo kết quả tiếp theo và yêu cầu xác nhận cụ thể hơn. **Nghiệm thu trọn ba mục sửa: BLOCKED.** Nghiệm thu toàn bộ đề gốc và vận hành bãi thật chưa được chốt.
+Không xóa bãi cũ, không bỏ guard legacy. Nghiệm thu toàn bộ đề gốc và vận hành bãi thật chưa được chốt.
 
 ## 4. Công việc còn theo dõi
 
-1. PARK-217 IN_PROGRESS: nghiệm thu lại năm đầu ra/nút AI trên bản prompt0b8c54c sau khi auto-review cho phép; giữ kết quả và UUID để tránh trùng.
-2. PARK-218 IN_PROGRESS: menu/báo cáo/lọc ngày đã xong; còn luồng manager cấu hình loại xe/bảng giá ngoài phạm vi ba mục sửa.
-3. PARK-219 IN_PROGRESS: có thêm bằng chứng thật; chưa kết luận hồ sơ/nguồn minh chứng và toàn bộ kịch bản đề gốc đã hoàn tất.
+1. PARK-217 DONE: ba nhóm Gemini thật, kỳ rỗng và nút sinh AI đã đạt trong phạm vi các ca đã kiểm.
+2. PARK-218 IN_PROGRESS: menu/báo cáo/lọc ngày đã xong; còn luồng manager cấu hình loại xe/bảng giá ngoài ba mục sửa.
+3. PARK-219 IN_PROGRESS: đã bổ sung bằng chứng thật; UAT/hồ sơ toàn đề còn mở.
 
 ## 5. Phần bổ sung và phần không phát triển tiếp
 

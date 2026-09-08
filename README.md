@@ -6,7 +6,7 @@ Hệ thống quản lý bãi đỗ xe dùng FastAPI, React, SQLite và Gemini. H
 
 Bản nộp tập trung vào **một bãi**, hai vai trò nghiệp vụ quản lý/nhân viên, quản lý khu vực–vị trí–xe–vé, vào/ra, phí, chỗ trống và thống kê. **AI cốt lõi:** báo cáo lưu lượng ngày/tuần, hỏi đáp dữ liệu bãi xe và gợi ý nhân sự theo cao điểm; có test và minh chứng prompt/code/test trong SDLC.
 
-[Ma trận yêu cầu](docs/ORIGINAL_REQUIREMENTS.md) là căn cứ phạm vi. Bản `0b8c54c` đã lên website: Báo cáo/AI đúng quyền và lọc ngày đạt; Gemini đã bật, có kết quả thật. Đã sửa diễn giải tổng giờ của tuần từ mẫu nhân sự; preflight đạt, lần tạo kết quả mới trên website còn bị bộ duyệt tự động yêu cầu xác nhận cụ thể. [Biên bản và hướng dẫn](docs/CORE_AI_COMPLETION.md) ghi rõ phạm vi đã đạt và phần còn chờ.
+[Ma trận yêu cầu](docs/ORIGINAL_REQUIREMENTS.md) là căn cứ phạm vi. Bản `0b8c54c` đã lên website: Báo cáo/AI đúng quyền, lọc ngày vào từ/đến và ba nhóm AI bằng Gemini thật đã được nghiệm thu, gồm kỳ rỗng và thao tác sinh báo cáo trên giao diện. Xem [biên bản và hướng dẫn](docs/CORE_AI_COMPLETION.md). Các phần còn lại của toàn đề được theo dõi riêng, chưa công bố hoàn thành 100%.
 
 Camera YOLO/OCR, portal khách, QR mô phỏng, đặt chỗ và waitlist là phần bổ sung đã có; không thay ba chức năng AI phân tích. Khả năng nhiều bãi trong mã nền không thuộc phạm vi nộp bài. Giữ [hướng dẫn vận hành website](docs/ROUND3_OPERATIONS.md), [nghiệm thu camera](docs/PHONE_VN_ACCEPTANCE.md), [nghiên cứu tham khảo](docs/RESEARCH_SINGLE_SITE_AI_PARKING.md) và [tối ưu đã phát hành](docs/SINGLE_SITE_OPTIMIZATION.md) làm tài liệu hỗ trợ.
 

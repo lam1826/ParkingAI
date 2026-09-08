@@ -1,6 +1,6 @@
 # ParkingAI — vận hành bản trình diễn một bãi
 
-Phạm vi hiện tại: **một bãi để nộp đồ án**, FastAPI/React trên website hiện có, bãi DEMO A (ID2). QR mô phỏng; Gemini đã bật. Bản `0b8c54c` có Báo cáo/AI đúng quyền và lọc ngày; prompt đã chỉnh đơn vị giờ sau khi đọc kết quả thật, còn nghiệm thu tạo kết quả mới do auto-review. Xem [hướng dẫn và bằng chứng](CORE_AI_COMPLETION.md). Lịch sử seed có nhãn `demo://synthetic-history/<namespace>`, phí0 và không sinh khoản thu thật.
+Phạm vi hiện tại: **một bãi để nộp đồ án**, FastAPI/React modular monolith, trình diễn trên website hiện tại. Giao diện dùng bãi DEMO A (ID2), ẩn đổi/tạo bãi. QR mô phỏng, không chuyển tiền; Gemini đã bật và nghiệm thu ba nhóm phân tích ở bản `0b8c54c`. Quản lý/nhân viên có Báo cáo/AI và tra cứu ngày: [hướng dẫn](CORE_AI_COMPLETION.md). Lịch sử seed có nhãn `demo://synthetic-history/<namespace>`, phí bằng 0 và không sinh khoản thu thật.
 
 Bốn tài khoản và kịch bản nộp bài nằm tại `backend/artifacts/phone-vn-acceptance/private/TAI_KHOAN_DO_AN_MOT_BAI.md` ngoài Git. Các lệnh seed hai bãi bên dưới là hồ sơ triển khai trước khi thu gọn phạm vi; không cần chạy lại hoặc xóa dữ liệu để trình diễn một bãi. Bộ chạy SQLite cục bộ vẫn phục vụ cấu hình demo tổng quát; cấu hình `SINGLE_SITE_ID: 2` ở đây áp dụng cho website có ID bãi đã kiểm chứng.
 

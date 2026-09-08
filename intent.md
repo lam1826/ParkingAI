@@ -8,11 +8,11 @@ Ngày 08/09/2026, người dùng yêu cầu bám sát đề **Hệ thống quả
 
 **Điều kiện thành công:** từng yêu cầu có đường thao tác đúng quyền trên bản nộp; dữ liệu AI do backend tổng hợp đúng bãi/kỳ, không tự tạo số liệu; nghiệm thu AI Engine thật phải ghi riêng với test mock. Camera nhận diện biển không thay phần AI báo cáo. Không lấy tổng số test hoặc số tính năng mở rộng để công bố phần trăm hoàn thành đề bài.
 
-**Ràng buộc:** giữ FastAPI/React, SQLite/PostgreSQL, một bãi và dữ liệu hiện có; không nới guard, không tăng gói có phí. QR mô phỏng; credentials/model/ảnh/hồ sơ Word ngoài Git. Người dùng đã cho phép bật Gemini, gửi thống kê tổng hợp demo và lưu kết quả. Bộ duyệt tự động vẫn yêu cầu xác nhận cụ thể cho các lượt UAT tiếp theo; không chạy vòng qua chặn.
+**Ràng buộc:** giữ FastAPI/React, SQLite/PostgreSQL và cấu trúc hiện tại; không xóa dữ liệu đang có, không nới guard để mở menu. QR chỉ mô phỏng, không tăng tài nguyên có phí. Credentials, model, ảnh và hồ sơ báo cáo Word ngoài Git. Người dùng cho phép bật Gemini hiện có, gửi thống kê tổng hợp bãi demo tới provider và lưu kết quả; không gửi biển số hoặc thông tin khách.
 
 **Không phải trọng tâm:** camera, portal khách, QR, đặt chỗ, waitlist và quản lý đội xe là phần bổ sung; giữ phần đã chạy nhưng không mở rộng trước khi hoàn tất yêu cầu bắt buộc. Điện thoại thật còn chờ người dùng; không để hạng mục tùy chọn này thay thế ưu tiên AI phân tích.
 
-**Trạng thái sau sửa:** bản `0b8c54c` đã phát hành, menu Báo cáo/AI và lọc ngày đạt. Nhân sự/kỳ rỗng đã gọi Gemini thật sau xác nhận; phát hiện lỗi diễn giải đơn vị giờ, sửa prompt và preflight lại đạt. Còn nghiệm thu tạo kết quả sau chỉnh prompt và nút AI trên website vì auto-review chặn. Chi tiết [CORE_AI_COMPLETION.md](docs/CORE_AI_COMPLETION.md). Loại xe/bảng giá manager và minh chứng toàn đề còn theo dõi riêng.
+**Trạng thái sau sửa:** bản `0b8c54c` đã phát hành và nghiệm thu đủ ba mục: menu Báo cáo/AI đúng quyền, lọc ngày và ba nhóm Gemini thật. Đã sửa diễn giải đơn vị giờ từ bằng chứng live, kiểm kỳ rỗng và nút sinh báo cáo. Chi tiết [CORE_AI_COMPLETION.md](docs/CORE_AI_COMPLETION.md). Cấu hình loại xe/bảng giá của manager và minh chứng toàn đề còn theo dõi riêng.
 
 **Căn cứ và công việc:** [docs/ORIGINAL_REQUIREMENTS.md](docs/ORIGINAL_REQUIREMENTS.md), PARK-217/218/219 và đầu `plan.md`. Những mục dưới đây là intent lịch sử vòng 3, không phải yêu cầu mở rộng hiện tại.
 

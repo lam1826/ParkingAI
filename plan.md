@@ -1,15 +1,17 @@
 # Plan
 
-## Đã phát hành0b8c54c; còn UAT Gemini bị auto-review chặn
+## Hoàn tất ba mục sửa trên website — 09/09/2026
 
-- [x] Báo cáo/AI theo quyền và lọc ngày một bãi đã phát hành,62 API readonly/18 UI trên bản mới đạt.
-- [x] Sau câu trả lời “cho phép”, nhân sự/kỳ rỗng retry thành công;111 API checks. Đọc kết quả phát hiện đơn vị tổng tuần bị gọi là lượt/giờ và suy luận bỏ trực từ0 xe vào.
-- [x] Sửa prompt/kiểm hợp đồng RED→GREEN,99 test AI/quyền và preflight Gemini đạt. Không sửa lịch sử kết quả sai cho thành đạt.
-- [x] Backup mới/restore37 bảng, CI34268240778/CD34269857506, đúng SHA/ready/CORS/bundle. Không đổi schema; rollback prompt về038d6c9 giữ dữ liệu.
-- [ ] Auto-review chặn lượt UAT mới, tiếp tục chặn sau khi đối chiếu nguyên văn câu hỏi/câu trả lời gốc. Đã hỏi xác nhận cụ thể cho tối đa6 kết quả mới:5 API,1 UI; chỉ thống kê demo bãi2 tới Gemini. Chưa có đầu ra mới sau bản0b8c54c.
-- [ ] Khi được duyệt: chạy online_core_uat.py, đọc nội dung, chạy online_core_browser.cjs, cập nhật provider-review rồi finalize_units_docs.py. Không chạy lại CI/deploy nếu không sửa code. PARK-217/218/219 giữ IN_PROGRESS theo phần còn lại.
+Người dùng đã cho phép bật Gemini, gửi thống kê tổng hợp demo tới provider và lưu kết quả. Bản hiện tại `0b8c54c15d940face4ca30b2dfb4b6cc3509b9ad`; [CI 34268240778](https://github.com/lam1826/ParkingAI/actions/runs/34268240778) và [CD 34269857506](https://github.com/lam1826/ParkingAI/actions/runs/34269857506) đạt. Release gate READY cho ba mục sửa, không phải toàn bộ đồ án.
 
-Chi tiết và bằng chứng: [CORE_AI_COMPLETION.md](docs/CORE_AI_COMPLETION.md). Ba mục chưa chốt READY vì thiếu UAT ghi kết quả mới; phát hành kỹ thuật đã thành công. Dữ liệu, khóa, ảnh và hồ sơ ngoài Git.
+- [x] Báo cáo/AI theo quyền quản lý–nhân viên một bãi; backend tổng hợp dữ liệu, guard legacy giữ nguyên.
+- [x] Tra cứu ngày vào từ/đến, trọn ngày Việt Nam, kết hợp biển/trạng thái/phân trang.
+- [x] Gemini thật: báo cáo ngày/tuần, hỏi đáp, nhân sự, kỳ rỗng; replay và lịch sử staff/manager đạt. API online 111 kiểm tra; UI 21 kiểm tra với một lần sinh thật.
+- [x] Phát hiện lỗi diễn giải 40 lượt cộng dồn tuần thành lượt/giờ, sửa prompt/kiểm giới hạn xe ra và định biên. Test RED→GREEN; preflight và live sau deploy đạt.
+- [x] Backup mới/restore 37 bảng; không đổi schema trong bản prompt. CI/CD, SHA/ready/CORS/bundle và recovery gate đạt.
+- [x] Cập nhật bằng chứng, hướng dẫn và ticket JSON/CSV; PARK-217 DONE, PARK-218/219 giữ phần còn lại.
+
+Chi tiết, lỗi đã gặp, thời gian đo và giới hạn: [CORE_AI_COMPLETION.md](docs/CORE_AI_COMPLETION.md). Rollback bản prompt về `038d6c9` giữ schema/lịch sử. Nếu rollback cả tính năng scoped, theo hướng dẫn migration 20260908_03 giữ dữ liệu. Hồ sơ, key, ảnh và artifact private ngoài Git.
 
 ## Mốc đối chiếu trước đợt sửa — đề bài gốc (08/09/2026)
 
