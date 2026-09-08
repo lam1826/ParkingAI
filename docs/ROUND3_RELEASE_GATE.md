@@ -1,8 +1,8 @@
 # ParkingAI — release gate vòng 3, 08/09/2026
 
-**Theo đề bài gốc: NOT READY cho nghiệm thu đầy đủ.** Người dùng nhắc lại phạm vi bắt buộc ngày 08/09/2026. Đối chiếu mã xác nhận menu Báo cáo/AI đang bị ẩn trong chế độ một bãi, các API legacy còn chặn tài khoản theo bãi, session v2 thiếu lọc khoảng thời gian và Gemini đang tắt. Có test AI mock không thay bằng chứng chạy ba luồng AI thật.
+**Nghiệm thu ba mục sửa: BLOCKED**, chờ xác nhận gửi thống kê demo tới Gemini để hoàn tất nhân sự/kỳ rỗng/nút AI sau một lỗi 503. Ứng dụng `038d6c9` đã lên website; CI/CD, backup/restore, SHA/bundle/ready/CORS, Báo cáo/AI đúng quyền và lọc ngày đều được kiểm chứng. Gemini ngày/tuần/hỏi đáp đã thành công. [Biên bản chi tiết](CORE_AI_COMPLETION.md).
 
-Chi tiết yêu cầu, nguồn bằng chứng và kịch bản nghiệm thu: [ORIGINAL_REQUIREMENTS.md](ORIGINAL_REQUIREMENTS.md). PARK-217/218/219 OPEN để hoàn thiện AI, luồng nghiệp vụ và minh chứng. Backlog sau điều chỉnh có 19 ticket: 13 DONE, 4 OPEN (gồm PARK-211 FUTURE), 1 IN_PROGRESS và 1 DEFERRED_BY_USER. Chưa thay mã ứng dụng hoặc bật provider trong lần đối chiếu này.
+Backlog 19 ticket: 13 DONE, 4 IN_PROGRESS, 1 OPEN/FUTURE, 1 DEFERRED_BY_USER. PARK-217/218/219 đang theo dõi phần còn lại; chưa kết luận đủ toàn bộ đề gốc hoặc sẵn sàng vận hành bãi thật.
 
 **Các kiểm tra phát hành trước vẫn hợp lệ trong phạm vi đã ghi:** ứng dụng `3afc56c` đã triển khai và qua kiểm thử demo vận hành/OCR; trạng thái ready của API và kết quả CI/CD không bị đổi thành thất bại. Tuy nhiên, các kết quả này chưa đủ kết luận đạt đề gốc. Phạm vi nộp là một bãi; QR/camera là phần bổ sung, ba luồng AI phân tích và nghiệp vụ quản lý là phần bắt buộc. Vận hành bãi thật vẫn NOT READY.
 
@@ -68,7 +68,7 @@ Sau khi CI/CD của bản sửa đạt, đã bật lại engine và thử API: c
 
 - Cloudflare beacon còn bị CSP chặn; người dùng đã yêu cầu để sau. Giữ nguyên CSP. PARK-210: `DEFERRED_BY_USER`.
 - Đã đo500 crop Việt Nam có nhãn publisher và pilot20 ảnh toàn xe; giới hạn nguồn/nhãn, kết quả detection/đúng toàn biển/tỷ lệ sửa ghi trong PHONE_VN_ACCEPTANCE.md. Chưa thử chụp trên điện thoại vật lý và chưa có bộ đánh giá đại diện cho bãi thực; viewport Chrome không thay cho thiết bị thật. PARK-209 còn IN_PROGRESS.
-- QR không chuyển tiền; Gemini tắt; OCR không điều khiển barie, tự nhận/trả xe hay thu tiền.
+- QR không chuyển tiền; Gemini đã bật ở bản ghi đầu tài liệu; OCR không điều khiển barie, tự nhận/trả xe hay thu tiền.
 - Không có kết quả tải lớn, video liên tục, độ bền dài hạn, SLA hay đối soát cổng ngân hàng. PARK-211 và các mục FUTURE.
 
 Tại mốc lịch sử này, không còn gate bắt buộc thất bại trong phạm vi trình diễn khi đó. Tại mốc trước bản tối ưu, backlog có13 ticket vòng3:10 DONE,1 FUTURE còn mở,1 IN_PROGRESS (PARK-209),1 Cloudflare hoãn theo người dùng. Các phần chưa có bằng chứng ở trên được giữ riêng, không gọi là đã hoàn thành cho bãi thật.

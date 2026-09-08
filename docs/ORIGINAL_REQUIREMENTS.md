@@ -1,6 +1,6 @@
 # Phạm vi nộp đồ án theo đề bài gốc
 
-Ngày đối chiếu: 08/09/2026. Mã ứng dụng đã kiểm tra: `3afc56c`; tài liệu trước điều chỉnh: `fd6de30`. Yêu cầu người dùng nhắc lại trong cuộc trao đổi là căn cứ ưu tiên, cao hơn các đề xuất mở rộng trước đó.
+Cập nhật09/09/2026: ứng dụng `038d6c9` đã phát hành; mốc đối chiếu ban đầu `3afc56c`. Yêu cầu người dùng nhắc lại trong cuộc trao đổi là căn cứ ưu tiên, cao hơn các đề xuất mở rộng trước đó.
 
 ## 1. Mục tiêu bắt buộc
 
@@ -8,7 +8,7 @@ Một bãi đỗ xe gồm nhiều khu vực và vị trí, phục vụ hai vai t
 
 AI cốt lõi là **sinh báo cáo lưu lượng ngày/tuần, hỏi đáp dữ liệu bãi xe và gợi ý bố trí nhân sự theo cao điểm**. Backend tổng hợp số liệu từ CSDL; AI chỉ diễn giải dữ liệu được cung cấp. Phải phân biệt dữ liệu demo, thống kê thực, giả định về năng suất nhân viên và dữ liệu không đủ để kết luận.
 
-Giữ FastAPI/React, SQLite cho chạy cục bộ và PostgreSQL trên website. Dùng tích hợp AI Engine theo đề, không yêu cầu thay kiến trúc, huấn luyện model mới hoặc tăng gói Fly. Quyết định giữ Gemini tắt trước đó vẫn là trạng thái triển khai hiện tại; đây là hạng mục cần giải quyết để nghiệm thu AI, không phải lý do bỏ ba yêu cầu AI khỏi bản nộp.
+Giữ FastAPI/React, SQLite cho chạy cục bộ và PostgreSQL trên website. Dùng tích hợp AI Engine theo đề, không yêu cầu thay kiến trúc, huấn luyện model mới hoặc tăng gói Fly. Gemini đã bật theo yêu cầu sửa mới; báo cáo ngày/tuần và hỏi đáp đạt model thật. Nhân sự còn chờ nghiệm thu sau lỗi 503 và xác nhận gửi thống kê demo theo yêu cầu auto-review.
 
 ## 2. Ma trận yêu cầu – mã – kiểm thử – khoảng thiếu
 
@@ -21,31 +21,26 @@ Giữ FastAPI/React, SQLite cho chạy cục bộ và PostgreSQL trên website. 
 | Xe vào/ra, thời gian gửi | `backend/services/parking_service.py`, `backend/expansion/site_router.py`; `tests/test_session_lifecycle_integrity.py`, `tests/test_checkout_quote_contract.py` | Nhập biển thủ công phải hoàn tất được hành trình; OCR là lựa chọn hỗ trợ |
 | Tính phí theo loại xe và thời gian | `ParkingService.calculate_fee`, `backend/routers/price_config.py`; `tests/test_fee.py`, `tests/test_price_config_api.py` | Hiển thị cách tính/phí trước trả xe; số tiền do server xác định, giữ xác nhận thu tiền |
 | Chỗ trống theo khu vực | `ParkingService.get_available_slots_summary`, `backend/expansion/site_service.py`; `tests/test_slots.py`, `tests/test_expansion_sites.py` | Phân biệt chỗ có xe, chỗ bị giữ và chỗ có thể nhận xe; cập nhật sau vào/ra |
-| Tra cứu theo biển số và thời gian | `ParkingService.search_sessions`; `backend/expansion/site_router.py` và `frontend/src/pages/Expansion/SitesWorkspace.jsx` | Luồng một bãi hiện có biển số/trạng thái, **chưa có tham số lọc khoảng thời gian** ở API sessions v2; cần bổ sung cả API và giao diện |
+| Tra cứu theo biển số và thời gian | `ParkingService.search_sessions`; `backend/expansion/site_router.py` và `frontend/src/pages/Expansion/SitesWorkspace.jsx` | Đã có date_from/date_to tại API/UI, tính trọn ngày Việt Nam; kiểm thử ranh giới, phân trang và online đạt |
 | Vé tháng hoặc khách quen | `backend/routers/monthly_pass.py`, `customer.py`, `backend/expansion/portal_router.py`; `tests/test_monthly_pass_api.py`, `tests/test_monthly_coverage_snapshot.py` | Demo vé còn hạn/hết hạn và phí tương ứng; thanh toán QR hoặc tự đăng ký của khách không phải điều kiện để chứng minh yêu cầu này |
-| Lưu lượng, doanh thu, khung giờ cao điểm | `backend/services/report_service.py`, `backend/routers/report.py`, `backend/expansion/site_finance.py`; `tests/test_report_period_consistency.py` | Báo cáo hiện có ở luồng cũ; menu `/reports` bị ẩn trong chế độ một bãi. Cần màn hình ngày/tuần và dữ liệu đúng bãi, đúng kỳ, phân biệt thu demo |
-| AI báo cáo ngày/tuần | `AIService.generate_daily_report`, `generate_weekly_report`; `backend/routers/ai_report.py`; `tests/test_ai.py`, `tests/test_ai_integrity.py` | Có mã và test mock; chưa có nghiệm thu provider thật cho bản hiện tại. API `/ai/*` còn dùng guard toàn hệ thống |
-| AI hỏi đáp cao điểm/chỗ trống | `AIService.answer_question`, `ask_dashboard_question`; `tests/test_ai.py`, `tests/test_ai_integrity.py` | Menu `/ai` bị ẩn; tài khoản staff/manager theo bãi bị chặn ở luồng cũ. Cần ngữ cảnh đúng bãi, đúng thời điểm và quyền truy cập |
-| AI gợi ý nhân sự | `AIService.suggest_staff_schedule`; `tests/test_ai.py`, `tests/test_ai_provider_fail_closed.py` | `insights/staff-plan` hiện tính kịch bản theo quy tắc. Hữu ích để cung cấp căn cứ, nhưng không thay bằng chứng chạy luồng AI Engine theo đề |
+| Lưu lượng, doanh thu, khung giờ cao điểm | `backend/services/report_service.py`, `backend/routers/report.py`, `backend/expansion/site_finance.py`; `tests/test_report_period_consistency.py` | Đã mở `/reports` theo capability/quyền bãi, thống kê ngày/7 ngày và tiền demo tách riêng; đối chiếu online với session/sổ thu đạt |
+| AI báo cáo ngày/tuần | `AIService.generate_daily_report`, `generate_weekly_report`; `backend/routers/ai_report.py`; `tests/test_ai.py`, `tests/test_ai_integrity.py` | Đã nghiệm thu ngày/tuần bằng Gemini thật qua API v2 theo bãi; legacy giữ guard. Service mới: generate_scoped_analysis(kind=report) |
+| AI hỏi đáp cao điểm/chỗ trống | `AIService.answer_question`, `ask_dashboard_question`; `tests/test_ai.py`, `tests/test_ai_integrity.py` | Đã mở menu và API đúng quyền; staff hỏi Gemini thật, câu trả lời khớp số lượt/cao điểm/chỗ trống có thời điểm riêng |
+| AI gợi ý nhân sự | `AIService.suggest_staff_schedule`; `tests/test_ai.py`, `tests/test_ai_provider_fail_closed.py` | Đã thêm kind=staff dùng Gemini; lần live trả 503, chưa nghiệm thu thành công. Retry chờ xác nhận dữ liệu do auto-review. staff-plan quy tắc không thay phần này |
 | Test cho vào/ra, phí, chỗ trống, AI | Các file test ở trên; `tests/conftest.py` chặn provider thật trong pytest | Giữ kiểm thử tự động; ghi riêng phiên chạy model thật, không gọi mock là kết quả live |
 | AI trong SDLC: KT1/KT2/KT3/cuối kỳ | `docs/AI_SDLC.md`, `docs/EXPANSION_SDLC.md`, code/test/commit | Minh chứng chính phải bám nghiệp vụ và AI báo cáo. Phân biệt prompt tái lập với bản ghi prompt đã thực sự sử dụng; không tạo lại lịch sử như bằng chứng gốc |
 
-## 3. Những khoảng thiếu đã xác nhận bằng mã
+## 3. Kết quả sửa và phần còn chờ
 
-1. `frontend/src/layouts/MainLayout.jsx` ẩn `/reports` và `/ai` khi `singleSiteMode` bật; `PermissionRoute` cũng bảo vệ các trang legacy.
-2. `backend/main.py` gắn `require_legacy_workspace` cho `/ai`, `/reports` và API v1. `backend/expansion/system_router.py` chặn tài khoản không phải admin khi CSDL còn nhiều bãi, kể cả bãi đã đóng. Ẩn bộ chọn bãi trên frontend không thay đổi điều này. Không sửa bằng cách cấp quyền toàn hệ thống cho mọi người hoặc xóa dữ liệu bãi cũ.
-3. `/api/v2/sites/{site_id}/sessions` chỉ nhận `license_plate`, `status`, `limit`, `offset`; thiếu lọc thời gian cho luồng một bãi.
-4. Gemini đang tắt theo phạm vi phát hành trước. Camera YOLO hoạt động và test AI mock đạt không chứng minh ba chức năng AI phân tích đã hoạt động trên website.
+Menu Báo cáo/AI, API đúng quyền và lọc ngày đã phát hành/kiểm thử online. Báo cáo ngày/tuần và hỏi đáp đã có kết quả Gemini thật được đối chiếu. Không xóa bãi cũ hoặc bỏ guard legacy. [Biên bản](CORE_AI_COMPLETION.md) phân biệt rõ phát hành thành công với nghiệm thu AI chưa hoàn tất.
 
-**Nghiệm thu đầy đủ theo đề gốc: NOT READY**, do các khoảng thiếu trên. Kết quả READY của các release trước chỉ áp dụng cho phạm vi demo/kiểm thử đã ghi, không phải xác nhận đủ đề bài.
+Nhân sự trả 503 ở lượt đầu. Auto-review yêu cầu xác nhận riêng để gửi thống kê demo tới Gemini khi thử lại; đang chờ người dùng. **Nghiệm thu trọn ba mục sửa: BLOCKED.** Nghiệm thu toàn bộ đề gốc và vận hành bãi thật chưa được chốt.
 
-## 4. Thứ tự công việc đã điều chỉnh
+## 4. Công việc còn theo dõi
 
-1. **PARK-217 — AI phân tích theo đúng bãi:** dùng lại các chức năng AI hiện có; tổng hợp dữ liệu ở server, kiểm quyền, lưu nguồn/kỳ báo cáo. Hoàn tất ngày/tuần, hỏi đáp chỗ trống/cao điểm và gợi ý nhân sự; kiểm thử rỗng/sai/provider lỗi và nghiệm thu model thật trên cấu hình được phép dùng. Không tự bật provider hoặc tải LLM vào Fly 1 GB trong lần đối chiếu phạm vi này.
-2. **PARK-218 — Hành trình nghiệp vụ đúng đề:** đưa báo cáo và AI vào điều hướng chính sau khi API đúng phạm vi; thêm lọc thời gian, bảo đảm cấu hình loại xe/bảng giá đúng quyền quản lý. Giữ khóa, transaction, phân quyền và dữ liệu hiện có.
-3. **PARK-219 — Minh chứng và nghiệm thu bản nộp:** đối chiếu từng yêu cầu với thao tác, dữ liệu, test và kết quả thật; hoàn thiện KT1/KT2/KT3/cuối kỳ. Ghi rõ phần nào là số liệu mẫu và phần nào là mô phỏng; giữ hồ sơ Word/ảnh/credentials ngoài Git.
-
-Các ticket trên là công việc còn mở, chưa được tính là đã sửa. Các tối ưu truy vấn, tránh đọc ảnh thừa và sắp chữ OCR đã phát hành vẫn giữ nguyên.
+1. PARK-217 IN_PROGRESS: thử lại nhân sự, kỳ rỗng và nút sinh AI sau xác nhận, giữ UUID để tránh trùng.
+2. PARK-218 IN_PROGRESS: menu/báo cáo/lọc ngày đã xong; còn luồng manager cấu hình loại xe/bảng giá ngoài phạm vi ba mục sửa.
+3. PARK-219 IN_PROGRESS: có thêm bằng chứng thật; chưa kết luận hồ sơ/nguồn minh chứng và toàn bộ kịch bản đề gốc đã hoàn tất.
 
 ## 5. Phần bổ sung và phần không phát triển tiếp
 
@@ -69,8 +64,8 @@ Các ticket trên là công việc còn mở, chưa được tính là đã sử
 9. AI gợi ý bố trí nhân sự; nếu đề xuất số người phải nêu giả định năng suất, không trình bày giả định như số đo.
 10. Thử dữ liệu rỗng/provider không khả dụng, trình bày test và minh chứng SDLC. Camera/QR có thể giới thiệu sau phần bắt buộc.
 
-## 7. Bằng chứng của lần đối chiếu này
+## 7. Bằng chứng lịch sử trước đợt sửa
 
 Đã đọc các guard, route, màn hình và test nêu trên. Chạy lại `tests/test_ai.py`, `tests/test_ai_integrity.py`, `tests/test_ai_provider_fail_closed.py`, `tests/test_fee.py`, `tests/test_slots.py`, `tests/test_session_lifecycle_integrity.py`, `tests/test_report_period_consistency.py`: **167 passed**, 42,32 giây. AI dùng mock, DB riêng trong bộ test; không gọi Gemini hoặc ghi dữ liệu website. Log ở `backend/artifacts/original-spec-alignment/core-regression.log` ngoài Git.
 
-Lần này điều chỉnh tài liệu phạm vi và ưu tiên; chưa thay mã ứng dụng, cấu hình provider, schema hoặc dữ liệu production. Hoàn tất nghiệp vụ/AI trong ticket phải có kiểm thử và release gate mới trước khi kết luận đủ đề.
+Mốc đối chiếu08/09 chỉ điều chỉnh tài liệu; bản `038d6c9` sau đó đã sửa mã/cấu hình/schema và có UAT riêng tại CORE_AI_COMPLETION.md. Hoàn tất nghiệp vụ/AI trong ticket phải có kiểm thử và release gate mới trước khi kết luận đủ đề.

@@ -1,6 +1,6 @@
 # ParkingAI — vận hành bản trình diễn một bãi
 
-Phạm vi hiện tại: **một bãi để nộp đồ án**, FastAPI/React modular monolith, trình diễn trên website hiện tại. Giao diện dùng sẵn bãi DEMO A (ID2), ẩn đổi/tạo bãi và chỉ hiển thị gói vé của bãi này. QR tạo giao dịch mô phỏng, không chuyển tiền; Gemini tắt. Lịch sử do công cụ seed tạo được gắn `demo://synthetic-history/<namespace>`, phí bằng 0 và không sinh chứng từ thu.
+Phạm vi hiện tại: **một bãi để nộp đồ án**, FastAPI/React modular monolith, trình diễn trên website hiện tại. Giao diện dùng sẵn bãi DEMO A (ID2), ẩn đổi/tạo bãi và chỉ hiển thị gói vé của bãi này. QR tạo giao dịch mô phỏng, không chuyển tiền; Gemini đã bật ở bản `038d6c9`. Báo cáo, AI và lọc ngày: [CORE_AI_COMPLETION.md](CORE_AI_COMPLETION.md); nhân sự còn chờ nghiệm thu hoàn tất. Lịch sử do công cụ seed tạo được gắn `demo://synthetic-history/<namespace>`, phí bằng 0 và không sinh chứng từ thu.
 
 Bốn tài khoản và kịch bản nộp bài nằm tại `backend/artifacts/phone-vn-acceptance/private/TAI_KHOAN_DO_AN_MOT_BAI.md` ngoài Git. Các lệnh seed hai bãi bên dưới là hồ sơ triển khai trước khi thu gọn phạm vi; không cần chạy lại hoặc xóa dữ liệu để trình diễn một bãi. Bộ chạy SQLite cục bộ vẫn phục vụ cấu hình demo tổng quát; cấu hình `SINGLE_SITE_ID: 2` ở đây áp dụng cho website có ID bãi đã kiểm chứng.
 
@@ -55,7 +55,7 @@ python -m expansion.showcase_seed --namespace demo260908 --apply --hashes /tmp/p
 
 Lệnh đầu chỉ kiểm tra. Lệnh apply yêu cầu đủ bảy bcrypt hash được tạo cục bộ; công cụ khóa namespace trên PostgreSQL, kiểm tài khoản có sẵn, không reset DB hoặc ghi đè dữ liệu. Manifest ghi ID trước commit và trạng thái sau commit; chạy lại giữ nguyên ID, không nhân đôi. Không dùng `demo_server.py` hoặc script seed SQLite để ghi Supabase.
 
-## Phát hành theo thứ tự
+## Hồ sơ phát hành vòng3 trước đợt bật Gemini
 
 1. Lưu release/config và xác nhận backup/restore evidence, kiểm gate Supabase còn hiệu lực.
 2. Stage secret `AI_ENABLED=false` vì secret Fly hiện có có ưu tiên hơn `fly.toml`. Các cờ đồ án/QR/YOLO đặt trong `fly.toml`; giữ 1 GB, không nâng gói.

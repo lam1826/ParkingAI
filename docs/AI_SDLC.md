@@ -1,6 +1,6 @@
 # Minh chứng sử dụng AI trong SDLC – ParkingAI
 
-> Phạm vi hiện tại theo đề gốc: [ORIGINAL_REQUIREMENTS.md](ORIGINAL_REQUIREMENTS.md). Minh chứng chính là nghiệp vụ vào/ra–phí–chỗ trống và AI báo cáo ngày/tuần–hỏi đáp–nhân sự. Mã đã có, nhưng Gemini đang tắt và luồng AI/Báo cáo trong giao diện một bãi chưa được nghiệm thu đầy đủ. Các mốc model, migration và kết quả cũ bên dưới là tài liệu lịch sử; không xác nhận model hiện còn khả dụng hoặc provider đang hoạt động trên website. Prompt mẫu/tái lập phải được ghi đúng loại, không trình bày như log gốc đã dùng nếu chưa có bằng chứng.
+> Phạm vi theo đề: [ORIGINAL_REQUIREMENTS.md](ORIGINAL_REQUIREMENTS.md). Bản `038d6c9` đã nghiệm thu Gemini thật cho ngày/tuần/hỏi đáp; nhân sự còn chờ thử lại sau 503 và xác nhận dữ liệu. [CORE_AI_COMPLETION.md](CORE_AI_COMPLETION.md) ghi riêng kết quả thật, mock và phần chưa đạt. Các prompt mẫu/mốc cũ bên dưới là tài liệu lịch sử/tái lập, không thay log đã dùng thực tế.
 
 Phần mở rộng đồ án ngày 07/09/2026 có ma trận yêu cầu–code–test và prompt tái lập riêng tại [Minh chứng SDLC mở rộng](EXPANSION_SDLC.md); cách trình diễn QR, camera và dự báo tại [Hướng dẫn demo](DEMO_GUIDE.md).
 

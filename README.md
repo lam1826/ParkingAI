@@ -6,7 +6,7 @@ Hệ thống quản lý bãi đỗ xe dùng FastAPI, React, SQLite và Gemini. H
 
 Bản nộp tập trung vào **một bãi**, hai vai trò nghiệp vụ quản lý/nhân viên, quản lý khu vực–vị trí–xe–vé, vào/ra, phí, chỗ trống và thống kê. **AI cốt lõi:** báo cáo lưu lượng ngày/tuần, hỏi đáp dữ liệu bãi xe và gợi ý nhân sự theo cao điểm; có test và minh chứng prompt/code/test trong SDLC.
 
-[Ma trận yêu cầu, khoảng thiếu và thứ tự hoàn thiện](docs/ORIGINAL_REQUIREMENTS.md) là căn cứ ưu tiên hiện tại. **Chưa nghiệm thu đủ đề gốc:** menu báo cáo/AI trong chế độ một bãi và phạm vi API còn cần điều chỉnh, lọc thời gian của session v2 chưa có, Gemini đang tắt và các test AI hiện hành dùng mock.
+[Ma trận yêu cầu](docs/ORIGINAL_REQUIREMENTS.md) là căn cứ phạm vi. Bản `038d6c9` đã lên website: mở Báo cáo/AI đúng quyền và lọc ngày; Gemini thật đã đạt báo cáo ngày/tuần và hỏi đáp. Gợi ý nhân sự chưa nghiệm thu xong sau lỗi 503 và đang chờ xác nhận gửi thống kê demo để thử lại. Xem [biên bản và hướng dẫn](docs/CORE_AI_COMPLETION.md); chưa kết luận hoàn tất toàn bộ đề gốc.
 
 Camera YOLO/OCR, portal khách, QR mô phỏng, đặt chỗ và waitlist là phần bổ sung đã có; không thay ba chức năng AI phân tích. Khả năng nhiều bãi trong mã nền không thuộc phạm vi nộp bài. Giữ [hướng dẫn vận hành website](docs/ROUND3_OPERATIONS.md), [nghiệm thu camera](docs/PHONE_VN_ACCEPTANCE.md), [nghiên cứu tham khảo](docs/RESEARCH_SINGLE_SITE_AI_PARKING.md) và [tối ưu đã phát hành](docs/SINGLE_SITE_OPTIMIZATION.md) làm tài liệu hỗ trợ.
 

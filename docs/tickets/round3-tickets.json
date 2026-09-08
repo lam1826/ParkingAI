@@ -414,7 +414,7 @@
     "classification": "FIX",
     "summary": "Complete core AI analytics for the selected parking lot",
     "problem": "Core AI exists on legacy routes, but provider is disabled and site staff/manager cannot use that flow.",
-    "evidence": "backend/main.py; backend/expansion/system_router.py; backend/services/ai_service.py; frontend/src/layouts/MainLayout.jsx",
+    "evidence": "Application 038d6c9eba6b45fbb29b23b54d13fb2947bbd028; docs/CORE_AI_COMPLETION.md; CI34253340017/CD34255366293",
     "dependencies": [],
     "acceptance_criteria": [
       "Daily and weekly reports, grounded parking Q&A and staffing suggestions use server data for the authorized lot and period",
@@ -422,11 +422,11 @@
       "Empty/invalid inputs, injection, disabled/unavailable provider and real provider UAT are recorded separately",
       "Do not treat camera OCR or mocked provider tests as completion of core analytics AI"
     ],
-    "test": "tests/test_ai.py; tests/test_ai_integrity.py; tests/test_ai_provider_fail_closed.py; future scoped aggregation/API tests",
-    "migration": "Assess scoped AI history needs before proposing a migration; keep legacy history private",
+    "test": "tests/test_core_site_analytics.py (17); PostgreSQL18; frontend142; CI Linux1253/Windows191; online scoped/read-only and partial real Gemini UAT",
+    "migration": "20260908_03 additive site_ai_analyses; restore/rollback/re-upgrade verified, legacy data unchanged",
     "rollback": "Revert the scoped change; preserve database records and authorization. Use the release/backup gate for application deployment.",
-    "status": "OPEN",
-    "online_acceptance": "PENDING; current alignment changes documentation only",
+    "status": "IN_PROGRESS",
+    "online_acceptance": "PASS real Gemini daily/weekly/Q&A. Staffing returned503; retry/empty/UI generation pending explicit data-export approval required by automatic review.",
     "spec": "docs/ORIGINAL_REQUIREMENTS.md; intent.md; plan.md current scope",
     "owner": "ParkingAI"
   },
@@ -437,7 +437,7 @@
     "classification": "FIX",
     "summary": "Restore the original assignment journey in single-lot UI",
     "problem": "Reports/AI are hidden, site session search lacks time filters and some configuration remains admin-only.",
-    "evidence": "frontend/src/layouts/MainLayout.jsx; frontend/src/routes/PermissionRoute.jsx; backend/expansion/site_router.py sessions; backend/expansion/system_router.py",
+    "evidence": "Application 038d6c9eba6b45fbb29b23b54d13fb2947bbd028; docs/CORE_AI_COMPLETION.md; CI34253340017/CD34255366293",
     "dependencies": [
       "PARK-217"
     ],
@@ -450,8 +450,8 @@
     "test": "Core role journeys; time-filter/API tests; frontend regression/browser UAT",
     "migration": "Prefer no schema change; do not remove historical sites or relax global guards",
     "rollback": "Revert the scoped change; preserve database records and authorization. Use the release/backup gate for application deployment.",
-    "status": "OPEN",
-    "online_acceptance": "PENDING; current alignment changes documentation only",
+    "status": "IN_PROGRESS",
+    "online_acceptance": "DONE report/AI navigation and inclusive date filtering; REMAINING manager type/price configuration journey.",
     "spec": "docs/ORIGINAL_REQUIREMENTS.md; intent.md; plan.md current scope",
     "owner": "ParkingAI"
   },
@@ -462,7 +462,7 @@
     "classification": "FIX",
     "summary": "Verify original assignment and assemble traceable SDLC evidence",
     "problem": "Earlier demo release gates did not establish completion of all original AI and core-user journeys.",
-    "evidence": "docs/ORIGINAL_REQUIREMENTS.md; docs/AI_SDLC.md; docs/ROUND3_RELEASE_GATE.md",
+    "evidence": "Application 038d6c9eba6b45fbb29b23b54d13fb2947bbd028; docs/CORE_AI_COMPLETION.md; CI34253340017/CD34255366293",
     "dependencies": [
       "PARK-217",
       "PARK-218"
@@ -476,8 +476,8 @@
     "test": "Original-assignment acceptance scenario and evidence review",
     "migration": "None",
     "rollback": "Revert the scoped change; preserve database records and authorization. Use the release/backup gate for application deployment.",
-    "status": "OPEN",
-    "online_acceptance": "PENDING; current alignment changes documentation only",
+    "status": "IN_PROGRESS",
+    "online_acceptance": "New traceable code/mock/live evidence recorded; full original-assignment UAT/dossier still open.",
     "spec": "docs/ORIGINAL_REQUIREMENTS.md; intent.md; plan.md current scope",
     "owner": "ParkingAI"
   }

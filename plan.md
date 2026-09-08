@@ -1,6 +1,6 @@
 # Plan
 
-## Đang sửa ba khoảng thiếu theo yêu cầu mới
+## Đã phát hành ba mục sửa; còn nghiệm thu provider bị chặn
 
 Người dùng đã yêu cầu sửa và nghiệm thu Gemini thật, Báo cáo/AI cho quản lý–nhân viên một bãi, và lọc lịch sử theo thời gian. Yêu cầu này cho phép dùng cấu hình Gemini hiện có để kiểm thử và bật sau gate; thay thế quyết định tạm tắt ở các mốc trước.
 
@@ -8,14 +8,14 @@ Người dùng đã yêu cầu sửa và nghiệm thu Gemini thật, Báo cáo/A
 - [x] Thống kê server theo site, ngày/7 ngày, thu/hoàn loại demo; current_availability có thời điểm riêng. Lịch sử AI dùng bảng mới, không gán lại lịch sử cũ.
 - [x] Kiểm tra model bằng API Google; model cấu hình gemini-3.6-flash khả dụng, smoke bằng số liệu tổng hợp trả đúng 12 lượt/08:00.
 - [x] Nối lại menu/routes, màn hình báo cáo và AI, filter ngày vào từ/đến; 142 test frontend đạt. Giữ API legacy guard và feature capability để tương thích trong lúc rollout.
-- [x] Backend1064pass/19skip trên Windows; chạy riêng PostgreSQL17 với locale Unicode:18pass, gồm migration và rollback giữ lịch sử AI. Kiểm tra dữ liệu chéo bãi, role bị thu hồi giữa lời gọi provider, ranh giới ngày, hoàn tiền đều đạt.
-- [x] Browser local desktop/mobile31 kiểm tra đạt, provider mock được ghi rõ. Backup public schema mới a7f60f74c79af9a8331b1c5f2eae9cdea77bddb41b790a1d19b9c4662fa7fdad; restore36bảng PostgreSQL17, nâng20260908_03 không đổi các bản ghi cũ. Cần chuẩn bị extension btree_gist trên đích restore riêng vì dump chỉ lấy public schema.
-- [ ] Trình diễn live ba nhóm AI sau deploy; không dùng mock browser để công bố kết quả provider.
-- [ ] Backup/config/SHA trước thay đổi; CI/CD đúng SHA, bật AI bằng cấu hình hiện có sau gate; không tăng gói Fly. Bàn giao kết quả và cập nhật trạng thái từng ticket.
+- [x] Backend1064 pass/19 skip trên Windows; chạy riêng PostgreSQL17 với locale Unicode:18 pass, gồm migration và rollback giữ lịch sử AI. Kiểm tra dữ liệu chéo bãi, role bị thu hồi giữa lời gọi provider, ranh giới ngày, hoàn tiền đều đạt.
+- [x] Browser local desktop/mobile31 kiểm tra đạt, provider mock được ghi rõ. Backup public schema mới a7f60f74c79af9a8331b1c5f2eae9cdea77bddb41b790a1d19b9c4662fa7fdad; restore36 bảng PostgreSQL17, nâng20260908_03 không đổi các bản ghi cũ. Cần chuẩn bị extension btree_gist trên đích restore riêng vì dump chỉ lấy public schema.
+- [ ] Gemini thật đã đạt ngày/tuần/hỏi đáp. Nhân sự trả 503; retry và kỳ rỗng/nút AI chờ xác nhận riêng do auto-review chặn việc gửi thống kê demo tới Gemini. Giữ UUID cũ để retry, không sinh trùng; CORE_AI_COMPLETION.md ghi rõ phần chưa đạt.
+- [x] Backup/restore, CI34253340017/CD34255366293, SHA038d6c9, bundle/ready/CORS đạt. Gemini đã bật, giữ Fly 1 GB/QR mô phỏng. API online chỉ đọc62 kiểm tra và UI ba vai trò đạt. Ba ticket217/218/219IN_PROGRESS theo phạm vi còn lại.
 
 Rollback: migration20260908_03 thêm bảng site_ai_analyses; downgrade chỉ đổi revision marker, giữ bảng/dữ liệu để app cũ dùng được. Re-upgrade xác minh bảng giữ lại. Khóa và artifact nằm ngoài Git.
 
-## Ưu tiên hiện tại — bám sát đề bài gốc (08/09/2026)
+## Mốc đối chiếu trước đợt sửa — đề bài gốc (08/09/2026)
 
 **Mục tiêu:** hoàn thành một bãi, nghiệp vụ quản lý và ba luồng AI phân tích theo đề; đối chiếu chi tiết tại [ORIGINAL_REQUIREMENTS.md](docs/ORIGINAL_REQUIREMENTS.md). Các nghiên cứu và tính năng mở rộng bên dưới là lịch sử, không được ưu tiên hơn mục này.
 
@@ -80,14 +80,14 @@ Tiêu chí: báo cáo các tỷ lệ cùng số đếm, không lấy confidence 
 - [x] PR-02: kiểm chứng correctness/security, nhất là cap đặt chỗ nhiều xe cùng khách.
 - [x] PR-03: chốt ca/chứng từ/doanh thu theo bãi; sửa khu/chỗ trong phạm vi bãi.
 - [x] PR-04: phân loại audit v2, request ID, timing và log worker.
-- [x] PR-05: đóng gói YOLO/OCR online, bằng chứng crop/candidates/model; sửa OOM và đo lại trên Fly1GB.
+- [x] PR-05: đóng gói YOLO/OCR online, bằng chứng crop/candidates/model; sửa OOM và đo lại trên Fly 1 GB.
 - [x] PR-06: so sánh ba baseline và đo coverage khoảng ước lượng.
 - [x] PR-07: UX bốn vai trò và mobile, xử lý lỗi/thao tác lặp.
 - [x] PR-08: backup và restore rehearsal, deploy đúng SHA, seed namespace riêng, UAT online, bàn giao.
 
 Quyết định: website hiện tại là nơi trình diễn; YOLO chạy trên Fly hiện có, chưa tăng gói. Gemini tắt; QR mock. Bổ sung nullable site_id cho ca/chứng từ, dữ liệu lịch sử không suy diễn bãi. API v1 giữ nguyên boundary; API mới theo v2/sites. Mật khẩu ngẫu nhiên lưu file ignored; không reset database.
 
-Đã phát hành ứng dụng `adc749f0fe9185c208ea964b6e9bd6bce8577c3e`: CI34232954119/CD34234708346 đạt; public SHA và bundle khớp. Linux1195pass/19skip, PG16pass, Windows safety190pass/1skip, frontend134pass/lint/build; UAT API237, vào/ra31, browser19 đạt theo phạm vi ghi trong release gate. Seed2bãi/7tài khoản và replaycreated0;79 bản ghi cũ giữ nguyên; PG17 restore36bảng khớp. OCR ban đầu OOM được tái hiện/sửa, CI container riêng đạt; API cuối3upload201, RSS371,2MiB trên Fly1GB. Kết luận READY cho đồ án online, NOT READY cho bãi thật. Chưa nghiệm thu accuracy Việt Nam/điện thoại vật lý; Cloudflare được người dùng hoãn. Runbook: docs/ROUND3_OPERATIONS.md; biên bản: docs/ROUND3_RELEASE_GATE.md;12ticket JSON/CSV có9DONE,2FUTURE,1hoãn. Hồ sơ/credentials/model/ảnh/backup vẫn ngoài Git.
+Đã phát hành ứng dụng `adc749f0fe9185c208ea964b6e9bd6bce8577c3e`: CI34232954119/CD34234708346 đạt; public SHA và bundle khớp. Linux1195 pass/19 skip, PG16 pass, Windows safety190 pass/1 skip, frontend134 pass/lint/build; UAT API237, vào/ra31, browser19 đạt theo phạm vi ghi trong release gate. Seed2bãi/7tài khoản và replaycreated0;79 bản ghi cũ giữ nguyên; PG17 restore36 bảng khớp. OCR ban đầu OOM được tái hiện/sửa, CI container riêng đạt; API cuối3upload201, RSS371,2MiB trên Fly 1 GB. Kết luận READY cho đồ án online, NOT READY cho bãi thật. Chưa nghiệm thu accuracy Việt Nam/điện thoại vật lý; Cloudflare được người dùng hoãn. Runbook: docs/ROUND3_OPERATIONS.md; biên bản: docs/ROUND3_RELEASE_GATE.md;12ticket JSON/CSV có9DONE,2FUTURE,1hoãn. Hồ sơ/credentials/model/ảnh/backup vẫn ngoài Git.
 
 Kiểm tra từng batch trước khi chuyển tiếp: focused tests, regression liên quan, SQLite/PostgreSQL, frontend test/lint/build, Docker, CI, backup/recovery, release SHA và UAT. Rollback code nếu schema tương thích; không tự downgrade hoặc xóa chứng từ phát sinh. Mọi trạng thái bên dưới là lịch sử trước vòng 3.
 
