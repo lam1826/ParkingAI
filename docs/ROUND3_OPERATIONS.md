@@ -34,6 +34,8 @@ UAT trên website ngày 08/09 phát hiện cấu hình OCR ban đầu **không �
 
 Fixture tài nguyên: ảnh CC0 của Paulo César Santos tại trang Wikimedia đã dẫn trong `VISION_FORECAST.md`, SHA256 `90cfa1c05f5dd21ba337f938f7b3a638fa546207253c29c5fe0d9cb7f495ae3f`. CI tải ngoài Git và kiểm checksum; không dùng dữ liệu khách hàng. Kết quả cuối cùng, gồm các lần thử không đạt, ghi trong release gate.
 
+Trạng thái bàn giao: bản `adc749f` đã vượt CI/CD và bật lại YOLO. Gate Docker có RAM đỉnh 345,4 MiB; API thực tế sau sửa đạt khoảng 371,2 MiB, còn 422,3 MiB khả dụng trên máy hiện có. Ba upload API và luồng upload/crop/xác nhận trên browser đều đạt; không có OOM mới trong lượt kiểm tra ngắn. Lần đầu sau khởi động mất 10,624 giây, các lần tiếp theo khoảng 0,5 giây. Chờ kết quả ở lần đầu; chưa dùng số đo ngắn này làm cam kết tải hoặc độ bền dài hạn. Gemini vẫn tắt, QR/showcase bật. Biên bản đầy đủ: `ROUND3_RELEASE_GATE.md`.
+
 ## Backup, migration và seed
 
 Trước phát hành đã tạo dump PG17 của **public schema ParkingAI** ngay trên Fly; chuỗi kết nối chỉ dùng trong môi trường tiến trình trên server. Dump bao gồm dữ liệu, sequence, hàm và trigger; không bao gồm managed Auth/Storage/roles của Supabase. Gate recovery point của nhà cung cấp vẫn bắt buộc trong CD.

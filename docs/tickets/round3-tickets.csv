@@ -1,32 +1,32 @@
 ﻿key,summary,priority,status,pr,classification,problem,evidence,dependencies,acceptance_criteria,test,migration,rollback,online_acceptance
-PARK-201,"System map, 14-section review and evidence-backed backlog",P2,LOCAL_VERIFIED_RELEASE_PENDING,PR-01,ADD,Old reports described past state as present.,docs/REVIEW_ROUND3_SYSTEM_MAP.md; docs/REVIEW_ROUND3_RESEARCH.md,,"Map actual entities/callers/constraints/tests
-Nine primary references and explicit adaptation decisions",docs/REVIEW_ROUND3_SYSTEM_MAP.md; docs/REVIEW_ROUND3_RESEARCH.md,None,Revert documentation only,PENDING
-PARK-202,Serialize booking cap across customer vehicles,P1,LOCAL_VERIFIED_RELEASE_PENDING,PR-02,FIX,Two PG transactions starting at four active bookings previously both succeeded and produced six.,tests/test_round3_postgres.py; tests/test_round3_site_finance.py; tests/test_acceptance_security.py,PARK-201,"At most five active bookings per customer
+PARK-201,"System map, 14-section review and evidence-backed backlog",P2,DONE,PR-01,ADD,Old reports described past state as present.,docs/REVIEW_ROUND3_SYSTEM_MAP.md; docs/REVIEW_ROUND3_RESEARCH.md,,"Map actual entities/callers/constraints/tests
+Nine primary references and explicit adaptation decisions",docs/REVIEW_ROUND3_SYSTEM_MAP.md; docs/REVIEW_ROUND3_RESEARCH.md,None,Revert documentation only,"Verified on parkingai.am; see docs/ROUND3_RELEASE_GATE.md for exact scope, test groups and remaining limitations."
+PARK-202,Serialize booking cap across customer vehicles,P1,DONE,PR-02,FIX,Two PG transactions starting at four active bookings previously both succeeded and produced six.,tests/test_round3_postgres.py; tests/test_round3_site_finance.py; tests/test_acceptance_security.py,PARK-201,"At most five active bookings per customer
 Ownership is rechecked after locking
-Role downgrade overrides stale manager membership",tests/test_round3_postgres.py; tests/test_round3_site_finance.py; tests/test_acceptance_security.py,None,Revert code only; preserve reservations,PENDING
-PARK-203,"Site-scoped cash shifts, immutable receipts and zone/slot edits",P1,LOCAL_VERIFIED_RELEASE_PENDING,PR-03,ADD,Multi-site staff could not use global v1 finance and configuration.,"tests/test_round3_site_finance.py; tests/test_round3_postgres.py; independent review reproduced admin null-shift cross-site collections, HTTP RED201/null then GREEN409",PARK-202,"Staff sees own shift/collections; manager sees assigned site
+Role downgrade overrides stale manager membership",tests/test_round3_postgres.py; tests/test_round3_site_finance.py; tests/test_acceptance_security.py,None,Revert code only; preserve reservations,"Verified on parkingai.am; see docs/ROUND3_RELEASE_GATE.md for exact scope, test groups and remaining limitations."
+PARK-203,"Site-scoped cash shifts, immutable receipts and zone/slot edits",P1,DONE,PR-03,ADD,Multi-site staff could not use global v1 finance and configuration.,"tests/test_round3_site_finance.py; tests/test_round3_postgres.py; independent review reproduced admin null-shift cross-site collections, HTTP RED201/null then GREEN409",PARK-202,"Staff sees own shift/collections; manager sees assigned site
 Source/shift/payment site cannot mismatch
 Legacy null rows remain admin-only
 Demo amounts excluded; unassigned amounts explicit
-New legacy v1 shift resolves sole site; multi-site admin must choose site via v2. Existing null history preserved.",tests/test_round3_site_finance.py; tests/test_round3_postgres.py,20260908_02 additive nullable columns and guards,Revert application; keep additive schema and financial records,PENDING
-PARK-204,"Correlated audit, request latency and sanitized error events",P2,LOCAL_VERIFIED_RELEASE_PENDING,PR-04,FIX,v2 actions were generic; no response-to-audit correlation.,tests/test_round3_observability.py; tests/test_api_edge_hardening.py,PARK-203,"X-Request-ID on success and 500
+New legacy v1 shift resolves sole site; multi-site admin must choose site via v2. Existing null history preserved.",tests/test_round3_site_finance.py; tests/test_round3_postgres.py,20260908_02 additive nullable columns and guards,Revert application; keep additive schema and financial records,"Verified on parkingai.am; see docs/ROUND3_RELEASE_GATE.md for exact scope, test groups and remaining limitations."
+PARK-204,"Correlated audit, request latency and sanitized error events",P2,DONE,PR-04,FIX,v2 actions were generic; no response-to-audit correlation.,tests/test_round3_observability.py; tests/test_api_edge_hardening.py,PARK-203,"X-Request-ID on success and 500
 Audit classifies v2 operations and stores site/latency
-Worker/OCR failures log bounded metadata without bodies or secrets",tests/test_round3_observability.py; tests/test_api_edge_hardening.py,20260908_02 audit columns,Revert application; retain audit columns,PENDING
-PARK-205,Pinned YOLO/OCR runtime and human verification on website,P1,LOCAL_VERIFIED_RELEASE_PENDING,PR-05,ADD,Production had no model/runtime; crop and stage scores were missing.,tests/test_expansion_vision_api.py; browser UAT; Fly resource probe,PARK-204,"Build from pinned revision/checksum and document conflicting license metadata
+Worker/OCR failures log bounded metadata without bodies or secrets",tests/test_round3_observability.py; tests/test_api_edge_hardening.py,20260908_02 audit columns,Revert application; retain audit columns,"Verified on parkingai.am; see docs/ROUND3_RELEASE_GATE.md for exact scope, test groups and remaining limitations."
+PARK-205,Pinned YOLO/OCR runtime and human verification on website,P1,DONE,PR-05,ADD,Production had no model/runtime; crop and stage scores were missing.,"tests/test_expansion_vision_api.py; browser UAT; Fly resource probe; initial API passed but browser OOM; fixed narrow-crop scaling in adc749f, isolated memory gate and online browser/API repeated successfully",PARK-204,"Build from pinned revision/checksum and document conflicting license metadata
 Upload/crop/correct/confirm reaches separate operation screen
 One inference at a time, clear busy response
-Measure API responsiveness and memory on current 1 GB Fly VM",tests/test_expansion_vision_api.py; browser UAT; Fly resource probe,None; optional image runtime,"Deploy prior image; disable engine, preserve observations",PENDING
-PARK-206,Rolling-origin comparisons and empirical interval coverage,P2,LOCAL_VERIFIED_RELEASE_PENDING,PR-06,ADD,Forecast lacked comparable alternative baselines.,tests/test_round3_forecast.py; tests/test_expansion_forecast.py,PARK-201,"Three baselines evaluated on same time window
+Measure API responsiveness and memory on current 1 GB Fly VM",tests/test_expansion_vision_api.py; browser UAT; Fly resource probe,None; optional image runtime,"Deploy prior image; disable engine, preserve observations","Verified on parkingai.am; see docs/ROUND3_RELEASE_GATE.md for exact scope, test groups and remaining limitations."
+PARK-206,Rolling-origin comparisons and empirical interval coverage,P2,DONE,PR-06,ADD,Forecast lacked comparable alternative baselines.,tests/test_round3_forecast.py; tests/test_expansion_forecast.py,PARK-201,"Three baselines evaluated on same time window
 No future samples or residuals used
-Keep existing model; sparse/empty warning visible",tests/test_round3_forecast.py; tests/test_expansion_forecast.py,None,Revert forecast code,PENDING
-PARK-207,"Role-based finance, configuration, OCR and forecast UI",P2,LOCAL_VERIFIED_RELEASE_PENDING,PR-07,ADD,Required operations were not connected to a complete multi-site UI.,"frontend test/lint/build; browser_round3.cjs, 19 local checks","PARK-203
+Keep existing model; sparse/empty warning visible",tests/test_round3_forecast.py; tests/test_expansion_forecast.py,None,Revert forecast code,"Verified on parkingai.am; see docs/ROUND3_RELEASE_GATE.md for exact scope, test groups and remaining limitations."
+PARK-207,"Role-based finance, configuration, OCR and forecast UI",P2,DONE,PR-07,ADD,Required operations were not connected to a complete multi-site UI.,"frontend test/lint/build; browser_round3.cjs, 19 local checks","PARK-203
 PARK-204
 PARK-205
 PARK-206","Four role journeys and 390px viewport pass
 Double-click guarded, independent API errors/retry preserved
 QR and showcase banner explicit
-New API consumers enabled only after backend ready","frontend test/lint/build; browser_round3.cjs, 19 local checks",None,Rollback Cloudflare frontend deployment,PENDING
-PARK-208,Backed-up release and two-site online demonstration,P1,IN_PROGRESS,PR-08,ADD,"Website lacked independent demo accounts, data and authenticated acceptance evidence.",tests/test_round3_seed.py; restore-evidence.json; final CI/CD and online artifacts,"PARK-202
+New API consumers enabled only after backend ready","frontend test/lint/build; browser_round3.cjs, 19 local checks",None,Rollback Cloudflare frontend deployment,"Verified on parkingai.am; see docs/ROUND3_RELEASE_GATE.md for exact scope, test groups and remaining limitations."
+PARK-208,Backed-up release and two-site online demonstration,P1,DONE,PR-08,ADD,"Website lacked independent demo accounts, data and authenticated acceptance evidence.",Backup/restore36tables; seed2sites7accounts; replaycreated0; original79rowsunchanged; API237checks +parking31checks +browser19checks; exact release and runtime flags verified. See release gate.,"PARK-202
 PARK-203
 PARK-204
 PARK-205
@@ -34,7 +34,7 @@ PARK-206
 PARK-207","PG17 restore matches public-schema dump and passes migration/readiness
 Seven independent accounts, two namespaced sites, idempotent seed
 Preserve previous data; simulated history zero fees
-Backup gate/CI/exact SHA and authenticated online UAT pass",tests/test_round3_seed.py; restore-evidence.json; final CI/CD and online artifacts,Apply 20260908_02; seed only separate namespace,Rollback application first; DB recovery only via tested runbook,PENDING
+Backup gate/CI/exact SHA and authenticated online UAT pass",tests/test_round3_seed.py; restore-evidence.json; final CI/CD and online artifacts,Apply 20260908_02; seed only separate namespace,Rollback application first; DB recovery only via tested runbook,"Verified on parkingai.am; see docs/ROUND3_RELEASE_GATE.md for exact scope, test groups and remaining limitations."
 PARK-209,Labeled Vietnamese plates and physical-phone acceptance,P2,OPEN,FUTURE,FUTURE,Two foreign CC0 photos and viewport checks cannot establish VN accuracy or phone capture.,Independent labeled benchmark and device matrix,PARK-205,"Obtain licensed labeled Vietnamese evaluation set
 Report detection, whole-plate accuracy and correction rate separately
 Test actual iOS/Android capture under representative light",Independent labeled benchmark and device matrix,None,Keep human confirmation and disable automatic flows,PENDING
@@ -42,3 +42,7 @@ PARK-210,Disable Cloudflare-injected analytics beacon,P3,DEFERRED_BY_USER,FOLLOW
 Verify no injected beacon or CSP violation; retain CSP",Cloudflare setting plus browser network/CSP inspection,None,Restore previous Cloudflare analytics setting,Deferred: user explicitly requested continue release and handle Cloudflare later.
 PARK-211,Measure slot availability queries at larger scale,P3,OPEN,FUTURE,FUTURE,Per-slot checks may cause query growth; latency impact not demonstrated.,Read-only benchmark on isolated data,PARK-208,"Measure SQL count and p95 for increasing slots/sites
 Optimize only when improvement is demonstrated without weakening guards",Read-only benchmark on isolated data,Only if measurement justifies it,Revert measured optimization,PENDING
+PARK-212,Bound narrow-plate OCR tensors to prevent 1 GB API OOM,P1,DONE,PR-05 follow-up,FIX,Browser image upload killed the API at 13:25:43 UTC; RapidOCR min-side resize produced 736x2944 tensors.,Fly OOM event exit137; real-runtime RED assertion2944>640; GREEN23 tests; isolated Docker peak345.4MiB and final online evidence in release gate.,PARK-205,"Bound OCR tensor size including narrow/vertical crops
+Keep one admitted image and Retry-After busy response
+Pass isolated memory budget before online enablement
+Pass repeated real API uploads without a new OOM; keep 1 GB",tests/test_vision_runtime_budget.py; tests/test_expansion_vision_api.py; CI vision-memory; online UAT,None,Disable PARKING_VISION_ENGINE first; preserve images and all financial data.,Verified after the isolated Linux memory gate; see release gate for final Fly measurements.

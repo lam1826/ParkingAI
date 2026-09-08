@@ -45,8 +45,10 @@
     },
     "reviewed_against": "caaef39042ea15fc93f01938af46a7ac64890258",
     "implementation_status": "VERIFIED_BASELINE",
-    "release_evidence": "CI 34215316423 success; CD 34216909674 attempt 2 success; public API release_id caaef39042ea15fc93f01938af46a7ac64890258. See REVIEW_ROUND2_RESOLUTION_2026-09-08.md.",
-    "online_acceptance_status": "PENDING_AUTHENTICATED_ROUND3_UAT"
+    "release_evidence": "Application adc749f released; final regression CI34232954119 passed. See docs/ROUND3_RELEASE_GATE.md for online UAT groups; this does not imply every historical ticket was individually reproduced on production.",
+    "online_acceptance_status": "ROUND3_SCOPED_UAT_VERIFIED; individual scope in release gate",
+    "previous_release_evidence": "CI 34215316423 success; CD 34216909674 attempt 2 success; public API release_id caaef39042ea15fc93f01938af46a7ac64890258. See REVIEW_ROUND2_RESOLUTION_2026-09-08.md.",
+    "round3_release_evidence": "Application adc749f released; final regression CI34232954119 passed. See docs/ROUND3_RELEASE_GATE.md for online UAT groups; this does not imply every historical ticket was individually reproduced on production."
   },
   {
     "key": "PARK-102",
@@ -92,8 +94,10 @@
     },
     "reviewed_against": "caaef39042ea15fc93f01938af46a7ac64890258",
     "implementation_status": "VERIFIED_BASELINE",
-    "release_evidence": "CI 34215316423 success; CD 34216909674 attempt 2 success; public API release_id caaef39042ea15fc93f01938af46a7ac64890258. See REVIEW_ROUND2_RESOLUTION_2026-09-08.md.",
-    "online_acceptance_status": "PENDING_AUTHENTICATED_ROUND3_UAT"
+    "release_evidence": "Application adc749f released; final regression CI34232954119 passed. See docs/ROUND3_RELEASE_GATE.md for online UAT groups; this does not imply every historical ticket was individually reproduced on production.",
+    "online_acceptance_status": "ROUND3_SCOPED_UAT_VERIFIED; individual scope in release gate",
+    "previous_release_evidence": "CI 34215316423 success; CD 34216909674 attempt 2 success; public API release_id caaef39042ea15fc93f01938af46a7ac64890258. See REVIEW_ROUND2_RESOLUTION_2026-09-08.md.",
+    "round3_release_evidence": "Application adc749f released; final regression CI34232954119 passed. See docs/ROUND3_RELEASE_GATE.md for online UAT groups; this does not imply every historical ticket was individually reproduced on production."
   },
   {
     "key": "PARK-103",
@@ -144,8 +148,10 @@
     },
     "reviewed_against": "caaef39042ea15fc93f01938af46a7ac64890258",
     "implementation_status": "VERIFIED_BASELINE",
-    "release_evidence": "CI 34215316423 success; CD 34216909674 attempt 2 success; public API release_id caaef39042ea15fc93f01938af46a7ac64890258. See REVIEW_ROUND2_RESOLUTION_2026-09-08.md.",
-    "online_acceptance_status": "PENDING_AUTHENTICATED_ROUND3_UAT"
+    "release_evidence": "Application adc749f released; final regression CI34232954119 passed. See docs/ROUND3_RELEASE_GATE.md for online UAT groups; this does not imply every historical ticket was individually reproduced on production.",
+    "online_acceptance_status": "ROUND3_SCOPED_UAT_VERIFIED; individual scope in release gate",
+    "previous_release_evidence": "CI 34215316423 success; CD 34216909674 attempt 2 success; public API release_id caaef39042ea15fc93f01938af46a7ac64890258. See REVIEW_ROUND2_RESOLUTION_2026-09-08.md.",
+    "round3_release_evidence": "Application adc749f released; final regression CI34232954119 passed. See docs/ROUND3_RELEASE_GATE.md for online UAT groups; this does not imply every historical ticket was individually reproduced on production."
   },
   {
     "key": "PARK-104",
@@ -189,8 +195,10 @@
     },
     "reviewed_against": "caaef39042ea15fc93f01938af46a7ac64890258",
     "implementation_status": "VERIFIED_BASELINE",
-    "release_evidence": "CI 34215316423 success; CD 34216909674 attempt 2 success; public API release_id caaef39042ea15fc93f01938af46a7ac64890258. See REVIEW_ROUND2_RESOLUTION_2026-09-08.md.",
-    "online_acceptance_status": "PENDING_AUTHENTICATED_ROUND3_UAT"
+    "release_evidence": "Application adc749f released; final regression CI34232954119 passed. See docs/ROUND3_RELEASE_GATE.md for online UAT groups; this does not imply every historical ticket was individually reproduced on production.",
+    "online_acceptance_status": "ROUND3_SCOPED_UAT_VERIFIED; individual scope in release gate",
+    "previous_release_evidence": "CI 34215316423 success; CD 34216909674 attempt 2 success; public API release_id caaef39042ea15fc93f01938af46a7ac64890258. See REVIEW_ROUND2_RESOLUTION_2026-09-08.md.",
+    "round3_release_evidence": "Application adc749f released; final regression CI34232954119 passed. See docs/ROUND3_RELEASE_GATE.md for online UAT groups; this does not imply every historical ticket was individually reproduced on production."
   },
   {
     "key": "PARK-105",
@@ -241,8 +249,10 @@
     },
     "reviewed_against": "caaef39042ea15fc93f01938af46a7ac64890258",
     "implementation_status": "VERIFIED_BASELINE",
-    "release_evidence": "CI 34215316423 success; CD 34216909674 attempt 2 success; public API release_id caaef39042ea15fc93f01938af46a7ac64890258. See REVIEW_ROUND2_RESOLUTION_2026-09-08.md.",
-    "online_acceptance_status": "PENDING_AUTHENTICATED_ROUND3_UAT"
+    "release_evidence": "Application adc749f released; final regression CI34232954119 passed. See docs/ROUND3_RELEASE_GATE.md for online UAT groups; this does not imply every historical ticket was individually reproduced on production.",
+    "online_acceptance_status": "ROUND3_SCOPED_UAT_VERIFIED; individual scope in release gate",
+    "previous_release_evidence": "CI 34215316423 success; CD 34216909674 attempt 2 success; public API release_id caaef39042ea15fc93f01938af46a7ac64890258. See REVIEW_ROUND2_RESOLUTION_2026-09-08.md.",
+    "round3_release_evidence": "Application adc749f released; final regression CI34232954119 passed. See docs/ROUND3_RELEASE_GATE.md for online UAT groups; this does not imply every historical ticket was individually reproduced on production."
   },
   {
     "key": "PARK-106",
@@ -290,8 +300,10 @@
     },
     "reviewed_against": "caaef39042ea15fc93f01938af46a7ac64890258",
     "implementation_status": "VERIFIED_BASELINE",
-    "release_evidence": "CI 34215316423 success; CD 34216909674 attempt 2 success; public API release_id caaef39042ea15fc93f01938af46a7ac64890258. See REVIEW_ROUND2_RESOLUTION_2026-09-08.md.",
-    "online_acceptance_status": "PENDING_AUTHENTICATED_ROUND3_UAT"
+    "release_evidence": "Application adc749f released; final regression CI34232954119 passed. See docs/ROUND3_RELEASE_GATE.md for online UAT groups; this does not imply every historical ticket was individually reproduced on production.",
+    "online_acceptance_status": "ROUND3_SCOPED_UAT_VERIFIED; individual scope in release gate",
+    "previous_release_evidence": "CI 34215316423 success; CD 34216909674 attempt 2 success; public API release_id caaef39042ea15fc93f01938af46a7ac64890258. See REVIEW_ROUND2_RESOLUTION_2026-09-08.md.",
+    "round3_release_evidence": "Application adc749f released; final regression CI34232954119 passed. See docs/ROUND3_RELEASE_GATE.md for online UAT groups; this does not imply every historical ticket was individually reproduced on production."
   },
   {
     "key": "PARK-107",
@@ -340,8 +352,10 @@
     },
     "reviewed_against": "caaef39042ea15fc93f01938af46a7ac64890258",
     "implementation_status": "VERIFIED_BASELINE",
-    "release_evidence": "CI 34215316423 success; CD 34216909674 attempt 2 success; public API release_id caaef39042ea15fc93f01938af46a7ac64890258. See REVIEW_ROUND2_RESOLUTION_2026-09-08.md.",
-    "online_acceptance_status": "PENDING_AUTHENTICATED_ROUND3_UAT"
+    "release_evidence": "Application adc749f released; final regression CI34232954119 passed. See docs/ROUND3_RELEASE_GATE.md for online UAT groups; this does not imply every historical ticket was individually reproduced on production.",
+    "online_acceptance_status": "ROUND3_SCOPED_UAT_VERIFIED; individual scope in release gate",
+    "previous_release_evidence": "CI 34215316423 success; CD 34216909674 attempt 2 success; public API release_id caaef39042ea15fc93f01938af46a7ac64890258. See REVIEW_ROUND2_RESOLUTION_2026-09-08.md.",
+    "round3_release_evidence": "Application adc749f released; final regression CI34232954119 passed. See docs/ROUND3_RELEASE_GATE.md for online UAT groups; this does not imply every historical ticket was individually reproduced on production."
   },
   {
     "key": "PARK-108",
@@ -388,8 +402,10 @@
     },
     "reviewed_against": "caaef39042ea15fc93f01938af46a7ac64890258",
     "implementation_status": "VERIFIED_BASELINE",
-    "release_evidence": "CI 34215316423 success; CD 34216909674 attempt 2 success; public API release_id caaef39042ea15fc93f01938af46a7ac64890258. See REVIEW_ROUND2_RESOLUTION_2026-09-08.md.",
-    "online_acceptance_status": "PENDING_AUTHENTICATED_ROUND3_UAT"
+    "release_evidence": "Application adc749f released; final regression CI34232954119 passed. See docs/ROUND3_RELEASE_GATE.md for online UAT groups; this does not imply every historical ticket was individually reproduced on production.",
+    "online_acceptance_status": "ROUND3_SCOPED_UAT_VERIFIED; individual scope in release gate",
+    "previous_release_evidence": "CI 34215316423 success; CD 34216909674 attempt 2 success; public API release_id caaef39042ea15fc93f01938af46a7ac64890258. See REVIEW_ROUND2_RESOLUTION_2026-09-08.md.",
+    "round3_release_evidence": "Application adc749f released; final regression CI34232954119 passed. See docs/ROUND3_RELEASE_GATE.md for online UAT groups; this does not imply every historical ticket was individually reproduced on production."
   },
   {
     "key": "PARK-109",
@@ -434,8 +450,10 @@
     },
     "reviewed_against": "caaef39042ea15fc93f01938af46a7ac64890258",
     "implementation_status": "VERIFIED_BASELINE",
-    "release_evidence": "CI 34215316423 success; CD 34216909674 attempt 2 success; public API release_id caaef39042ea15fc93f01938af46a7ac64890258. See REVIEW_ROUND2_RESOLUTION_2026-09-08.md.",
-    "online_acceptance_status": "PENDING_AUTHENTICATED_ROUND3_UAT"
+    "release_evidence": "Application adc749f released; final regression CI34232954119 passed. See docs/ROUND3_RELEASE_GATE.md for online UAT groups; this does not imply every historical ticket was individually reproduced on production.",
+    "online_acceptance_status": "ROUND3_SCOPED_UAT_VERIFIED; individual scope in release gate",
+    "previous_release_evidence": "CI 34215316423 success; CD 34216909674 attempt 2 success; public API release_id caaef39042ea15fc93f01938af46a7ac64890258. See REVIEW_ROUND2_RESOLUTION_2026-09-08.md.",
+    "round3_release_evidence": "Application adc749f released; final regression CI34232954119 passed. See docs/ROUND3_RELEASE_GATE.md for online UAT groups; this does not imply every historical ticket was individually reproduced on production."
   },
   {
     "key": "PARK-110",
@@ -482,8 +500,10 @@
     },
     "reviewed_against": "caaef39042ea15fc93f01938af46a7ac64890258",
     "implementation_status": "VERIFIED_BASELINE",
-    "release_evidence": "CI 34215316423 success; CD 34216909674 attempt 2 success; public API release_id caaef39042ea15fc93f01938af46a7ac64890258. See REVIEW_ROUND2_RESOLUTION_2026-09-08.md.",
-    "online_acceptance_status": "PENDING_AUTHENTICATED_ROUND3_UAT"
+    "release_evidence": "Application adc749f released; final regression CI34232954119 passed. See docs/ROUND3_RELEASE_GATE.md for online UAT groups; this does not imply every historical ticket was individually reproduced on production.",
+    "online_acceptance_status": "ROUND3_SCOPED_UAT_VERIFIED; individual scope in release gate",
+    "previous_release_evidence": "CI 34215316423 success; CD 34216909674 attempt 2 success; public API release_id caaef39042ea15fc93f01938af46a7ac64890258. See REVIEW_ROUND2_RESOLUTION_2026-09-08.md.",
+    "round3_release_evidence": "Application adc749f released; final regression CI34232954119 passed. See docs/ROUND3_RELEASE_GATE.md for online UAT groups; this does not imply every historical ticket was individually reproduced on production."
   },
   {
     "key": "PARK-111",
@@ -535,8 +555,10 @@
     },
     "reviewed_against": "caaef39042ea15fc93f01938af46a7ac64890258",
     "implementation_status": "VERIFIED_BASELINE",
-    "release_evidence": "CI 34215316423 success; CD 34216909674 attempt 2 success; public API release_id caaef39042ea15fc93f01938af46a7ac64890258. See REVIEW_ROUND2_RESOLUTION_2026-09-08.md.",
-    "online_acceptance_status": "PENDING_AUTHENTICATED_ROUND3_UAT"
+    "release_evidence": "Application adc749f released; final regression CI34232954119 passed. See docs/ROUND3_RELEASE_GATE.md for online UAT groups; this does not imply every historical ticket was individually reproduced on production.",
+    "online_acceptance_status": "ROUND3_SCOPED_UAT_VERIFIED; individual scope in release gate",
+    "previous_release_evidence": "CI 34215316423 success; CD 34216909674 attempt 2 success; public API release_id caaef39042ea15fc93f01938af46a7ac64890258. See REVIEW_ROUND2_RESOLUTION_2026-09-08.md.",
+    "round3_release_evidence": "Application adc749f released; final regression CI34232954119 passed. See docs/ROUND3_RELEASE_GATE.md for online UAT groups; this does not imply every historical ticket was individually reproduced on production."
   },
   {
     "key": "PARK-112",
@@ -585,8 +607,10 @@
     },
     "reviewed_against": "caaef39042ea15fc93f01938af46a7ac64890258",
     "implementation_status": "VERIFIED_BASELINE",
-    "release_evidence": "CI 34215316423 success; CD 34216909674 attempt 2 success; public API release_id caaef39042ea15fc93f01938af46a7ac64890258. See REVIEW_ROUND2_RESOLUTION_2026-09-08.md.",
-    "online_acceptance_status": "PENDING_AUTHENTICATED_ROUND3_UAT"
+    "release_evidence": "Application adc749f released; final regression CI34232954119 passed. See docs/ROUND3_RELEASE_GATE.md for online UAT groups; this does not imply every historical ticket was individually reproduced on production.",
+    "online_acceptance_status": "ROUND3_SCOPED_UAT_VERIFIED; individual scope in release gate",
+    "previous_release_evidence": "CI 34215316423 success; CD 34216909674 attempt 2 success; public API release_id caaef39042ea15fc93f01938af46a7ac64890258. See REVIEW_ROUND2_RESOLUTION_2026-09-08.md.",
+    "round3_release_evidence": "Application adc749f released; final regression CI34232954119 passed. See docs/ROUND3_RELEASE_GATE.md for online UAT groups; this does not imply every historical ticket was individually reproduced on production."
   },
   {
     "key": "PARK-113",
@@ -630,8 +654,10 @@
     },
     "reviewed_against": "caaef39042ea15fc93f01938af46a7ac64890258",
     "implementation_status": "VERIFIED_BASELINE",
-    "release_evidence": "CI 34215316423 success; CD 34216909674 attempt 2 success; public API release_id caaef39042ea15fc93f01938af46a7ac64890258. See REVIEW_ROUND2_RESOLUTION_2026-09-08.md.",
-    "online_acceptance_status": "PENDING_AUTHENTICATED_ROUND3_UAT"
+    "release_evidence": "Application adc749f released; final regression CI34232954119 passed. See docs/ROUND3_RELEASE_GATE.md for online UAT groups; this does not imply every historical ticket was individually reproduced on production.",
+    "online_acceptance_status": "ROUND3_SCOPED_UAT_VERIFIED; individual scope in release gate",
+    "previous_release_evidence": "CI 34215316423 success; CD 34216909674 attempt 2 success; public API release_id caaef39042ea15fc93f01938af46a7ac64890258. See REVIEW_ROUND2_RESOLUTION_2026-09-08.md.",
+    "round3_release_evidence": "Application adc749f released; final regression CI34232954119 passed. See docs/ROUND3_RELEASE_GATE.md for online UAT groups; this does not imply every historical ticket was individually reproduced on production."
   },
   {
     "key": "PARK-114",
@@ -681,8 +707,10 @@
     },
     "reviewed_against": "caaef39042ea15fc93f01938af46a7ac64890258",
     "implementation_status": "VERIFIED_BASELINE",
-    "release_evidence": "CI 34215316423 success; CD 34216909674 attempt 2 success; public API release_id caaef39042ea15fc93f01938af46a7ac64890258. See REVIEW_ROUND2_RESOLUTION_2026-09-08.md.",
-    "online_acceptance_status": "PENDING_AUTHENTICATED_ROUND3_UAT"
+    "release_evidence": "Application adc749f released; final regression CI34232954119 passed. See docs/ROUND3_RELEASE_GATE.md for online UAT groups; this does not imply every historical ticket was individually reproduced on production.",
+    "online_acceptance_status": "ROUND3_SCOPED_UAT_VERIFIED; individual scope in release gate",
+    "previous_release_evidence": "CI 34215316423 success; CD 34216909674 attempt 2 success; public API release_id caaef39042ea15fc93f01938af46a7ac64890258. See REVIEW_ROUND2_RESOLUTION_2026-09-08.md.",
+    "round3_release_evidence": "Application adc749f released; final regression CI34232954119 passed. See docs/ROUND3_RELEASE_GATE.md for online UAT groups; this does not imply every historical ticket was individually reproduced on production."
   },
   {
     "key": "PARK-115",
@@ -730,9 +758,11 @@
     },
     "reviewed_against": "caaef39042ea15fc93f01938af46a7ac64890258",
     "implementation_status": "GATE_AND_RESTORE_VERIFIED",
-    "release_evidence": "CI 34215316423 success; CD 34216909674 attempt 2 success; public API release_id caaef39042ea15fc93f01938af46a7ac64890258. See REVIEW_ROUND2_RESOLUTION_2026-09-08.md.",
-    "online_acceptance_status": "PENDING_AUTHENTICATED_ROUND3_UAT",
-    "verification_note": "Native recovery gate passed at baseline; public-schema PG17 dump restored to isolated PG17, 36 table counts match. Environment reviewer policy was not independently verified; do not infer it from CI success."
+    "release_evidence": "Application adc749f released; final regression CI34232954119 passed. See docs/ROUND3_RELEASE_GATE.md for online UAT groups; this does not imply every historical ticket was individually reproduced on production.",
+    "online_acceptance_status": "ROUND3_SCOPED_UAT_VERIFIED; individual scope in release gate",
+    "verification_note": "Native recovery gate passed at baseline; public-schema PG17 dump restored to isolated PG17, 36 table counts match. Environment reviewer policy was not independently verified; do not infer it from CI success.",
+    "previous_release_evidence": "CI 34215316423 success; CD 34216909674 attempt 2 success; public API release_id caaef39042ea15fc93f01938af46a7ac64890258. See REVIEW_ROUND2_RESOLUTION_2026-09-08.md.",
+    "round3_release_evidence": "Application adc749f released; final regression CI34232954119 passed. See docs/ROUND3_RELEASE_GATE.md for online UAT groups; this does not imply every historical ticket was individually reproduced on production."
   },
   {
     "key": "PARK-116",
@@ -778,9 +808,11 @@
     },
     "reviewed_against": "caaef39042ea15fc93f01938af46a7ac64890258",
     "implementation_status": "VERIFIED_BASELINE",
-    "release_evidence": "CI 34215316423 success; CD 34216909674 attempt 2 success; public API release_id caaef39042ea15fc93f01938af46a7ac64890258. See REVIEW_ROUND2_RESOLUTION_2026-09-08.md.",
-    "online_acceptance_status": "PENDING_AUTHENTICATED_ROUND3_UAT",
-    "verification_note": "Actual local PG16: 16 integration/contention tests pass in 55.10s; revised schema verified on restored PG17 clone. Round3 CI pending."
+    "release_evidence": "Application adc749f released; final regression CI34232954119 passed. See docs/ROUND3_RELEASE_GATE.md for online UAT groups; this does not imply every historical ticket was individually reproduced on production.",
+    "online_acceptance_status": "ROUND3_SCOPED_UAT_VERIFIED; individual scope in release gate",
+    "verification_note": "Actual local PG16: 16 integration/contention tests pass in 55.10s; revised schema verified on restored PG17 clone. Round3 CI pending.",
+    "previous_release_evidence": "CI 34215316423 success; CD 34216909674 attempt 2 success; public API release_id caaef39042ea15fc93f01938af46a7ac64890258. See REVIEW_ROUND2_RESOLUTION_2026-09-08.md.",
+    "round3_release_evidence": "Application adc749f released; final regression CI34232954119 passed. See docs/ROUND3_RELEASE_GATE.md for online UAT groups; this does not imply every historical ticket was individually reproduced on production."
   },
   {
     "key": "PARK-117",
@@ -823,7 +855,9 @@
     },
     "reviewed_against": "caaef39042ea15fc93f01938af46a7ac64890258",
     "implementation_status": "VERIFIED_BASELINE",
-    "release_evidence": "CI 34215316423 success; CD 34216909674 attempt 2 success; public API release_id caaef39042ea15fc93f01938af46a7ac64890258. See REVIEW_ROUND2_RESOLUTION_2026-09-08.md.",
-    "online_acceptance_status": "PENDING_AUTHENTICATED_ROUND3_UAT"
+    "release_evidence": "Application adc749f released; final regression CI34232954119 passed. See docs/ROUND3_RELEASE_GATE.md for online UAT groups; this does not imply every historical ticket was individually reproduced on production.",
+    "online_acceptance_status": "ROUND3_SCOPED_UAT_VERIFIED; individual scope in release gate",
+    "previous_release_evidence": "CI 34215316423 success; CD 34216909674 attempt 2 success; public API release_id caaef39042ea15fc93f01938af46a7ac64890258. See REVIEW_ROUND2_RESOLUTION_2026-09-08.md.",
+    "round3_release_evidence": "Application adc749f released; final regression CI34232954119 passed. See docs/ROUND3_RELEASE_GATE.md for online UAT groups; this does not imply every historical ticket was individually reproduced on production."
   }
 ]
