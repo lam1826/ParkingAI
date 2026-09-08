@@ -62,6 +62,11 @@ def test_scoped_ai_grounds_context_and_replays_without_another_provider_call(env
     assert "PARKING_DATA" in prompt and "QUESTION_JSON" in prompt
     assert '"total_arrivals": 1' in prompt and env.vehicle.license_plate not in prompt
     assert "KHÔNG" in prompt and "giả định" in prompt
+    # Weekly hour buckets are cumulative arrivals, not a measured hourly rate;
+    # zero arrivals cannot establish zero departures or justify closing a lane.
+    assert "tổng lượt VÀO cộng dồn theo cùng giờ trong TOÀN KỲ" in prompt
+    assert "không phải lượt/giờ của một ngày" in prompt
+    assert "Không có phân bố lượt RA theo giờ" in prompt
     replay = env.client.post(endpoint, json=body)
     assert replay.status_code == 201 and replay.json()["id"] == row["id"]
     assert mock_ai_provider_client.return_value.models.generate_content.call_count == 1

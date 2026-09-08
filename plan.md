@@ -1,6 +1,6 @@
 # Plan
 
-## Đã phát hành ba mục sửa; còn nghiệm thu provider bị chặn
+## Đã phát hành ba mục sửa; đang kiểm lại diễn giải của provider
 
 Người dùng đã yêu cầu sửa và nghiệm thu Gemini thật, Báo cáo/AI cho quản lý–nhân viên một bãi, và lọc lịch sử theo thời gian. Yêu cầu này cho phép dùng cấu hình Gemini hiện có để kiểm thử và bật sau gate; thay thế quyết định tạm tắt ở các mốc trước.
 
@@ -10,7 +10,7 @@ Người dùng đã yêu cầu sửa và nghiệm thu Gemini thật, Báo cáo/A
 - [x] Nối lại menu/routes, màn hình báo cáo và AI, filter ngày vào từ/đến; 142 test frontend đạt. Giữ API legacy guard và feature capability để tương thích trong lúc rollout.
 - [x] Backend1064 pass/19 skip trên Windows; chạy riêng PostgreSQL17 với locale Unicode:18 pass, gồm migration và rollback giữ lịch sử AI. Kiểm tra dữ liệu chéo bãi, role bị thu hồi giữa lời gọi provider, ranh giới ngày, hoàn tiền đều đạt.
 - [x] Browser local desktop/mobile31 kiểm tra đạt, provider mock được ghi rõ. Backup public schema mới a7f60f74c79af9a8331b1c5f2eae9cdea77bddb41b790a1d19b9c4662fa7fdad; restore36 bảng PostgreSQL17, nâng20260908_03 không đổi các bản ghi cũ. Cần chuẩn bị extension btree_gist trên đích restore riêng vì dump chỉ lấy public schema.
-- [ ] Gemini thật đã đạt ngày/tuần/hỏi đáp. Nhân sự trả 503; retry và kỳ rỗng/nút AI chờ xác nhận riêng do auto-review chặn việc gửi thống kê demo tới Gemini. Giữ UUID cũ để retry, không sinh trùng; CORE_AI_COMPLETION.md ghi rõ phần chưa đạt.
+- [ ] Người dùng đã cho phép gửi thống kê demo và lưu kết quả. API đạt 111 kiểm tra; retry nhân sự và kỳ rỗng thành công. Đọc kết quả phát hiện Gemini gọi 40 lượt cộng dồn cùng giờ trong tuần là 40 lượt/giờ và suy thiếu người trực từ 0 lượt vào. Sửa hướng dẫn đơn vị, giới hạn suy luận xe ra/nhân sự; test prompt RED→GREEN, phát hành sau gate rồi gọi lại model thật và nút AI. Không tính kết quả HTTP201 là đạt chất lượng nội dung.
 - [x] Backup/restore, CI34253340017/CD34255366293, SHA038d6c9, bundle/ready/CORS đạt. Gemini đã bật, giữ Fly 1 GB/QR mô phỏng. API online chỉ đọc62 kiểm tra và UI ba vai trò đạt. Ba ticket217/218/219IN_PROGRESS theo phạm vi còn lại.
 
 Rollback: migration20260908_03 thêm bảng site_ai_analyses; downgrade chỉ đổi revision marker, giữ bảng/dữ liệu để app cũ dùng được. Re-upgrade xác minh bảng giữ lại. Khóa và artifact nằm ngoài Git.
