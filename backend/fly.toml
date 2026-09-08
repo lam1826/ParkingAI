@@ -12,6 +12,10 @@ primary_region = 'sin'
 [deploy]
   release_command = "sh -c 'alembic -c alembic.ini upgrade head && python production_release_gate.py'"
 
+[env]
+  PORTAL_MAINTENANCE_INTERVAL_SECONDS = "30"
+  TRUSTED_EDGE_PROXY = "true"
+
 [http_service]
   internal_port = 8000
   force_https = true

@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import tomllib
 
@@ -100,7 +101,7 @@ def test_delivery_targets_fly_after_verified_main_ci():
         Path(__file__).parents[1] / ".github" / "workflows" / "delivery.yml"
     ).read_text(encoding="utf-8")
     assert "environment: production" in workflow
-    assert "superfly/flyctl-actions/setup-flyctl@master" in workflow
+    assert "superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1" in workflow
     assert "FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}" in workflow
     assert "flyctl deploy" in workflow
     assert "--remote-only" in workflow
@@ -134,6 +135,41 @@ def test_delivery_waits_for_release_propagation_and_reports_cors_failure():
     assert "tr -d '\\r'" in workflow
 
 
+def test_delivery_requires_recovery_point_before_migration_and_pins_runtime_inputs():
+    root = Path(__file__).parents[1]
+    workflow = (root / ".github" / "workflows" / "delivery.yml").read_text(encoding="utf-8")
+    dockerfile = (root / "backend" / "Dockerfile").read_text(encoding="utf-8")
+
+    assert workflow.index("Require a current Supabase recovery point") < workflow.index("flyctl deploy")
+    assert "SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}" in workflow
+    assert "/database/backups" in workflow
+    assert "supabase_backup_gate.py" in workflow
+    assert "setup-flyctl@master" not in workflow
+    assert "python:3.12.11-slim-bookworm@sha256:" in dockerfile
+
+    runbook = (root / "docs" / "PRODUCTION_DEPLOYMENT.md").read_text(encoding="utf-8")
+    assert "Rollback to this deployment" in runbook
+    assert "Không dùng preview deployment" in runbook
+
+
+def test_supabase_recovery_gate_accepts_pitr_or_fresh_backup_and_rejects_stale_data():
+    from supabase_backup_gate import validate_backup_metadata
+
+    now = datetime(2026, 9, 8, 12, tzinfo=timezone.utc)
+    assert validate_backup_metadata({"pitr_enabled": True, "backups": []}, now=now) == "PITR enabled"
+    fresh = {"pitr_enabled": False, "backups": [{
+        "status": "COMPLETED",
+        "inserted_at": (now - timedelta(hours=35)).isoformat(),
+    }]}
+    assert "completed backup" in validate_backup_metadata(fresh, now=now)
+    stale = {"pitr_enabled": False, "backups": [{
+        "status": "COMPLETED",
+        "inserted_at": (now - timedelta(hours=37)).isoformat(),
+    }]}
+    with pytest.raises(RuntimeError, match="No active PITR"):
+        validate_backup_metadata(stale, now=now)
+
+
 def test_fly_config_runs_migrations_and_keeps_one_machine_warm():
     path = Path(__file__).parents[1] / "backend" / "fly.toml"
     raw = path.read_text(encoding="utf-8")
@@ -164,6 +200,11 @@ def test_production_release_gate_runs_deep_readiness_then_exact_revision(monkeyp
     )
     monkeypatch.setattr(
         production_release_gate,
+        "validate_trusted_edge_proxy_configuration",
+        lambda: calls.append(("proxy",)),
+    )
+    monkeypatch.setattr(
+        production_release_gate,
         "check_postgres_readiness",
         lambda engine, *, deep: calls.append(("readiness", engine, deep)),
     )
@@ -176,6 +217,7 @@ def test_production_release_gate_runs_deep_readiness_then_exact_revision(monkeyp
     assert production_release_gate.main() == 0
     assert calls == [
         ("checkout-signing",),
+        ("proxy",),
         ("readiness", production_release_gate.engine, True),
         ("revision", production_release_gate.engine),
     ]
@@ -188,6 +230,7 @@ def test_production_gate_validates_signing_key_bytes_without_disclosing_key(monk
     import production_release_gate
 
     monkeypatch.setattr(settings, "SECRET_KEY", secret)
+    monkeypatch.setattr(production_release_gate, "validate_trusted_edge_proxy_configuration", lambda: None)
     database_calls = []
     monkeypatch.setattr(production_release_gate, "check_postgres_readiness", lambda *args, **kwargs: database_calls.append("readiness"))
     monkeypatch.setattr(production_release_gate, "assert_postgres_release_revision", lambda *args: database_calls.append("revision"))

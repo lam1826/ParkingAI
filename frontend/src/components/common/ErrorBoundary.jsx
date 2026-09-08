@@ -17,8 +17,12 @@ class ErrorBoundary extends Component {
     this.state = { hasError: false };
   }
 
-  static getDerivedStateFromError() {
-    return { hasError: true };
+  static getDerivedStateFromError(error) {
+    const message = String(error?.message || "").toLowerCase();
+    const chunkError = message.includes("dynamically imported module")
+      || message.includes("failed to fetch module")
+      || message.includes("chunkloaderror");
+    return { hasError: true, chunkError };
   }
 
   componentDidCatch(error, errorInfo) {
@@ -27,6 +31,10 @@ class ErrorBoundary extends Component {
   }
 
   handleRetry = () => {
+    if (this.state.chunkError) {
+      window.location.reload();
+      return;
+    }
     this.setState({ hasError: false });
   };
 

@@ -217,7 +217,7 @@ class ParkingService:
             vehicle = self.db.execute(
                 select(Vehicle).where(
                     Vehicle.license_plate == license_plate
-                )
+                ).with_for_update(key_share=True)
             ).scalar_one_or_none()
 
             if vehicle is None:
@@ -236,7 +236,7 @@ class ParkingService:
                     vehicle = self.db.execute(
                         select(Vehicle).where(
                             Vehicle.license_plate == license_plate
-                        )
+                        ).with_for_update(key_share=True)
                     ).scalar_one_or_none()
                     if vehicle is None:
                         raise HTTPException(
@@ -329,9 +329,23 @@ class ParkingService:
                     vehicle_id=vehicle.id,
                     check_in_time=check_in_time,
                 ):
+                    from expansion.reservations import admission_allowed
+                    blocked_by_commitment = not admission_allowed(
+                        self.db,
+                        slot.id,
+                        vehicle_id=vehicle.id,
+                        at=check_in_time,
+                        lock=False,
+                    )
                     # Thua race: slot vừa bị request khác chiếm giữa lúc đọc
                     # và lúc UPDATE. Transaction chưa ghi gì khác nên trả 409.
                     self.db.rollback()
+                    if blocked_by_commitment:
+                        raise HTTPException(
+                            status_code=409,
+                            detail="Vị trí đã có đặt chỗ hoặc suất phân bổ trong tương lai. "
+                                   "Vui lòng chọn vị trí khác."
+                        )
                     raise HTTPException(
                         status_code=409,
                         detail="Vị trí đỗ vừa được xe khác sử dụng. "

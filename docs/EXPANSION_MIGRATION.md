@@ -1,6 +1,9 @@
 # Nâng cấp dữ liệu cho bản mở rộng đồ án
 
-Phiên bản PostgreSQL `20260907_02` bổ sung 20 bảng cho bãi xe, đặt chỗ, hồ sơ khách hàng, đơn vé tháng và camera. SQLite dùng công cụ `db_rollout.py` hiện có. Các công cụ chỉ chạy khi được gọi rõ ràng; khởi động API không tự sửa dữ liệu.
+Chuỗi PostgreSQL tới revision `20260908_01` bổ sung 20 bảng cho bãi xe, đặt
+chỗ, hồ sơ khách hàng, đơn vé tháng và camera, đồng thời thêm guard không cho
+ngừng khu khi còn cam kết vị trí. SQLite dùng công cụ `db_rollout.py` hiện có.
+Các công cụ chỉ chạy khi được gọi rõ ràng; khởi động API không tự sửa dữ liệu.
 
 ## Quy tắc giữ dữ liệu
 
@@ -39,11 +42,18 @@ python -m alembic -c alembic.ini upgrade head
 python production_release_gate.py
 ```
 
-Revision giữ bản SQL cố định của bảng, index và trigger, không nhập model đang thay đổi để chạy migration cũ. Cổng phát hành kiểm tra revision `20260907_02`, các cột bắt buộc, ràng buộc và dữ liệu nghiệp vụ.
+Revision giữ bản SQL cố định của bảng, index và trigger, không nhập model đang
+thay đổi để chạy migration cũ. Cổng phát hành kiểm tra revision `20260908_01`,
+các cột bắt buộc, ràng buộc, trigger `trg_zone_commitment_guard` và dữ liệu
+nghiệp vụ.
 
 Kiểm thử PostgreSQL thực nằm trong `tests/test_postgres_integration.py`, được kích hoạt bởi `POSTGRES_TEST_URL` trong dịch vụ CI riêng. Biên dịch migration ở chế độ offline chỉ kiểm tra việc sinh SQL; không thay thế kiểm thử chạy PostgreSQL.
 
-Sau review, `tests/test_review_zone_regressions.py` bổ sung các trường hợp 0/1/nhiều bãi, bãi đóng, readiness và nâng cấp bản sao sau khi tạo khu qua API. Truy vấn bất biến dùng chung đã được kiểm tra trên SQLite; đây chưa phải bằng chứng khóa hoặc transaction hoạt động đúng trên PostgreSQL thực.
+Sau review, `tests/test_review_zone_regressions.py` bổ sung các trường hợp
+0/1/nhiều bãi, bãi đóng, readiness và nâng cấp bản sao sau khi tạo khu qua API.
+`tests/test_postgres_integration.py` có thêm đường ghi reserve, arrive, đơn
+manual và tranh chấp reserve/check-in theo thứ tự khóa `vehicle → slot`; chỉ
+được tính là bằng chứng PostgreSQL mới sau khi job CI PostgreSQL 16 chạy xanh.
 
 ## Khôi phục
 

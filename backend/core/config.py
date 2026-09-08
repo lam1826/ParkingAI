@@ -28,6 +28,8 @@ class Settings(BaseSettings):
     AUTH_REGISTER_MAX_ATTEMPTS: int = 5
     AUTH_REGISTER_WINDOW_SECONDS: int = 3600
     READINESS_CACHE_SECONDS: float = 5.0
+    PORTAL_MAINTENANCE_INTERVAL_SECONDS: float = 0.0
+    TRUSTED_EDGE_PROXY: bool = False
     
     # Chỉ định đọc từ file .env ở thư mục gốc
     model_config = SettingsConfigDict(

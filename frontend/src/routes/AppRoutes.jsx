@@ -1,5 +1,5 @@
 import { Routes, Route, Navigate } from "react-router-dom";
-import { lazy, Suspense, useContext } from "react";
+import { Suspense, useContext } from "react";
 import { Box, CircularProgress } from "@mui/material";
 
 import MainLayout from "../layouts/MainLayout";
@@ -7,6 +7,9 @@ import PrivateRoute from "./PrivateRoute";
 import PermissionRoute from "./PermissionRoute";
 import { AuthContext } from "../context/AuthContext";
 import { ExpansionProvider, useExpansion } from "../context/ExpansionContext";
+import { lazyWithRecovery } from "../utils/chunkRecovery";
+
+const lazy = lazyWithRecovery;
 
 // --- Pages ---
 const Dashboard = lazy(() => import("../pages/Dashboard/DashboardPage"));

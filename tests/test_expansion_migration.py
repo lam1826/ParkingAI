@@ -16,7 +16,13 @@ from sqlalchemy.orm import Session
 from sqlalchemy.schema import CreateIndex, CreateTable
 
 from db_rollout import check_database_readiness, initialize_database, migrate_copy
-from expansion.site_models import ParkingSite, SiteMembership, SITE_POSTGRES_GUARD_SQL, SITE_SQLITE_GUARDS
+from expansion.site_models import (
+    ParkingSite,
+    SiteMembership,
+    SITE_POSTGRES_GUARD_SQL,
+    SITE_SQLITE_GUARDS,
+    ZONE_COMMITMENT_POSTGRES_GUARD_SQL,
+)
 from expansion_rollout import DEFAULT_SITE_NAME, EXPANSION_TABLES
 from expansion_demo_guards import DEMO_POSTGRES_GUARD_SQL, DEMO_SQLITE_GUARD_SQL, validate_demo_ledger
 from finance_rollout import backfill_legacy_finance
@@ -223,6 +229,25 @@ def test_expansion_postgres_revision_is_frozen_and_has_matching_schema(monkeypat
     assert "FOREIGN KEY(site_id) REFERENCES parking_sites (id)" in sql
     assert "INSERT INTO portal_account_links" not in sql
     assert "UPDATE parking_sessions" not in sql
+    assert "DROP TABLE" not in sql
+
+
+def test_zone_commitment_revision_is_additive_and_offline_renderable(monkeypatch):
+    root = Path(__file__).parents[1]
+    path = root / "backend/alembic/versions/20260908_01_zone_commitment_guard.py"
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    constants = {node.targets[0].id: ast.literal_eval(node.value) for node in tree.body
+                 if isinstance(node, ast.Assign) and isinstance(node.targets[0], ast.Name)}
+    assert constants["revision"] == "20260908_01"
+    assert constants["down_revision"] == "20260907_02"
+    assert constants["ZONE_COMMITMENT_POSTGRES_GUARD_SQL"] == ZONE_COMMITMENT_POSTGRES_GUARD_SQL
+    monkeypatch.setenv("DATABASE_URL", "postgresql+psycopg://unused:unused@127.0.0.1/unused")
+    buffer = io.StringIO()
+    config = Config(str(root / "backend/alembic.ini"), output_buffer=buffer)
+    config.set_main_option("script_location", str(root / "backend/alembic"))
+    command.upgrade(config, "20260907_02:head", sql=True)
+    sql = buffer.getvalue()
+    assert "CREATE TRIGGER trg_zone_commitment_guard" in sql
     assert "DROP TABLE" not in sql
 
 

@@ -17,7 +17,7 @@ from expansion_demo_guards import validate_demo_ledger
 from expansion_rollout import validate_zone_site_assignment
 
 
-POSTGRES_SCHEMA_REVISION = "20260907_02"
+POSTGRES_SCHEMA_REVISION = "20260908_01"
 
 REQUIRED_COLUMN_CONTRACTS = frozenset({
     "parking_sessions.checkout_quote_hash:character varying:64:YES",
@@ -363,6 +363,7 @@ REQUIRED_TRIGGERS = REQUIRED_TRIGGERS | frozenset(['trg_parking_reservations_gua
  'trg_guaranteed_allocations_guard',
  'trg_slot_commitment_guard',
  'trg_zone_site_immutable'])
+REQUIRED_TRIGGERS = REQUIRED_TRIGGERS | frozenset({"trg_zone_commitment_guard"})
 REQUIRED_TRIGGERS = REQUIRED_TRIGGERS | frozenset({"trg_payment_demo_boundary"})
 
 

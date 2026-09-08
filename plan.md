@@ -44,7 +44,10 @@ Không cần tài khoản thanh toán hoặc camera thật cho phạm vi đồ �
 - Nguồn yêu cầu: `docs/REVIEW_ROUND2_2026-09-08.md`, backlog `docs/tickets/epics.json` và `docs/tickets/tickets.json`.
 - P0 PARK-101–104: đã tái hiện bằng test đỏ và sửa bốn lỗi chặn demo: dữ liệu email legacy làm v1 serialize 500; replay portal giữ khóa SQLite và làm mất audit; upload ảnh giữ connection/cạn pool và audit chặn event loop; SPA demo che API `/dashboard`.
 - Kiểm chứng P0 theo module: 94 test đạt. Pipeline camera hiện giảm tải trước DB, không giữ transaction lúc decode/OCR; pool PostgreSQL timeout mặc định 5 giây; audit SQL chạy ngoài event loop.
-- Tiếp theo: P1 theo cụm vận hành/bất biến đặt chỗ (PARK-105–108, 113), frontend bền (PARK-109–110), bảo mật API/proxy (PARK-111–112), rồi P2 release/PG/vision/thời gian (PARK-114–117).
+- PARK-105–114 và PARK-117 đã được triển khai cùng test hồi quy: worker production/expiry, horizon và cap đặt chỗ, guard ngừng khu, chống tự duyệt, frontend phục hồi sau chunk/mạng, ranh giới proxy/API, bất biến đặt chỗ, eviction/retention/trạng thái vision, timezone và thông báo waitlist.
+- PARK-115 đã có cổng backup/PITR fail-closed trước migration, ghim Fly action và Docker digest, cùng runbook rollback frontend. PARK-116 thống nhất khóa `vehicle → slot` và thêm đường ghi PostgreSQL. Hai ticket này chỉ hoàn tất vận hành sau khi secrets/reviewer và CI PostgreSQL 16 thực tế đều xanh.
+- Kiểm tra candidate cuối: backend **1.177 đạt/8 bỏ qua/0 lỗi** trong 640,01 giây; frontend 134/134, lint/build đạt, Impeccable detector `[]`. Smoke `start_demo.ps1` trên DB/cổng tạm trả ready, login, dashboard JSON và SPA 200.
+- Bảng đối chiếu và điều kiện phát hành: `docs/REVIEW_ROUND2_RESOLUTION_2026-09-08.md`.
 - Rollback cụm P0: revert commit P0; không có migration và không đổi dữ liệu. Các file hồ sơ báo cáo cục bộ vẫn ngoài Git theo `.gitignore`.
 
 ### Nghiệm thu độc lập theo yêu cầu được gửi lại ngày 07/09/2026

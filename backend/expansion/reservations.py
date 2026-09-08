@@ -1,8 +1,8 @@
 """Slot-row serialization makes reservations and both legacy admissions compete fairly."""
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 
 from fastapi import HTTPException
-from sqlalchemy import and_, exists, or_, select, update
+from sqlalchemy import and_, exists, func, or_, select, update
 
 from core.clock import BUSINESS_TZ
 from crud import parking_session as session_crud
@@ -13,17 +13,46 @@ from models.parking_slot import ParkingSlot
 from models.vehicle import Vehicle
 from models.zone import Zone
 
+MAX_CUSTOMER_BOOKING_HORIZON = timedelta(days=30)
+MAX_ACTIVE_CUSTOMER_RESERVATIONS = 5
+
 
 def local_time(value):
     return value.astimezone(BUSINESS_TZ).replace(tzinfo=None) if value.tzinfo else value
 
 
+_API_FIELDS = {
+    "parking_reservations": (
+        "id", "site_id", "slot_id", "customer_id", "vehicle_id", "start_at", "end_at",
+        "arrival_deadline", "status", "request_id", "session_id", "created_at",
+    ),
+    "guaranteed_allocations": (
+        "id", "site_id", "slot_id", "customer_id", "vehicle_id", "start_at", "end_at",
+        "status", "request_id", "created_at",
+    ),
+    "site_waitlist": (
+        "id", "site_id", "customer_id", "vehicle_id", "start_at", "end_at", "status",
+        "request_id", "reservation_id", "created_at",
+    ),
+    "parking_sessions": (
+        "id", "vehicle_id", "parking_slot_id", "monthly_pass_id", "check_in_time",
+        "check_out_time", "parking_fee", "status", "created_at", "updated_at",
+    ),
+}
+_UTC_METADATA_COLUMNS = {"created_at", "updated_at"}
+
+
 def serialize(row):
     result = {}
-    for column in row.__table__.columns:
+    selected = _API_FIELDS.get(row.__table__.name)
+    columns = (row.__table__.columns[name] for name in selected) if selected else row.__table__.columns
+    for column in columns:
         value = getattr(row, column.name)
-        if hasattr(value, "tzinfo") and value.tzinfo is None:
-            value = value.replace(tzinfo=BUSINESS_TZ)
+        if isinstance(value, datetime):
+            if column.name in _UTC_METADATA_COLUMNS and column.server_default is not None:
+                value = value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
+            elif value.tzinfo is None:
+                value = value.replace(tzinfo=BUSINESS_TZ)
         result[column.name] = value
     return result
 
@@ -94,13 +123,22 @@ def record_admission(db, session):
     if session.parking_slot_id is None:
         return
     now = session.check_in_time
+    actual_site_id = db.scalar(select(Zone.site_id).join(
+        ParkingSlot, ParkingSlot.zone_id == Zone.id,
+    ).where(ParkingSlot.id == session.parking_slot_id))
+    vehicle = db.get(Vehicle, session.vehicle_id)
     row = db.scalar(select(ParkingReservation).where(
-        ParkingReservation.slot_id == session.parking_slot_id,
+        ParkingReservation.site_id == actual_site_id,
         ParkingReservation.vehicle_id == session.vehicle_id,
+        ParkingReservation.customer_id == (vehicle.customer_id if vehicle else None),
         ParkingReservation.status == "confirmed", ParkingReservation.start_at <= now,
         ParkingReservation.arrival_deadline > now,
-    ).with_for_update())
+    ).order_by(ParkingReservation.start_at, ParkingReservation.id).with_for_update())
     if row is not None:
+        if row.slot_id != session.parking_slot_id:
+            reserved_slot = db.get(ParkingSlot, row.slot_id)
+            label = reserved_slot.slot_name if reserved_slot else str(row.slot_id)
+            raise HTTPException(409, f"Xe đã có đặt chỗ tại vị trí {label}. Vui lòng nhận xe vào đúng vị trí.")
         db.flush()
         row.status = "arrived"
         row.session_id = session.id
@@ -109,23 +147,25 @@ def record_admission(db, session):
 
 def _vehicle(db, actor, vehicle_id, site_id, *, customer=False):
     require_public_site(db, site_id)
+    if not customer:
+        require_site_access(db, actor, site_id)
     vehicle = db.get(Vehicle, vehicle_id)
     if vehicle is None:
         raise HTTPException(404, "Không tìm thấy xe.")
     if customer:
         from expansion.portal_service import require_owned_vehicle
         vehicle = require_owned_vehicle(db, actor, vehicle_id)
-    else:
-        require_site_access(db, actor, site_id)
     if vehicle.customer_id is None:
         raise HTTPException(409, "Xe cần được liên kết với khách hàng đã xác minh trước khi giữ chỗ.")
     return vehicle
 
 
-def _check_window(data, now):
+def _check_window(data, now, *, customer=False):
     start, end = local_time(data.start_at), local_time(data.end_at)
     if start < now or end <= start:
         raise HTTPException(422, "Chỉ được đặt khoảng thời gian hiện tại hoặc tương lai.")
+    if customer and start > now + MAX_CUSTOMER_BOOKING_HORIZON:
+        raise HTTPException(422, "Khách hàng chỉ được đặt chỗ trước tối đa 30 ngày.")
     return start, end
 
 
@@ -139,6 +179,8 @@ def _existing(db, model, data, actor, start, end):
     row = db.scalar(select(model).where(model.request_id == data.request_id))
     if row is not None and not _same_request(row, data, actor.id, start, end):
         raise HTTPException(409, "Mã yêu cầu đã dùng cho nội dung khác.")
+    if row is not None and row.status in {"cancelled", "expired"}:
+        raise HTTPException(409, "Yêu cầu cũ đã kết thúc; hãy tạo mã yêu cầu mới.")
     return row
 
 
@@ -188,23 +230,56 @@ def reserve(db, actor, data, *, customer=False, allocation=False, _now=None):
     old = _existing(db, model, data, actor, start, end)
     if old is not None:
         return old
-    _check_window(data, now)
+    _check_window(data, now, customer=customer)
+    if customer:
+        active_count = db.scalar(select(func.count()).select_from(ParkingReservation).where(
+            ParkingReservation.customer_id == vehicle.customer_id,
+            ParkingReservation.status.in_(["confirmed", "arrived"]),
+            ParkingReservation.end_at > now,
+            or_(
+                ParkingReservation.status == "arrived",
+                ParkingReservation.arrival_deadline > now,
+            ),
+        ))
+        if active_count >= MAX_ACTIVE_CUSTOMER_RESERVATIONS:
+            raise HTTPException(409, "Mỗi khách hàng chỉ được có tối đa 5 đặt chỗ đang hoạt động.")
     # A booking made by a previous owner keeps holding its slot (slot-level checks below),
     # but it must not stop the verified current owner from booking elsewhere.
-    if db.scalar(select(ParkingReservation.id).where(
+    overlapping_reservation = db.scalar(select(ParkingReservation.id).where(
         ParkingReservation.vehicle_id == vehicle.id,
         ParkingReservation.customer_id == vehicle.customer_id,
         ParkingReservation.status.in_(["confirmed", "arrived"]),
         ParkingReservation.start_at < end, ParkingReservation.end_at > start,
         or_(ParkingReservation.status == "arrived", ParkingReservation.arrival_deadline > now),
-    ).limit(1)):
+    ).limit(1))
+    if overlapping_reservation:
         raise HTTPException(409, "Xe đã có đặt chỗ trong khoảng thời gian này.")
+    overlapping_allocations = db.scalars(select(GuaranteedAllocation).where(
+        GuaranteedAllocation.vehicle_id == vehicle.id,
+        GuaranteedAllocation.customer_id == vehicle.customer_id,
+        GuaranteedAllocation.status == "active",
+        GuaranteedAllocation.start_at < end,
+        GuaranteedAllocation.end_at > start,
+    ).order_by(GuaranteedAllocation.start_at, GuaranteedAllocation.id)).all()
+    allocated_slot_ids: set[int] = set()
+    if overlapping_allocations:
+        if allocation:
+            raise HTTPException(409, "Xe đã có suất phân bổ trong khoảng thời gian này.")
+        covering = [row for row in overlapping_allocations
+                    if row.start_at <= start and row.end_at >= end]
+        if not covering:
+            raise HTTPException(409, "Xe đã có suất phân bổ giao với khoảng thời gian này.")
+        allocated_slot_ids = {row.slot_id for row in covering}
+        if data.slot_id is not None and data.slot_id not in allocated_slot_ids:
+            raise HTTPException(409, "Xe phải đặt đúng vị trí đã được phân bổ.")
     query = select(ParkingSlot.id).join(Zone).where(
         Zone.site_id == data.site_id, Zone.is_active.is_(True), ParkingSlot.is_active.is_(True),
         ParkingSlot.vehicle_type_id == vehicle.vehicle_type_id,
     ).order_by(ParkingSlot.id)
     if data.slot_id is not None:
         query = query.where(ParkingSlot.id == data.slot_id)
+    elif allocated_slot_ids:
+        query = query.where(ParkingSlot.id.in_(allocated_slot_ids))
     candidates = db.scalars(query).all()
     if not candidates:
         raise HTTPException(404, "Không có vị trí phù hợp tại bãi.")
@@ -280,7 +355,7 @@ def join_waitlist(db, actor, data, *, customer=False):
     old = _existing(db, SiteWaitlist, data, actor, start, end)
     if old:
         return old
-    _check_window(data, now)
+    _check_window(data, now, customer=customer)
     row = SiteWaitlist(site_id=data.site_id, customer_id=vehicle.customer_id, vehicle_id=vehicle.id,
                        start_at=start, end_at=end, request_id=data.request_id, created_by_id=actor.id)
     db.add(row)
@@ -295,7 +370,9 @@ def offer_waitlist(db, actor, row):
         db.execute(update(SiteWaitlist).where(SiteWaitlist.id == row.id).values(id=SiteWaitlist.id))
     db.refresh(row, with_for_update=True)
     if row.status == "offered":
-        return db.get(ParkingReservation, row.reservation_id)
+        reservation = db.get(ParkingReservation, row.reservation_id)
+        _notify_waitlist_offer(db, row, reservation)
+        return reservation
     if row.status != "waiting":
         raise HTTPException(409, "Yêu cầu không còn trong danh sách chờ.")
     from expansion.site_schemas import ReservationCreate
@@ -311,8 +388,21 @@ def offer_waitlist(db, actor, row):
                              request_id="waitlist-" + row.id)
     reservation = reserve(db, actor, data, _now=now)
     row.status, row.reservation_id = "offered", reservation.id
+    _notify_waitlist_offer(db, row, reservation)
     db.flush()
     return reservation
+
+
+def _notify_waitlist_offer(db, row, reservation):
+    from expansion.portal_service import _notify
+
+    deadline = reservation.arrival_deadline.replace(tzinfo=BUSINESS_TZ).isoformat(timespec="minutes")
+    _notify(
+        db,
+        row.customer_id,
+        f"waitlist:{row.id}:offered",
+        f"Đã có chỗ đỗ cho yêu cầu của bạn. Vui lòng đến trong tối đa 15 phút, trước {deadline}.",
+    )
 
 
 def cancel_waitlist(db, actor, row, *, customer=False):

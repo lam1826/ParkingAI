@@ -6,7 +6,12 @@ Module phục vụ một đơn vị quản lý nhiều bãi. Quản trị viên 
 
 ## Hợp đồng cho giao diện
 
-Mọi request cần Bearer token. JSON thời gian bắt buộc có múi giờ; phản hồi dùng `+07:00`. Lỗi nghiệp vụ dùng HTTP 403/404/409/422 và `detail` tiếng Việt. Các danh sách trả mảng, trừ availability/fleet. Danh sách lịch sử mặc định tối đa 100 mục.
+Mọi request cần Bearer token. JSON thời gian nghiệp vụ bắt buộc có múi giờ;
+`start_at`, `end_at`, giờ vào/ra và hạn đến được trả theo UTC+7. Metadata
+`created_at`/`updated_at` do PostgreSQL/SQLite tạo bằng `CURRENT_TIMESTAMP` giữ
+đúng offset UTC để trình duyệt quy đổi, không gắn nhầm UTC+7. Lỗi nghiệp vụ dùng
+HTTP 403/404/409/422 và `detail` tiếng Việt. Các danh sách trả mảng, trừ
+availability/fleet. Danh sách lịch sử mặc định tối đa 100 mục.
 
 Khoảng lọc được chuẩn hóa múi giờ rồi kiểm tra; `to_at <= from_at` trả 422. Chuyển chủ xe không tự chuyển quyền bảo đảm chỗ: chỉ miễn xung đột khi cả xe và hồ sơ khách đều khớp. Quy tắc này áp dụng ở tạo đặt chỗ và nhận xe, kể cả đặt chỗ cũ đã tồn tại; cùng chủ vẫn dùng quyền đã cấp bình thường.
 
@@ -67,7 +72,6 @@ Ví dụ đăng ký chỗ (`request_id` mới cho mỗi yêu cầu nghiệp vụ
   "arrival_deadline": "2026-09-08T09:15:00+07:00",
   "status": "confirmed",
   "request_id": "booking-request-0001",
-  "created_by_id": 9,
   "session_id": null,
   "created_at": "2026-09-07T10:00:00+07:00"
 }
@@ -83,12 +87,20 @@ Fleet trả `{organization,vehicles:[{id,vehicle_id,license_plate,vehicle_type_i
 
 - Vé tháng miễn/điều chỉnh phí theo kỳ. Phân bổ bảo đảm chỗ là quyền sử dụng một vị trí trong khoảng giờ, không tự cấp vé tháng hoặc tạo chứng từ. Bản đồ án cấp phân bổ qua quản lý.
 - Khoảng giữ chỗ là `[start_at, end_at)`, cho phép hai yêu cầu tiếp giáp. Tới hạn `min(start+15 phút, end)` mà chưa vào thì hết quyền đến; thao tác nghiệp vụ tự loại no-show khỏi khả năng giữ chỗ. API expire lưu trạng thái hết hạn rõ ràng và gọi lặp an toàn.
-- Mọi đặt chỗ/phân bổ và hai đường xe vào cũ cùng khóa dòng vị trí. Hai yêu cầu đồng thời không thể cùng giữ vị trí trong khoảng giao nhau.
+- Khách chỉ được đặt trước tối đa 30 ngày và có tối đa 5 đặt chỗ còn hiệu lực.
+  Phân bổ do quản lý tạo không dùng hạn mức khách này.
+- Mọi đặt chỗ/phân bổ và hai đường xe vào dùng thứ tự khóa `vehicle → slot`.
+  Hai yêu cầu đồng thời không thể cùng giữ vị trí trong khoảng giao nhau hoặc
+  giữ hai vị trí cho cùng một xe.
+- Không thể ngừng khu hoặc vị trí khi còn đặt chỗ/phân bổ tương lai. API trả
+  409 và trigger SQLite/PostgreSQL bảo vệ cả đường ghi ngoài API.
 - Chỗ đang có xe không được bán cho thời điểm tương lai, vì chưa có giờ ra thực tế. Xe vãng lai cũng không được vào vị trí đã có cam kết tương lai: không giả định xe sẽ ra trước giờ khách đến. Chính sách này ưu tiên chắc chắn còn chỗ, có thể giảm khả năng khai thác trong bản đồ án.
 - Xe đến theo đặt chỗ được vào trước yêu cầu sau. Nếu ở quá giờ, `is_occupied` và phiên đang hoạt động tiếp tục chặn xe mới; không giải phóng vị trí hoặc cho xe mới vào tự động. Nhân viên xử lý xung đột tại bãi, chọn chỗ thay thế hoặc hủy; không có cam kết giải quyết vật lý tự động.
 - Nếu xe theo đặt chỗ ra sớm, vị trí hết trạng thái có xe nhưng đặt chỗ vẫn giữ quyền trong cửa sổ `[start_at, end_at)`. Vì vậy, chỗ trống vật lý chưa chắc nhận được xe vãng lai; hãy chọn vị trí có `available_now=true`. Một mã đặt chỗ chỉ ghi nhận một lần đến, không hỗ trợ xe quay lại bằng cùng mã. Chính sách trả lại phần thời gian còn dư hoặc nhiều lần vào/ra là hướng mở rộng sau.
 - Arrive ghi phiên thật bằng luồng check-in hiện có, chụp quyền vé tháng và quyền truy cập lịch sử. Customer không được tự đổi trạng thái chỗ hoặc xác nhận xe đã đến.
-- Danh sách chờ không chiếm sức chứa. Nhân viên offer tạo đặt chỗ thật trong giao dịch, sau đó khách đến theo hạn giữ; không gửi email/SMS tự động.
+- Danh sách chờ không chiếm sức chứa. Nhân viên offer tạo đặt chỗ thật trong
+  giao dịch và tạo đúng một thông báo trong cổng khách với hạn đến; bản đồ án
+  chưa gửi email/SMS tự động.
 - Đội xe là nhóm phục vụ báo cáo/vận hành của cùng một đơn vị. Quyền xem được cấp bởi quản lý; không tự tuyên bố quyền sở hữu chỉ từ biển số, không chuyển lịch sử trước lúc tham gia nhóm.
 
 Sau đợt kiểm chứng review ngày 07/09/2026, cấp chỗ từ danh sách chờ lấy một thời điểm ở server sau khi khóa yêu cầu và dùng xuyên suốt bước kiểm tra/tạo đặt chỗ. Nếu giờ bắt đầu đã qua, giờ bắt đầu mới là thời điểm đó; yêu cầu đã hết toàn bộ cửa sổ vẫn bị từ chối. Client không được gửi đồng hồ thay thế.

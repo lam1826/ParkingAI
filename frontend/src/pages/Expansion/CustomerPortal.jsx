@@ -1,8 +1,9 @@
 import { useCallback, useState } from "react";
 import { Alert, Box, Button, MenuItem, Stack, Tab, Tabs, TextField, Typography } from "@mui/material";
 import api from "../../services/api";
+import { useExpansion } from "../../context/ExpansionContext";
 import { toBusinessDateString } from "../../utils/businessDate";
-import { mergeSelectedOrder, passStatus } from "./portalState";
+import { mergeSelectedOrder, newOrderDraft, passStatus } from "./portalState";
 import { combineRemotes, dateOnly, dateTime, endpoint, formLayout, items, money, PageControls, read, Records, refreshAll, RemoteSection, requestKey, Section, send, StateChip, useAction, usePage, useRemote, Workspace } from "./shared";
 
 const sessionColumns = [
@@ -29,6 +30,8 @@ function CatalogState({ remote, label }) {
 }
 
 export default function CustomerPortal() {
+  const capabilities = useExpansion();
+  const demoPaymentsEnabled = Boolean(capabilities.demo_payments_enabled);
   const [tab, setTab] = useState(0);
   const [profile, setProfile] = useState({ full_name: "", phone_number: "", email: "" });
   const [link, setLink] = useState({ phone_number: "", note: "" });
@@ -75,6 +78,10 @@ export default function CustomerPortal() {
   const edit = (setter, field) => (event) => setter((old) => ({ ...old, [field]: event.target.value }));
   const submit = (action) => (event, operation, message, onSuccess) => { event.preventDefault(); void action.run(operation, message, onSuccess); };
   const openOrder = (order) => orderAction.run(() => read(`/me/orders/${order.id}`), "Đã mở đơn đăng ký.", setSelected);
+  const startNewOrder = () => {
+    setSelected(null);
+    setOrderForm((old) => newOrderDraft(old, requestKey));
+  };
   const everything = combineRemotes(identity, types, plans, links, vehicles, vehicleRequests, passes, orders, sessions, receipts, notifications, refunds);
   return <Workspace title="Bãi xe của tôi" description="Quản lý xe, vé tháng và các lượt gửi của bạn trong một nơi." remote={everything}
     actions={[identityAction, vehicleAction, orderAction, notificationAction, downloadAction]}>
@@ -125,20 +132,21 @@ export default function CustomerPortal() {
         {(rows) => <><Records rows={rows} columns={[{ key: "license_plate", label: "Biển số" }, { key: "card_code", label: "Mã thẻ" }, { key: "start_date", label: "Từ ngày", render: (row) => dateOnly(row.start_date) }, { key: "end_date", label: "Đến hết ngày", render: (row) => dateOnly(row.end_date) }, { key: "price", label: "Giá kỳ", render: (row) => money(row.price) }, { key: "is_active", label: "Tình trạng", render: (row) => passStatus(row, toBusinessDateString()) }]} empty="Chưa có vé tháng. Chọn Đăng ký & QR để mua hoặc gia hạn." />{pager(passesPage, passes, orderAction.busy)}</>}
       </RemoteSection>}
       {tab === 2 && <>
-        <Alert severity="info">Chế độ đồ án: QR và các kết quả thanh toán ở đây là mô phỏng, không chuyển tiền qua ngân hàng.</Alert>
+        <Alert severity="info">{demoPaymentsEnabled ? "Chế độ đồ án: QR và các kết quả thanh toán ở đây là mô phỏng, không chuyển tiền qua ngân hàng." : "Đơn đăng ký sẽ chờ nhân viên xác nhận đã thu tiền tại bãi."}</Alert>
         <RemoteSection remote={vehicles} title="Đăng ký hoặc gia hạn vé tháng">
-          {(rows) => <><CatalogState remote={plans} label="Gói vé tháng" /><Box component="form" sx={formLayout} onSubmit={(event) => submit(orderAction)(event, () => send("/me/orders", { ...orderForm, plan_id: Number(orderForm.plan_id), vehicle_id: Number(orderForm.vehicle_id) }), "Đã tạo đơn đăng ký.", (order) => { setSelected(order); setOrderForm((old) => ({ ...old, idempotency_key: requestKey() })); })}>
+          {(rows) => <><CatalogState remote={plans} label="Gói vé tháng" /><Box component="form" sx={formLayout} onSubmit={(event) => submit(orderAction)(event, () => send("/me/orders", { ...orderForm, plan_id: Number(orderForm.plan_id), vehicle_id: Number(orderForm.vehicle_id), payment_mode: demoPaymentsEnabled ? "demo" : "manual" }), "Đã tạo đơn đăng ký.", (order) => { setSelected(order); setOrderForm((old) => newOrderDraft(old, requestKey)); })}>
             <TextField select required label="Xe sử dụng" value={orderForm.vehicle_id} onChange={edit(setOrderForm, "vehicle_id")}>{rows.map((car) => <MenuItem key={car.id} value={car.id}>{car.license_plate}</MenuItem>)}</TextField>
             <TextField select required label="Gói vé tháng" value={orderForm.plan_id} disabled={plans.loading || !!plans.error} onChange={edit(setOrderForm, "plan_id")}>{(plans.data || []).map((plan) => <MenuItem key={plan.id} value={plan.id}>{plan.site_name} · {plan.name} · {plan.type_name} · {money(plan.price)} · {plan.duration_days} ngày</MenuItem>)}</TextField>
-            <Button type="submit" variant="contained" disabled={orderAction.busy || !rows.length || plans.loading || !!plans.error || !plans.data?.length}>Tạo đơn và mã QR</Button>
+            <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap" }}><Button type="submit" variant="contained" disabled={orderAction.busy || !rows.length || plans.loading || !!plans.error || !plans.data?.length}>{demoPaymentsEnabled ? "Tạo đơn và mã QR" : "Tạo đơn đăng ký"}</Button><Button type="button" variant="outlined" disabled={orderAction.busy} onClick={startNewOrder}>Yêu cầu mới</Button></Stack>
           </Box>{!plans.loading && !plans.error && plans.data?.length === 0 && <Typography color="text.secondary">Bãi chưa công bố gói vé. Nhân viên cần tạo gói trước khi bạn đăng ký.</Typography>}</>}
         </RemoteSection>
-        {currentOrder && <Section title="Thanh toán mô phỏng" description={`Đơn ${currentOrder.id}`}>
+        {currentOrder && <Section title={currentOrder.payment_mode === "demo" ? "Thanh toán mô phỏng" : "Đơn chờ thu tại bãi"} description={`Đơn ${currentOrder.id}`}>
           <Stack direction={{ xs: "column", md: "row" }} spacing={3} sx={{ alignItems: { md: "center" } }}>
             {currentOrder.demo_qr_svg && <Box component="img" src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(currentOrder.demo_qr_svg)}`} alt="Mã QR thanh toán mô phỏng, không dùng chuyển tiền" sx={{ width: 220, height: 220, bgcolor: "white", alignSelf: "center" }} />}
             <Stack spacing={2} sx={{ minWidth: 0, flex: 1 }}><Typography variant="h5">{money(currentOrder.amount)}</Typography><Typography>{dateOnly(currentOrder.start_date)} – {dateOnly(currentOrder.end_date)}</Typography><Box><StateChip value={currentOrder.status} /></Box>
               {currentOrder.demo_payload && <TextField label="Nội dung QR mô phỏng" value={currentOrder.demo_payload} multiline slotProps={{ input: { readOnly: true } }} />}
-              <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap" }}>{[["success", "Giả lập thanh toán thành công"], ["failed", "Giả lập thất bại"], ["cancelled", "Hủy thanh toán"]].map(([outcome, label]) => <Button key={outcome} variant={outcome === "success" ? "contained" : "outlined"} disabled={orderAction.busy || currentOrder.status !== "pending"} onClick={() => orderAction.run(() => send(`/me/orders/${currentOrder.id}/simulate`, { token: currentOrder.demo_token, outcome }), "Đã ghi kết quả mô phỏng.", setSelected)}>{label}</Button>)}</Stack>
+              {currentOrder.payment_mode === "manual" && currentOrder.status === "pending" && <Typography color="text.secondary">Mang mã đơn tới quầy để nhân viên xác nhận thanh toán.</Typography>}
+              <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap" }}>{currentOrder.payment_mode === "demo" && [["success", "Giả lập thanh toán thành công"], ["failed", "Giả lập thất bại"], ["cancelled", "Hủy thanh toán"]].map(([outcome, label]) => <Button key={outcome} variant={outcome === "success" ? "contained" : "outlined"} disabled={orderAction.busy || currentOrder.status !== "pending"} onClick={() => orderAction.run(() => send(`/me/orders/${currentOrder.id}/simulate`, { token: currentOrder.demo_token, outcome }), "Đã ghi kết quả mô phỏng.", setSelected)}>{label}</Button>)}{["pending", "expired"].includes(currentOrder.status) && <Button variant="outlined" color="error" disabled={orderAction.busy} onClick={() => orderAction.run(() => send(`/me/orders/${currentOrder.id}/cancel`), "Đã hủy đơn đăng ký.", setSelected)}>Hủy đơn</Button>}</Stack>
               {["paid", "fulfilled"].includes(currentOrder.status) && <Box component="form" onSubmit={(event) => submit(orderAction)(event, () => send(`/me/orders/${currentOrder.id}/refund-requests`, { reason: refundReason }), "Đã gửi yêu cầu hoàn tiền mô phỏng.")}><Stack spacing={1} useFlexGap><TextField required label="Lý do yêu cầu hoàn mô phỏng" value={refundReason} onChange={(event) => setRefundReason(event.target.value)} inputProps={{ maxLength: 500 }} /><Button type="submit" variant="outlined" disabled={orderAction.busy}>Gửi yêu cầu hoàn mô phỏng</Button></Stack></Box>}
             </Stack>
           </Stack>

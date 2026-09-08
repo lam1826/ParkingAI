@@ -29,3 +29,9 @@ def test_auth_and_api_responses_are_never_cacheable(
 
     assert login.headers["cache-control"] == "no-store"
     assert protected.headers["cache-control"] == "no-store"
+
+
+def test_legacy_dashboard_and_reports_are_never_cacheable(client: TestClient) -> None:
+    for path in ("/dashboard", "/reports"):
+        response = client.get(path)
+        assert response.headers["cache-control"] == "no-store"

@@ -50,7 +50,7 @@ export function createAuthSessionBoundary({ storage, eventTarget, fetchProfile, 
     } catch (error) {
       // A late old-token error must not remove a newer tab's session.
       if (isCurrent()) {
-        if (!profile) {
+        if (!profile && error?.response?.status === 401) {
           storage.removeItem("token");
           storage.removeItem("user");
           token = null;

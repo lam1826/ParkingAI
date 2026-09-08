@@ -1,5 +1,19 @@
 # Trạng thái bản mở rộng ParkingAI cho đồ án
 
+## Release candidate sau review vòng 2 — 08/09/2026
+
+Toàn bộ finding F-001–F-030 trong review vòng 2 đã có thay đổi mã, kiểm thử
+hoặc cổng vận hành tương ứng. P0 nằm ở commit `532569f`; candidate tiếp theo bổ
+sung worker production, bất biến đặt chỗ/khu, ranh giới proxy/API, độ bền
+frontend, vận hành ảnh và cổng backup trước migration. Chi tiết đối chiếu từng
+ticket nằm tại [REVIEW_ROUND2_RESOLUTION_2026-09-08.md](REVIEW_ROUND2_RESOLUTION_2026-09-08.md).
+
+Candidate cục bộ đã đạt backend **1.177/1.177 ca chạy được**, bỏ qua 8 ca theo
+môi trường và không có lỗi trong 640,01 giây; frontend 134/134, lint/build,
+Impeccable detector và smoke demo đều đạt.
+Chưa ghi candidate này là production hoàn tất: workflow mới phải đọc được
+backup/PITR Supabase trước migration và CI phải chạy xanh bài PostgreSQL 16 mới.
+
 Cập nhật ngày 07/09/2026. Phạm vi đã triển khai là bản demo chạy trên SQLite riêng: QR ngẫu nhiên và kết quả thanh toán mô phỏng, điện thoại chụp ảnh, YOLO tìm vùng biển số và OCR đọc ký tự. Mã nguồn hiện nằm trong thư mục làm việc; bản mở rộng này chưa được đẩy lên Git hoặc triển khai thay website đang vận hành.
 
 ## Chức năng đã triển khai và kiểm chứng

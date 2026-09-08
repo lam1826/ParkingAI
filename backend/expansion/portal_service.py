@@ -74,6 +74,22 @@ def _locked(db, model, identity):
     return db.scalar(select(model).where(model.id == identity).with_for_update().execution_options(populate_existing=True))
 
 
+def _require_independent_reviewer(db, actor, *, requester_user_id=None, customer_id=None, phone_number=None):
+    if requester_user_id == actor.id:
+        raise HTTPException(403, "Người gửi yêu cầu không được tự duyệt yêu cầu của mình.")
+    query = select(PortalAccountLink.id).where(PortalAccountLink.user_id == actor.id)
+    if customer_id is not None:
+        query = query.where(PortalAccountLink.customer_id == customer_id)
+    elif phone_number is not None:
+        query = query.join(Customer, Customer.id == PortalAccountLink.customer_id).where(
+            Customer.phone_number == phone_number,
+        )
+    else:
+        return
+    if db.scalar(query.limit(1)) is not None:
+        raise HTTPException(403, "Người có liên kết với hồ sơ không được tự duyệt yêu cầu này.")
+
+
 def create_profile(db, user, data):
     lock_cash_operator(db, user.id)
     if db.scalar(select(PortalAccountLink.id).where(PortalAccountLink.user_id == user.id)):
@@ -111,6 +127,12 @@ def resolve_link(db, actor, identity, approve):
     item = db.get(PortalLinkRequest, identity)
     if item is None:
         raise HTTPException(404, "Không tìm thấy yêu cầu.")
+    _require_independent_reviewer(
+        db,
+        actor,
+        requester_user_id=item.user_id,
+        phone_number=item.phone_number,
+    )
     lock_cash_operator(db, item.user_id)
     item = _locked(db, PortalLinkRequest, identity)
     if item.status != "pending":
@@ -157,10 +179,12 @@ def resolve_vehicle(db, actor, identity, approve):
     check_permission(actor, "manager")
     # Serialize managers before FK writes and plate creation. The unique plate is
     # the final cross-manager race guard; no approval ever reassigns another owner.
-    lock_cash_operator(db, actor.id)
-    item = _locked(db, PortalVehicleRequest, identity)
+    item = db.get(PortalVehicleRequest, identity)
     if item is None:
         raise HTTPException(404, "Không tìm thấy yêu cầu.")
+    _require_independent_reviewer(db, actor, customer_id=item.customer_id)
+    lock_cash_operator(db, actor.id)
+    item = _locked(db, PortalVehicleRequest, identity)
     if item.status != "pending":
         if (item.status == "approved") != approve:
             raise HTTPException(409, "Yêu cầu đã được xử lý.")
@@ -190,6 +214,22 @@ def resolve_vehicle(db, actor, identity, approve):
         raise HTTPException(409, "Phương tiện vừa được cập nhật bởi yêu cầu khác; hãy tải lại.") from exc
 
 
+def unlink_account(db, actor, user_id):
+    check_permission(actor, "admin")
+    lock_cash_operator(db, user_id)
+    if db.get_bind().dialect.name == "sqlite":
+        db.execute(update(PortalAccountLink).where(
+            PortalAccountLink.user_id == user_id,
+        ).values(id=PortalAccountLink.id))
+    link = db.scalar(select(PortalAccountLink).where(
+        PortalAccountLink.user_id == user_id,
+    ).with_for_update().execution_options(populate_existing=True))
+    if link is None:
+        raise HTTPException(404, "Tài khoản chưa có liên kết hồ sơ.")
+    db.delete(link)
+    db.commit()
+
+
 def create_plan(db, actor, data):
     check_permission(actor, "manager")
     if data.site_id is None:
@@ -212,7 +252,25 @@ def owned_order(db, user, identity):
         PortalOrder.user_id == user.id, PortalOrder.customer_id == customer.id))
     if order is None:
         raise HTTPException(404, "Không tìm thấy đơn của bạn.")
+    if order.status == "pending" and order.expires_at < business_now():
+        order = _lock_order_context(db, identity)
+        if _expire_order_if_due(db, order):
+            db.commit()
     return order
+
+
+def _expire_order_if_due(db, order, now=None):
+    now = now or business_now()
+    if order.status != "pending" or order.expires_at >= now:
+        return False
+    has_event = db.scalar(select(PortalPaymentEvent.id).where(
+        PortalPaymentEvent.order_id == order.id,
+    ).limit(1))
+    if has_event is not None:
+        return False
+    order.status = "expired"
+    db.flush()
+    return True
 
 
 def create_order(db, user, data):
@@ -237,9 +295,11 @@ def create_order(db, user, data):
         raise HTTPException(409, "Gói không hoạt động, chưa gán bãi hoặc không phù hợp loại xe.")
     require_public_site(db, plan.site_id)
     now = business_now()
-    pending = db.scalar(select(PortalOrder.id).where(PortalOrder.vehicle_id == vehicle.id,
-        PortalOrder.status.in_(["pending", "review"])))
-    if pending:
+    pending = db.scalar(select(PortalOrder).where(PortalOrder.vehicle_id == vehicle.id,
+        PortalOrder.status.in_(["pending", "review"])).order_by(PortalOrder.created_at, PortalOrder.id))
+    if pending is not None and pending.status == "pending":
+        _expire_order_if_due(db, pending, now)
+    if pending is not None and pending.status in {"pending", "review"}:
         raise HTTPException(409, "Xe còn đơn đang chờ xử lý; hãy hoàn tất hoặc hủy trước khi tạo đơn mới.")
     latest = db.scalar(select(MonthlyPass).where(MonthlyPass.vehicle_id == vehicle.id,
         MonthlyPass.is_active.is_(True)).order_by(MonthlyPass.end_date.desc()).limit(1))

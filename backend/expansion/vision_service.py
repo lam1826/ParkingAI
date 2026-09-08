@@ -4,6 +4,7 @@ import hashlib
 import hmac
 import importlib.util
 import io
+import logging
 import math
 import os
 import re
@@ -15,7 +16,7 @@ from pathlib import Path
 
 from fastapi import HTTPException
 from PIL import Image, ImageOps, UnidentifiedImageError
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import case, delete, func, select, update
 from sqlalchemy.exc import IntegrityError
 
 from core.clock import BUSINESS_TZ, business_now
@@ -30,6 +31,8 @@ _engine_lock = threading.Lock()
 _inference_lock = threading.Lock()
 _engine = None
 _engine_path = None
+_last_engine_error = None
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -74,15 +77,32 @@ def decode_image(content: bytes, mime: str):
         raise HTTPException(422, "Ảnh không hợp lệ, quá nhiều điểm ảnh hoặc không khớp định dạng.") from exc
 
 
-def model_status():
+def _engine_configuration():
     configured = os.getenv("PARKING_VISION_ENGINE", "disabled")
     path = Path(os.getenv("PARKING_VISION_MODEL", ""))
-    available = configured == "yolo_rapidocr" and path.is_file() and path.suffix.lower() == ".onnx"
+    model_ready = configured == "yolo_rapidocr" and path.is_file() and path.suffix.lower() == ".onnx"
     dependencies = all(importlib.util.find_spec(name) is not None for name in ("onnxruntime", "rapidocr_onnxruntime", "numpy"))
-    return {"engine": configured, "available": bool(available and dependencies),
-            "reason": "Sẵn sàng dùng model cục bộ; cần kiểm tra kết quả trên ảnh thật." if available and dependencies
-            else "Chưa cấu hình YOLO biển số ONNX và thư viện OCR cục bộ. Có thể nhập biển số thủ công.",
-            "human_confirmation_required": True, "accuracy_measured": False}
+    return configured, path, bool(model_ready and dependencies)
+
+
+def model_status():
+    configured, _path, configured_ready = _engine_configuration()
+    degraded = bool(configured_ready and _last_engine_error)
+    if degraded:
+        reason = "Bộ nhận diện vừa gặp lỗi xử lý. Có thể nhập biển số thủ công trong khi hệ thống thử phục hồi."
+    elif configured_ready:
+        reason = "Sẵn sàng dùng model cục bộ; cần kiểm tra kết quả trên ảnh thật."
+    else:
+        reason = "Chưa cấu hình YOLO biển số ONNX và thư viện OCR cục bộ. Có thể nhập biển số thủ công."
+    return {
+        "engine": configured,
+        "available": bool(configured_ready and not degraded),
+        "degraded": degraded,
+        "last_error": _last_engine_error if degraded else None,
+        "reason": reason,
+        "human_confirmation_required": True,
+        "accuracy_measured": False,
+    }
 
 
 def normalize_candidate(text):
@@ -174,10 +194,10 @@ class YoloRapidOCR:
 
 
 def recognize_image(image):
-    global _engine, _engine_path
-    status = model_status()
-    if not status["available"]:
-        return {"ocr_status": "unavailable", "engine": status["engine"], "detections": [], "suggested_plate": None, "confidence": None}
+    global _engine, _engine_path, _last_engine_error
+    configured, _configured_path, configured_ready = _engine_configuration()
+    if not configured_ready:
+        return {"ocr_status": "unavailable", "engine": configured, "detections": [], "suggested_plate": None, "confidence": None}
     if not _inference_lock.acquire(blocking=False):
         raise HTTPException(429, "Bộ nhận diện đang xử lý ảnh khác. Thử lại sau vài giây.")
     try:
@@ -187,6 +207,7 @@ def recognize_image(image):
                 _engine = YoloRapidOCR(path)
                 _engine_path = path
         detections = _engine.recognize(image)
+        _last_engine_error = None
         recognized = [item for item in detections if item["plate"]]
         best = max(recognized, key=lambda item: item["confidence"]) if recognized else None
         return {"ocr_status": "recognized" if best else "no_plate", "engine": "yolo_rapidocr",
@@ -196,16 +217,49 @@ def recognize_image(image):
         raise
     except Exception:
         # Do not expose model paths, external-library traces, or OCR snippets.
+        logger.exception("Local license-plate engine failed")
+        _last_engine_error = business_now().replace(tzinfo=BUSINESS_TZ).isoformat()
         return {"ocr_status": "error", "engine": "yolo_rapidocr", "detections": [], "suggested_plate": None, "confidence": None}
     finally:
         _inference_lock.release()
 
 
 def purge_expired(db, site_id=None):
-    statement = delete(VisionObservation).where(VisionObservation.expires_at <= business_now())
+    now = business_now()
+    statement = select(
+        VisionObservation.id,
+        VisionObservation.observed_at,
+        VisionObservation.expires_at,
+        Camera.retention_hours,
+    ).join(Camera, Camera.id == VisionObservation.camera_id)
     if site_id is not None:
         statement = statement.where(VisionObservation.site_id == site_id)
-    return db.execute(statement).rowcount
+    expired_ids = [
+        observation_id
+        for observation_id, observed_at, expires_at, retention_hours in db.execute(statement)
+        if min(expires_at, observed_at + timedelta(hours=retention_hours)) <= now
+    ]
+    if not expired_ids:
+        return 0
+    return db.execute(delete(VisionObservation).where(VisionObservation.id.in_(expired_ids))).rowcount
+
+
+def _evict_reviewed_observations(db, site_id, count):
+    if count <= 0:
+        return 0
+    rejected_first = case((VisionObservation.review_status == "rejected", 0), else_=1)
+    observation_ids = db.scalars(
+        select(VisionObservation.id)
+        .where(
+            VisionObservation.site_id == site_id,
+            VisionObservation.review_status.in_(("rejected", "accepted")),
+        )
+        .order_by(rejected_first, VisionObservation.observed_at, VisionObservation.id)
+        .limit(count)
+    ).all()
+    if not observation_ids:
+        return 0
+    return db.execute(delete(VisionObservation).where(VisionObservation.id.in_(observation_ids))).rowcount
 
 
 def prepare_observation(metadata, content, mime):
@@ -269,7 +323,13 @@ def ingest_observation(db, camera, metadata, prepared, edge_token_hash=None):
     purge_expired(db, camera.site_id)
     count = db.scalar(select(func.count()).select_from(VisionObservation).where(VisionObservation.site_id == camera.site_id))
     if count >= MAX_SITE_OBSERVATIONS:
-        raise HTTPException(409, "Bãi đã lưu tối đa 500 ảnh. Xóa ảnh cũ trước khi tiếp tục.")
+        required = count - MAX_SITE_OBSERVATIONS + 1
+        removed = _evict_reviewed_observations(db, camera.site_id, required)
+        if removed < required:
+            raise HTTPException(
+                409,
+                f"Bãi đã có {MAX_SITE_OBSERVATIONS} ảnh đang chờ kiểm tra. Xử lý hoặc xóa ảnh trước khi tiếp tục.",
+            )
     observation = VisionObservation(camera_id=camera.id, site_id=camera.site_id, event_id=str(metadata.event_id),
         image_hash=prepared.image_hash, image_bytes=prepared.image_bytes,
         image_width=prepared.image_width, image_height=prepared.image_height,

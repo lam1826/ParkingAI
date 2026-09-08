@@ -676,3 +676,158 @@ def test_postgres_expansion_commitments_and_demo_ledger_guards():
                 transaction.rollback()
     finally:
         engine.dispose()
+
+
+def test_postgres_expansion_service_writes_and_vehicle_first_lock_order():
+    """Exercise reserve, arrive and manual-order writes on migrated PostgreSQL.
+
+    Reserve and check-in for the same vehicle reach their vehicle lock together.
+    One operation may win, but neither may deadlock or leave two commitments.
+    """
+    from fastapi import HTTPException
+
+    from core.clock import BUSINESS_TZ, business_now
+    from expansion import portal_service, reservations
+    from expansion.portal_models import (
+        PortalAccountLink,
+        PortalOrder,
+        PortalVehicleOwnership,
+        SubscriptionPlan,
+    )
+    from expansion.portal_schemas import OrderCreate
+    from expansion.site_models import ParkingReservation, ParkingSite, SiteMembership
+    from expansion.site_schemas import ReservationCreate
+    from models import Customer, ParkingSlot, PriceConfig, Role, User, Vehicle, VehicleType, Zone
+    from models.parking_session import ParkingSession
+    from services.parking_service import ParkingService
+
+    with _isolated_checkout_postgres() as engine:
+        now = business_now().replace(microsecond=0)
+        with Session(engine) as db:
+            manager_role, customer_role = Role(name="manager"), Role(name="customer")
+            customer = Customer(full_name="PG service customer", phone_number="PG-SERVICE-CUSTOMER")
+            vehicle_type = VehicleType(name="PG service car")
+            site = ParkingSite(name="PG service site")
+            db.add_all([manager_role, customer_role, customer, vehicle_type, site])
+            db.flush()
+            manager = User(role_id=manager_role.id, username="pg-service-manager", password_hash="unused", full_name="PG Manager")
+            account = User(role_id=customer_role.id, username="pg-service-customer", password_hash="unused", full_name="PG Customer")
+            zone = Zone(site_id=site.id, name="PG service zone", capacity=2)
+            vehicle = Vehicle(license_plate="PG-SERVICE-1", vehicle_type_id=vehicle_type.id, customer_id=customer.id)
+            racing_vehicle = Vehicle(license_plate="PG-SERVICE-2", vehicle_type_id=vehicle_type.id, customer_id=customer.id)
+            db.add_all([manager, account, zone, vehicle, racing_vehicle])
+            db.flush()
+            slot = ParkingSlot(zone_id=zone.id, vehicle_type_id=vehicle_type.id, slot_name="PG-SERVICE-1")
+            racing_slot = ParkingSlot(zone_id=zone.id, vehicle_type_id=vehicle_type.id, slot_name="PG-SERVICE-2")
+            plan = SubscriptionPlan(name="PG manual plan", site_id=site.id, vehicle_type_id=vehicle_type.id, duration_days=30, price=300000)
+            db.add_all([
+                slot,
+                racing_slot,
+                plan,
+                PriceConfig(vehicle_type_id=vehicle_type.id, ticket_type="HOURLY", price=10000, effective_date=now.date()),
+                SiteMembership(site_id=site.id, user_id=manager.id, role="manager"),
+                PortalAccountLink(user_id=account.id, customer_id=customer.id, verified_by_id=manager.id, verification="manager"),
+                PortalVehicleOwnership(customer_id=customer.id, vehicle_id=vehicle.id, approved_by_id=manager.id, approved_at=now),
+            ])
+            db.commit()
+            manager_id, account_id = manager.id, account.id
+            site_id, vehicle_id, racing_vehicle_id = site.id, vehicle.id, racing_vehicle.id
+            vehicle_type_id, slot_id, racing_slot_id, plan_id = vehicle_type.id, slot.id, racing_slot.id, plan.id
+
+            reservation = reservations.reserve(
+                db,
+                manager,
+                ReservationCreate(
+                    site_id=site_id,
+                    vehicle_id=vehicle_id,
+                    slot_id=slot_id,
+                    start_at=now.replace(tzinfo=BUSINESS_TZ),
+                    end_at=(now + timedelta(hours=1)).replace(tzinfo=BUSINESS_TZ),
+                    request_id="pg-service-arrive",
+                ),
+                _now=now,
+            )
+            db.commit()
+            arrived = reservations.arrive(db, manager, reservation)
+            db.commit()
+            assert arrived.status == "arrived"
+            assert db.get(ParkingSession, arrived.session_id).status == "active"
+
+            order = portal_service.create_order(
+                db,
+                account,
+                OrderCreate(plan_id=plan_id, vehicle_id=vehicle_id, idempotency_key="pg-manual-order", payment_mode="manual"),
+            )
+            assert db.get(PortalOrder, order.id).status == "pending"
+
+        barrier, seen, seen_lock = Barrier(2, timeout=10), set(), Lock()
+
+        def before_vehicle_lock(connection, cursor, statement, parameters, context, executemany):
+            sql = " ".join(statement.upper().split())
+            if "FROM VEHICLES" not in sql or "FOR NO KEY UPDATE" not in sql:
+                return
+            with seen_lock:
+                first = get_ident() not in seen
+                seen.add(get_ident())
+            if first:
+                barrier.wait()
+
+        def create_reservation():
+            with Session(engine) as db:
+                actor = db.get(User, manager_id)
+                try:
+                    row = reservations.reserve(
+                        db,
+                        actor,
+                        ReservationCreate(
+                            site_id=site_id,
+                            vehicle_id=racing_vehicle_id,
+                            slot_id=racing_slot_id,
+                            start_at=(now + timedelta(minutes=10)).replace(tzinfo=BUSINESS_TZ),
+                            end_at=(now + timedelta(hours=1)).replace(tzinfo=BUSINESS_TZ),
+                            request_id="pg-lock-order-reservation",
+                        ),
+                    )
+                    db.commit()
+                    return "reservation", row.id
+                except HTTPException as exc:
+                    db.rollback()
+                    return "conflict", exc.status_code
+
+        def check_in_vehicle():
+            with Session(engine) as db:
+                try:
+                    result = ParkingService(db).check_in(
+                        "PG-SERVICE-2",
+                        vehicle_type_id,
+                        manager_id,
+                        parking_slot_id=racing_slot_id,
+                    )
+                    return "check-in", result["session_id"]
+                except HTTPException as exc:
+                    db.rollback()
+                    return "conflict", exc.status_code
+
+        event.listen(engine, "before_cursor_execute", before_vehicle_lock)
+        try:
+            with ThreadPoolExecutor(max_workers=2) as workers:
+                outcomes = [
+                    future.result(timeout=20)
+                    for future in (workers.submit(create_reservation), workers.submit(check_in_vehicle))
+                ]
+        finally:
+            event.remove(engine, "before_cursor_execute", before_vehicle_lock)
+
+        assert len(seen) == 2
+        assert sum(outcome[0] in {"reservation", "check-in"} for outcome in outcomes) == 1
+        assert sum(outcome[0] == "conflict" and outcome[1] in {409, 404} for outcome in outcomes) == 1
+        with Session(engine) as db:
+            active_sessions = db.query(ParkingSession).filter(
+                ParkingSession.vehicle_id == racing_vehicle_id,
+                ParkingSession.status.in_(("active", "checking_out")),
+            ).count()
+            active_reservations = db.query(ParkingReservation).filter(
+                ParkingReservation.vehicle_id == racing_vehicle_id,
+                ParkingReservation.status.in_(("confirmed", "arrived")),
+            ).count()
+            assert active_sessions + active_reservations == 1

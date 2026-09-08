@@ -67,6 +67,96 @@ def upload(client, camera_id, content=None, mime="image/jpeg", event_id=None):
                        files={"file": ("phone.jpg", picture() if content is None else content, mime)})
 
 
+def test_reviewed_observations_are_evicted_at_the_site_cap(vision, monkeypatch):
+    from expansion import vision_service
+    from expansion.vision_schemas import ObservationUpload
+
+    _client, db, camera, _foreign, _user = vision
+    monkeypatch.setattr(vision_service, "MAX_SITE_OBSERVATIONS", 2)
+    now = business_now()
+    old_rejected = VisionObservation(
+        camera_id=camera.id, site_id=camera.site_id, event_id=str(uuid4()), image_hash="a" * 64,
+        image_bytes=b"old", image_width=20, image_height=20, observed_at=now - timedelta(minutes=3),
+        captured_at=now - timedelta(minutes=3), expires_at=now + timedelta(hours=1),
+        ocr_status="no_plate", engine="disabled", detections=[], review_status="rejected",
+    )
+    accepted = VisionObservation(
+        camera_id=camera.id, site_id=camera.site_id, event_id=str(uuid4()), image_hash="b" * 64,
+        image_bytes=b"accepted", image_width=20, image_height=20, observed_at=now - timedelta(minutes=2),
+        captured_at=now - timedelta(minutes=2), expires_at=now + timedelta(hours=1),
+        ocr_status="recognized", engine="disabled", detections=[], review_status="accepted",
+    )
+    db.add_all([old_rejected, accepted])
+    db.commit()
+    old_rejected_id, accepted_id = old_rejected.id, accepted.id
+    metadata = ObservationUpload(camera_id=camera.id, event_id=uuid4())
+    prepared = vision_service.PreparedObservation(
+        image_hash="c" * 64, image_bytes=b"new", image_width=20, image_height=20,
+        captured_at=now, recognition={"ocr_status": "unavailable", "engine": "disabled",
+        "detections": [], "suggested_plate": None, "confidence": None},
+    )
+
+    created = vision_service.ingest_observation(db, camera, metadata, prepared)
+
+    assert created.id is not None
+    assert db.get(VisionObservation, old_rejected_id) is None
+    assert db.get(VisionObservation, accepted_id) is not None
+
+
+def test_reduced_camera_retention_applies_to_preexisting_observations(vision):
+    from expansion.vision_service import purge_expired
+
+    _client, db, camera, _foreign, _user = vision
+    now = business_now()
+    row = VisionObservation(
+        camera_id=camera.id, site_id=camera.site_id, event_id=str(uuid4()), image_hash="d" * 64,
+        image_bytes=b"old", image_width=20, image_height=20, observed_at=now - timedelta(hours=2),
+        captured_at=now - timedelta(hours=2), expires_at=now + timedelta(hours=10),
+        ocr_status="no_plate", engine="disabled", detections=[], review_status="accepted",
+    )
+    camera.retention_hours = 1
+    db.add(row)
+    db.commit()
+    row_id = row.id
+
+    assert purge_expired(db, camera.site_id) == 1
+    db.commit()
+    assert db.get(VisionObservation, row_id) is None
+
+
+def test_engine_failure_is_logged_and_reported_until_a_success(tmp_path, monkeypatch, caplog):
+    from expansion import vision_service
+
+    model = tmp_path / "plate.onnx"
+    model.write_bytes(b"placeholder")
+    monkeypatch.setenv("PARKING_VISION_ENGINE", "yolo_rapidocr")
+    monkeypatch.setenv("PARKING_VISION_MODEL", str(model))
+    monkeypatch.setattr(vision_service.importlib.util, "find_spec", lambda _name: object())
+
+    class Engine:
+        def recognize(self, _image):
+            raise RuntimeError("private model path must stay in logs")
+
+    vision_service._engine = Engine()
+    vision_service._engine_path = model.resolve()
+    vision_service._last_engine_error = None
+    result = vision_service.recognize_image(Image.new("RGB", (100, 50)))
+    status = vision_service.model_status()
+
+    assert result["ocr_status"] == "error"
+    assert status["available"] is False and status["degraded"] is True
+    assert status["last_error"]
+    assert "private model path" in caplog.text
+
+    class Recovered:
+        def recognize(self, _image):
+            return []
+
+    vision_service._engine = Recovered()
+    assert vision_service.recognize_image(Image.new("RGB", (100, 50)))["ocr_status"] == "no_plate"
+    assert vision_service.model_status()["available"] is True
+
+
 def test_concurrent_upload_is_rejected_before_entering_processing(vision, monkeypatch):
     import expansion.vision_router as vision_router_module
 

@@ -150,11 +150,20 @@ test("same-account refresh preserves mounted UI and only the latest profile can 
   f.boundary.stop();
 });
 
-test("failed current bootstrap clears session, while failed refresh preserves signed-in profile", async () => {
+test("only a 401 bootstrap clears session; transient profile failures preserve the token", async () => {
+  const transient = fixture();
+  transient.storage.setItem("token", "still-valid");
+  const transientStart = transient.boundary.start();
+  transient.pending[0].reject({ response: { status: 503 }, message: "temporary outage" });
+  await transientStart;
+  assert.equal(transient.storage.getItem("token"), "still-valid");
+  assert.equal(transient.state.loading, false);
+  transient.boundary.stop();
+
   const f = fixture();
   f.storage.setItem("token", "one");
   const started = f.boundary.start();
-  f.pending[0].reject(new Error("invalid token"));
+  f.pending[0].reject({ response: { status: 401 }, message: "invalid token" });
   await started;
   assert.equal(f.state.user, null);
   assert.equal(f.state.loading, false);

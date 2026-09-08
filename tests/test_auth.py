@@ -43,7 +43,9 @@ def test_failed_anonymous_login_is_audited_without_credentials(
     client: TestClient,
     db_session: Session,
     test_user: User,
+    monkeypatch,
 ):
+    monkeypatch.setattr(settings, "TRUSTED_EDGE_PROXY", True)
     response = client.post(
         "/api/auth/login",
         headers={"Fly-Client-IP": "203.0.113.8"},
@@ -64,6 +66,7 @@ def test_login_rate_limit_blocks_brute_force_by_fly_client_ip(
     test_user: User,
     monkeypatch,
 ):
+    monkeypatch.setattr(settings, "TRUSTED_EDGE_PROXY", True)
     monkeypatch.setattr(settings, "AUTH_LOGIN_MAX_FAILURES", 2)
     headers = {"Fly-Client-IP": "203.0.113.9"}
 
@@ -89,6 +92,7 @@ def test_registration_rate_limit_counts_successful_account_creation(
     client: TestClient,
     monkeypatch,
 ):
+    monkeypatch.setattr(settings, "TRUSTED_EDGE_PROXY", True)
     monkeypatch.setattr(settings, "AUTH_REGISTER_MAX_ATTEMPTS", 1)
     headers = {"Fly-Client-IP": "203.0.113.10"}
     payload = {

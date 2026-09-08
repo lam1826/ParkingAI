@@ -1,11 +1,13 @@
 import logging
 import os
-from threading import Lock
+from contextlib import asynccontextmanager
+from threading import Event, Lock, Thread
 from time import monotonic
 
 import uvicorn
 from fastapi import Depends, FastAPI, Request
-from fastapi.exceptions import ResponseValidationError
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError, ResponseValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import DBAPIError, IntegrityError
@@ -33,11 +35,49 @@ _readiness_lock = Lock()
 _readiness_cached_engine = None
 _readiness_ok_until = 0.0
 
+
+def _run_maintenance_cycle() -> None:
+    from database import SessionLocal
+    from expansion.portal_worker import run_portal_maintenance
+    from expansion.vision_service import purge_expired
+
+    with SessionLocal() as db:
+        run_portal_maintenance(db)
+        purge_expired(db)
+        db.commit()
+
+
+@asynccontextmanager
+async def app_lifespan(_app):
+    interval = settings.PORTAL_MAINTENANCE_INTERVAL_SECONDS
+    if interval <= 0:
+        yield
+        return
+
+    stop = Event()
+
+    def maintain():
+        while not stop.is_set():
+            try:
+                _run_maintenance_cycle()
+            except Exception:
+                logger.exception("Production maintenance failed; retrying on the next cycle")
+            stop.wait(interval)
+
+    worker = Thread(target=maintain, daemon=True, name="parkingai-maintenance")
+    worker.start()
+    try:
+        yield
+    finally:
+        stop.set()
+        worker.join(timeout=min(5.0, max(0.1, interval)))
+
 # --- KHỞI TẠO APP & METADATA ---
 app = FastAPI(
     title="Parking Management System API",
     description="Hệ thống quản lý bãi đỗ xe thông minh tích hợp AI Text-to-SQL.",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=app_lifespan,
 )
 
 # --- CẤU HÌNH CORS ---
@@ -80,6 +120,19 @@ async def response_validation_error_handler(
         status_code=500,
         content={"detail": "Dữ liệu phản hồi không hợp lệ do lỗi hệ thống."},
     )
+
+
+@app.exception_handler(RequestValidationError)
+async def request_validation_error_handler(request: Request, exc: RequestValidationError):
+    """Return useful validation locations without reflecting submitted secrets."""
+    sensitive = {"password", "current_password", "new_password", "registration_code"}
+    errors = []
+    for error in exc.errors():
+        cleaned = dict(error)
+        if any(str(part).lower() in sensitive for part in cleaned.get("loc", ())):
+            cleaned.pop("input", None)
+        errors.append(cleaned)
+    return JSONResponse(status_code=422, content={"detail": jsonable_encoder(errors)})
 
 
 # --- XỬ LÝ LỖI RÀNG BUỘC TOÀN VẸN (khóa ngoại/unique) ---

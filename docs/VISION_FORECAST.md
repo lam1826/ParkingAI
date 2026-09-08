@@ -18,7 +18,7 @@ $env:PARKING_VISION_ENGINE = 'yolo_rapidocr'
 $env:PARKING_VISION_MODEL = (Resolve-Path 'backend/artifacts/vision/license-plate-yolov8n.onnx').Path
 ```
 
-Hai biến môi trường phải được đặt trong tiến trình khởi động API. `GET /api/v2/vision/status` trả trạng thái thư viện/model. Khi chưa cài hoặc tắt `PARKING_VISION_ENGINE=disabled`, giao diện vẫn cho lưu ảnh và nhập biển số thủ công, hiển thị rõ chưa nhận diện. Model lỗi trả `ocr_status=error`; ảnh không tìm thấy chữ trả `no_plate`, không sinh biển số giả.
+Hai biến môi trường phải được đặt trong tiến trình khởi động API. `GET /api/v2/vision/status` trả trạng thái thư viện/model. Khi chưa cài hoặc tắt `PARKING_VISION_ENGINE=disabled`, giao diện vẫn cho lưu ảnh và nhập biển số thủ công, hiển thị rõ chưa nhận diện. Model lỗi trả `ocr_status=error`, ghi traceback ở log server và chuyển status sang `degraded` cho tới lần nhận diện thành công tiếp theo; phản hồi không lộ đường dẫn model. Ảnh không tìm thấy chữ trả `no_plate`, không sinh biển số giả.
 
 Chạy kiểm chứng độc lập, chưa cần API hay CSDL:
 
@@ -43,8 +43,14 @@ Nút chụp dùng lựa chọn file/camera của trình duyệt (`capture=enviro
 
 - Camera, ảnh và lịch sử duyệt thuộc một bãi; nhân viên ngoài bãi không được tải lên hoặc xem ảnh.
 - Upload được giới hạn trước khi phân tích multipart. Ảnh được giải mã rồi lưu lại thành JPEG, loại bỏ EXIF/vị trí GPS và dữ liệu phụ. JPEG điện thoại dạng MPO chỉ giữ ảnh chính.
-- Mỗi camera tối đa 30 ảnh/phút, mỗi bãi tối đa 500 ảnh; một tác vụ nhận diện tại một thời điểm trên mỗi tiến trình API. Khi bận trả 429 để thử lại.
-- Mặc định lưu 24 giờ, cấu hình 1–72 giờ. Ảnh hết hạn không còn đọc được. Worker hoặc lệnh dưới đây xóa vật lý bản ghi/ảnh hết hạn; không nên chỉ dựa vào việc ẩn khỏi giao diện.
+- Mỗi camera tối đa 30 ảnh/phút, mỗi bãi tối đa 500 ảnh; một tác vụ nhận diện
+  tại một thời điểm trên mỗi tiến trình API. Khi đủ 500, hệ thống loại ảnh đã
+  duyệt cũ nhất, ưu tiên ảnh bị từ chối và không tự xóa ảnh đang chờ duyệt. Nếu
+  cả 500 ảnh đều đang chờ thì trả 409. Khi bộ nhận diện bận, API trả 429.
+- Mặc định lưu 24 giờ, cấu hình 1–72 giờ. Giảm thời hạn có hiệu lực với cả ảnh
+  đã lưu ở chu kỳ bảo trì kế tiếp. Ảnh hết hạn không còn đọc được. Quản lý có
+  thể xóa từng ảnh trên giao diện; worker hoặc lệnh dưới đây xóa vật lý ảnh hết
+  hạn.
 - Đường dẫn ảnh cần token đăng nhập, phản hồi `Cache-Control: no-store`; không phát URL công khai. Nhận diện thất bại không làm thay đổi lượt gửi xe.
 - Camera mạng sau này có thể gửi `POST /api/v2/vision/edge-events` bằng `X-Camera-Token` riêng camera. Token chỉ ghi ảnh, không đọc biển số; xoay khóa hoặc tắt camera thu hồi khóa cũ. Bản đồ án không cần bật tính năng này.
 

@@ -67,6 +67,14 @@ def update_zone(id: int, zone_in: zone_schema.ZoneUpdate, db: Session = Depends(
             status_code=status.HTTP_409_CONFLICT,
             detail="Không thể ngừng khu vực khi đang có xe đang đỗ.",
         )
+    if (
+        zone_in.is_active is False
+        and crud_slot.zone_has_future_commitment(db, db_zone.id)
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Không thể ngừng khu vực khi còn đặt chỗ hoặc suất phân bổ đang hiệu lực.",
+        )
     
     return crud_zone.update_zone(db=db, db_zone=db_zone, zone_in=zone_in)
 

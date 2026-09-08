@@ -20,3 +20,7 @@ export function passStatus(period, today) {
   if (period.start_date > today) return "Chưa tới kỳ";
   return "Đang hiệu lực";
 }
+
+export function newOrderDraft(previous, createKey) {
+  return { ...previous, idempotency_key: createKey() };
+}

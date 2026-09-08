@@ -19,7 +19,9 @@ import models  # noqa: F401 - registers every model with Base.metadata
 
 config = context.config
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # Migration helpers may run inside the application/test process. Preserve
+    # its loggers so a schema render cannot silently disable runtime errors.
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 database_url = os.getenv("DATABASE_URL", "").strip()
 if database_url.startswith("postgresql://"):

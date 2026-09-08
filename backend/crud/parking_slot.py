@@ -75,6 +75,31 @@ def zone_has_occupied_or_active_slot(db: Session, zone_id: int) -> bool:
     )
     return db.execute(stmt).scalar_one_or_none() is not None
 
+
+def zone_has_future_commitment(db: Session, zone_id: int) -> bool:
+    """Return whether disabling a zone would orphan a live reservation/allocation."""
+    from expansion.site_models import GuaranteedAllocation, ParkingReservation
+    from crud import parking_session as parking_session_crud
+
+    now = parking_session_crud.server_now()
+    reservation = db.scalar(select(ParkingReservation.id).join(
+        ParkingSlot, ParkingSlot.id == ParkingReservation.slot_id,
+    ).where(
+        ParkingSlot.zone_id == zone_id,
+        ParkingReservation.status.in_(["confirmed", "arrived"]),
+        ParkingReservation.end_at > now,
+    ).limit(1))
+    if reservation is not None:
+        return True
+    allocation = db.scalar(select(GuaranteedAllocation.id).join(
+        ParkingSlot, ParkingSlot.id == GuaranteedAllocation.slot_id,
+    ).where(
+        ParkingSlot.zone_id == zone_id,
+        GuaranteedAllocation.status == "active",
+        GuaranteedAllocation.end_at > now,
+    ).limit(1))
+    return allocation is not None
+
 def create_parking_slot(db: Session, slot_in: slot_schema.ParkingSlotCreate) -> ParkingSlot:
     db_slot = ParkingSlot(**slot_in.model_dump())
     db.add(db_slot)

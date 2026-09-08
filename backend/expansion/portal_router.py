@@ -29,6 +29,7 @@ from models.user import User
 
 router = APIRouter(tags=["Customer portal / DEMO payments"])
 manager = RoleChecker("manager")
+admin = RoleChecker("admin")
 
 
 def fields(row, *names):
@@ -241,7 +242,9 @@ def refunds(db=Depends(get_db), user=Depends(get_current_user)):
 def admin_links(db=Depends(get_db), actor=Depends(manager)):
     rows = db.scalars(select(PortalLinkRequest).where(PortalLinkRequest.status == "pending").order_by(PortalLinkRequest.created_at).limit(100))
     return {"items": [{**fields(row, "id", "user_id", "phone_number", "note", "status", "created_at"),
-        "username": db.get(User, row.user_id).username, "user_full_name": db.get(User, row.user_id).full_name} for row in rows]}
+        "username": db.get(User, row.user_id).username,
+        "user_full_name": db.get(User, row.user_id).full_name,
+        "requester_role": db.get(User, row.user_id).role.name} for row in rows]}
 
 
 @router.post("/portal/admin/link-requests/{identity}/resolve")
@@ -253,15 +256,46 @@ def admin_link_resolve(identity: str, data: Resolution, db=Depends(get_db), acto
 @router.get("/portal/admin/vehicle-requests")
 def admin_vehicles(db=Depends(get_db), actor=Depends(manager)):
     rows = db.scalars(select(PortalVehicleRequest).where(PortalVehicleRequest.status == "pending").order_by(PortalVehicleRequest.created_at).limit(100))
-    return {"items": [{**fields(row, "id", "customer_id", "license_plate", "vehicle_type_id", "note", "status", "created_at"),
-        "customer_name": db.get(Customer, row.customer_id).full_name,
-        "type_name": db.get(VehicleType, row.vehicle_type_id).name} for row in rows]}
+    items = []
+    for row in rows:
+        link = db.scalar(select(PortalAccountLink).where(PortalAccountLink.customer_id == row.customer_id))
+        requester = db.get(User, link.user_id) if link else None
+        items.append({**fields(row, "id", "customer_id", "license_plate", "vehicle_type_id", "note", "status", "created_at"),
+            "customer_name": db.get(Customer, row.customer_id).full_name,
+            "type_name": db.get(VehicleType, row.vehicle_type_id).name,
+            "username": requester.username if requester else None,
+            "requester_role": requester.role.name if requester else None})
+    return {"items": items}
 
 
 @router.post("/portal/admin/vehicle-requests/{identity}/resolve")
 def admin_vehicle_resolve(identity: str, data: Resolution, db=Depends(get_db), actor=Depends(manager)):
     row = write(db, lambda: service.resolve_vehicle(db, actor, identity, data.approve))
     return fields(row, "id", "status")
+
+
+@router.get("/portal/admin/account-links")
+def admin_account_links(db=Depends(get_db), actor=Depends(manager)):
+    from expansion.site_scope import is_global_admin
+    rows = db.scalars(select(PortalAccountLink).order_by(PortalAccountLink.created_at.desc()).limit(100))
+    items = []
+    for row in rows:
+        user = db.get(User, row.user_id)
+        customer = db.get(Customer, row.customer_id)
+        items.append({**fields(row, "id", "user_id", "customer_id", "verification", "created_at"),
+            "username": user.username,
+            "user_full_name": user.full_name,
+            "requester_role": user.role.name,
+            "customer_name": customer.full_name,
+            "phone_number": customer.phone_number,
+            "can_unlink": is_global_admin(actor)})
+    return {"items": items}
+
+
+@router.delete("/portal/admin/account-links/{user_id}", status_code=204)
+def admin_account_unlink(user_id: int, db=Depends(get_db), actor=Depends(admin)):
+    write(db, lambda: service.unlink_account(db, actor, user_id))
+    return Response(status_code=204)
 
 
 @router.post("/portal/admin/plans")

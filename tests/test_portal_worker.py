@@ -1,12 +1,24 @@
 from datetime import timedelta
+from threading import Event
 
+from fastapi.testclient import TestClient
 from sqlalchemy import select
 
+import main
 from core.clock import business_now
 from expansion.portal_models import PortalAccountLink, PortalNotification
 from expansion.portal_worker import run_portal_maintenance
 from models.monthly_pass import MonthlyPass
 from models.vehicle import Vehicle
+
+
+def test_production_lifespan_runs_portal_maintenance_when_enabled(monkeypatch):
+    ran = Event()
+    monkeypatch.setattr(main.settings, "PORTAL_MAINTENANCE_INTERVAL_SECONDS", 0.01, raising=False)
+    monkeypatch.setattr(main, "_run_maintenance_cycle", ran.set, raising=False)
+
+    with TestClient(main.app):
+        assert ran.wait(timeout=1)
 
 
 def test_bounded_reminder_batches_progress_past_already_notified_passes(db_session, test_user, customer, vehicle_type):

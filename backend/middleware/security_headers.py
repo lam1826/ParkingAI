@@ -36,7 +36,7 @@ class SecurityHeadersMiddleware:
                     "Permissions-Policy",
                     "camera=(), microphone=(), geolocation=()",
                 )
-                if path.startswith(("/api/", "/auth/", "/ai/", "/parking/")):
+                if path.startswith(("/api/", "/auth/", "/ai/", "/parking/", "/dashboard", "/reports")):
                     headers.setdefault("Cache-Control", "no-store")
             await send(message)
 

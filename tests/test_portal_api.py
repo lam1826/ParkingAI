@@ -8,7 +8,7 @@ from sqlalchemy import select
 
 import expansion.site_models  # register referenced site metadata
 from expansion.gateway import PortalSettings
-from expansion.portal_models import PortalOrder, PortalSessionGrant
+from expansion.portal_models import PortalAccountLink, PortalOrder, PortalSessionGrant
 from expansion.portal_router import router
 from expansion.portal_service import capture_session_ownership
 from database import get_db
@@ -86,6 +86,63 @@ def test_customer_cannot_self_approve_vehicle_or_forge_server_order_price(portal
     assert client.get("/api/v2/portal/admin/vehicle-requests").status_code == 403
     forged = client.post("/api/v2/me/orders", json={**body, "amount": 1})
     assert forged.status_code == 422
+
+
+def test_reviewer_cannot_approve_own_profile_link_request(portal):
+    client, current, users, *_rest, db = portal
+    customer = Customer(full_name="Hồ sơ có sẵn", phone_number="0911222333")
+    db.add(customer)
+    db.commit()
+    current["user"] = users[0]
+    request = client.post("/api/v2/me/link-requests", json={"phone_number": customer.phone_number})
+    assert request.status_code == 200
+
+    result = client.post(
+        f"/api/v2/portal/admin/link-requests/{request.json()['id']}/resolve",
+        json={"approve": True},
+    )
+
+    assert result.status_code == 403
+    assert db.scalar(select(PortalAccountLink).where(PortalAccountLink.user_id == users[0].id)) is None
+
+
+def test_reviewer_cannot_approve_vehicle_for_own_linked_profile(portal):
+    client, current, users, _site, kind, db = portal
+    current["user"] = users[0]
+    assert client.post("/api/v2/me/profile", json={
+        "full_name": "Quản trị viên",
+        "phone_number": "0911333444",
+    }).status_code == 200
+    request = client.post("/api/v2/me/vehicle-requests", json={
+        "license_plate": "51A-SELF01",
+        "vehicle_type_id": kind.id,
+    })
+    assert request.status_code == 200
+
+    result = client.post(
+        f"/api/v2/portal/admin/vehicle-requests/{request.json()['id']}/resolve",
+        json={"approve": True},
+    )
+
+    assert result.status_code == 403
+    assert db.scalar(select(Vehicle).where(Vehicle.license_plate == "51A-SELF01")) is None
+
+
+def test_admin_can_unlink_a_portal_account_without_deleting_customer(portal):
+    client, current, users, *_rest, db = portal
+    client.post("/api/v2/me/profile", json={"full_name": "Khách A", "phone_number": "0901234567"})
+    customer_id = client.get("/api/v2/me/profile").json()["customer"]["id"]
+    current["user"] = users[0]
+
+    links = client.get("/api/v2/portal/admin/account-links")
+    assert links.status_code == 200
+    assert links.json()["items"][0]["requester_role"] == "customer"
+    removed = client.delete(f"/api/v2/portal/admin/account-links/{users[1].id}")
+
+    assert removed.status_code == 204
+    assert db.get(Customer, customer_id) is not None
+    current["user"] = users[1]
+    assert client.get("/api/v2/me/profile").json()["linked"] is False
 
 
 def test_demo_success_is_atomic_idempotent_and_never_records_real_money(portal):
@@ -261,6 +318,24 @@ def test_expired_order_can_be_closed_by_owner_and_worker_is_idempotent(portal):
     assert run_portal_maintenance(db)["expired"] == 1
     assert run_portal_maintenance(db)["expired"] == 0
     assert client.get(f"/api/v2/me/orders/{order['id']}").json()["status"] == "expired"
+
+
+def test_due_manual_order_expires_lazily_and_no_longer_blocks_a_new_order(portal):
+    client, *_unused, db = portal
+    body = onboard(portal)
+    first = client.post("/api/v2/me/orders", json={**body, "payment_mode": "manual"}).json()
+    db.get(PortalOrder, first["id"]).expires_at -= timedelta(hours=1)
+    db.commit()
+
+    detail = client.get(f"/api/v2/me/orders/{first['id']}")
+    second = client.post("/api/v2/me/orders", json={
+        **body,
+        "payment_mode": "manual",
+        "idempotency_key": "manual-after-expiry",
+    })
+
+    assert detail.status_code == 200 and detail.json()["status"] == "expired"
+    assert second.status_code == 200 and second.json()["status"] == "pending"
 
 
 def test_customer_receipt_download_checks_ownership_and_labels_demo(portal):

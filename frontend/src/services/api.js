@@ -2,6 +2,7 @@ import axios from "axios";
 import { resolveApiBaseUrl } from "../utils/apiBaseUrl";
 import { clearAIChat } from "../utils/aiChatStorage";
 import { isCurrentAuthFailure, notifyAuthSessionChanged } from "./authSessionBoundary";
+import { shouldAttachAuthorization } from "./credentialRequestPolicy";
 
 // Khởi tạo instance của axios
 const api = axios.create({
@@ -25,8 +26,10 @@ api.interceptors.request.use(
     // Lấy token từ localStorage (hoặc sessionStorage/cookies tùy bạn lưu)
     const token = localStorage.getItem("token");
     
-    if (token) {
+    if (token && shouldAttachAuthorization(config.url)) {
       config.headers.Authorization = `Bearer ${token}`;
+    } else if (!shouldAttachAuthorization(config.url)) {
+      delete config.headers.Authorization;
     }
     
     return config;

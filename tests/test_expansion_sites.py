@@ -1,5 +1,5 @@
 """Functional site isolation and physical reservation guarantees (no provider/network)."""
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import pytest
@@ -14,7 +14,7 @@ from database import get_db
 from expansion import reservations as service
 from expansion.site_models import (FleetVehicle, Organization, OrganizationMembership, ParkingReservation,
                                    ParkingSite, SiteMembership, SiteWaitlist)
-from expansion.portal_models import PortalAccountLink, PortalVehicleOwnership
+from expansion.portal_models import PortalAccountLink, PortalNotification, PortalVehicleOwnership
 from expansion.site_router import router
 from expansion.site_schemas import AllocationCreate, BookingWindow, ReservationCreate
 from expansion.site_scope import require_site_access
@@ -28,6 +28,8 @@ from models.user import User
 from models.vehicle import Vehicle
 from models.zone import Zone
 from schemas.parking_session import ParkingSessionCreate
+from schemas.zone import ZoneUpdate
+from routers.zone import update_zone
 from services.auth_service import get_current_user
 from services.parking_service import ParkingService
 
@@ -88,6 +90,13 @@ def test_site_membership_required_even_for_global_manager(env):
         require_site_access(env.db, env.staff, env.b.id)
     assert exc.value.status_code == 403
     assert env.client.get(f"/api/v2/sites/{env.b.id}/sessions").status_code == 403
+    with pytest.raises(HTTPException) as exc:
+        service.reserve(
+            env.db,
+            env.staff,
+            data(env, key="foreign-site-oracle", vehicle=env.other, site=env.b),
+        )
+    assert exc.value.status_code == 403
 
 
 def test_customer_catalog_never_leaks_vehicle_or_staff_data(env):
@@ -104,6 +113,7 @@ def test_customer_only_approved_vehicle_and_own_reservations(env):
     body = data(env).model_dump(mode="json")
     response = env.client.post("/api/v2/me/reservations", json=body)
     assert response.status_code == 201, response.text
+    assert "created_by_id" not in response.json()
     rid = response.json()["id"]
     assert response.json()["start_at"].endswith("+07:00")
     assert len(env.client.get("/api/v2/me/reservations").json()) == 1
@@ -120,12 +130,69 @@ def test_booking_body_rejects_client_authority(env, extra):
     assert env.client.post("/api/v2/me/reservations", json={**data(env).model_dump(mode="json"), **extra}).status_code == 422
 
 
+def test_customer_booking_rejects_start_beyond_thirty_days(env):
+    env.actor["user"] = env.account
+    body = data(
+        env,
+        start=env.now + timedelta(days=31),
+        end=env.now + timedelta(days=31, hours=2),
+    ).model_dump(mode="json")
+
+    response = env.client.post("/api/v2/me/reservations", json=body)
+
+    assert response.status_code == 422
+    assert "30 ngày" in response.json()["detail"]
+    assert env.db.scalar(select(func.count()).select_from(ParkingReservation)) == 0
+
+
+def test_customer_has_a_bounded_number_of_active_reservations(env):
+    env.actor["user"] = env.account
+    for index in range(5):
+        start = env.now + timedelta(hours=index * 2)
+        body = data(
+            env,
+            key=f"customer-cap-{index:04}",
+            start=start,
+            end=start + timedelta(hours=1),
+        ).model_dump(mode="json")
+        assert env.client.post("/api/v2/me/reservations", json=body).status_code == 201
+
+    start = env.now + timedelta(hours=12)
+    rejected = env.client.post(
+        "/api/v2/me/reservations",
+        json=data(
+            env,
+            key="customer-cap-overflow",
+            start=start,
+            end=start + timedelta(hours=1),
+        ).model_dump(mode="json"),
+    )
+
+    assert rejected.status_code == 409
+    assert "tối đa 5" in rejected.json()["detail"]
+    assert env.db.scalar(select(func.count()).select_from(ParkingReservation)) == 5
+
+
 def test_duplicate_request_returns_same_booking_but_changed_content_conflicts(env):
     first = reserve(env)
     assert reserve(env).id == first.id
     with pytest.raises(HTTPException) as exc:
         reserve(env, end=env.now + timedelta(hours=3))
     assert exc.value.status_code == 409
+    env.db.rollback()
+    assert env.db.scalar(select(func.count()).select_from(ParkingReservation)) == 1
+
+
+def test_terminal_booking_request_id_cannot_be_reused(env):
+    row = reserve(env)
+    service.cancel(env.db, env.account, row, customer=True)
+    env.db.commit()
+
+    with pytest.raises(HTTPException) as exc:
+        reserve(env)
+
+    assert exc.value.status_code == 409
+    assert "mã yêu cầu mới" in exc.value.detail.lower()
     env.db.rollback()
     assert env.db.scalar(select(func.count()).select_from(ParkingReservation)) == 1
 
@@ -168,6 +235,21 @@ def test_future_booking_blocks_walk_in_on_both_claim_paths(env, path):
     assert env.db.scalar(select(func.count()).select_from(ParkingSession)) == 0
 
 
+def test_walk_in_reports_future_reservation_instead_of_a_race(env):
+    reserve(env, start=env.now + timedelta(hours=1), end=env.now + timedelta(hours=2))
+
+    with pytest.raises(HTTPException) as exc:
+        ParkingService(env.db).check_in(
+            env.other.license_plate,
+            env.other.vehicle_type_id,
+            env.staff.id,
+            parking_slot_id=env.slot.id,
+        )
+
+    assert exc.value.status_code == 409
+    assert "đặt chỗ" in exc.value.detail.lower()
+
+
 def test_arrival_is_atomic_and_replay_does_not_open_second_session(env):
     row = reserve(env)
     result = service.arrive(env.db, env.staff, row)
@@ -177,6 +259,35 @@ def test_arrival_is_atomic_and_replay_does_not_open_second_session(env):
     assert env.db.scalar(select(func.count()).select_from(ParkingSession)) == 1
     with pytest.raises(HTTPException):
         service.cancel(env.db, env.account, row, customer=True)
+
+
+def test_check_in_to_another_slot_is_rejected_before_creating_a_session(env):
+    reservation = reserve(env)
+    alternate = ParkingSlot(
+        zone_id=env.slot.zone_id,
+        vehicle_type_id=env.vehicle.vehicle_type_id,
+        slot_name="A-ALTERNATE",
+    )
+    env.db.add(alternate)
+    env.db.commit()
+
+    with pytest.raises(HTTPException) as exc:
+        ParkingService(env.db).check_in(
+            env.vehicle.license_plate,
+            env.vehicle.vehicle_type_id,
+            env.staff.id,
+            parking_slot_id=alternate.id,
+        )
+
+    env.db.refresh(reservation)
+    env.db.refresh(alternate)
+    assert exc.value.status_code == 409
+    assert env.slot.slot_name in exc.value.detail
+    assert reservation.status == "confirmed"
+    assert reservation.session_id is None
+    assert reservation.slot_id == env.slot.id
+    assert alternate.is_occupied is False
+    assert env.db.scalar(select(func.count()).select_from(ParkingSession)) == 0
 
 
 def test_late_previous_vehicle_cannot_be_overwritten_by_next_booking(env):
@@ -216,6 +327,80 @@ def test_allocation_protects_space_but_does_not_make_stay_free(env):
     assert env.db.get(ParkingSession, result["session_id"]).monthly_coverage_end is None
 
 
+def test_v2_session_payload_excludes_internal_confirmation_and_image_fields(env):
+    result = ParkingService(env.db).check_in(
+        env.vehicle.license_plate,
+        env.vehicle.vehicle_type_id,
+        env.staff.id,
+        parking_slot_id=env.slot.id,
+    )
+    session = env.db.get(ParkingSession, result["session_id"])
+    payload = service.serialize(session)
+    forbidden = {
+        "checkout_quote_hash",
+        "checkout_payment_method",
+        "monthly_coverage_end",
+        "image_in_url",
+        "image_out_url",
+        "staff_in_id",
+        "staff_out_id",
+    }
+    assert forbidden.isdisjoint(payload)
+
+
+def test_v2_session_metadata_timestamps_keep_their_utc_meaning():
+    session = ParkingSession(
+        id="utc-metadata-session",
+        vehicle_id=1,
+        check_in_time=datetime(2026, 9, 8, 10, 0),
+        status="active",
+        staff_in_id=1,
+        created_at=datetime(2026, 9, 8, 3, 0),
+        updated_at=datetime(2026, 9, 8, 3, 5),
+    )
+
+    payload = service.serialize(session)
+
+    assert payload["created_at"].tzinfo == timezone.utc
+    assert payload["updated_at"].tzinfo == timezone.utc
+    assert payload["check_in_time"].utcoffset() == timedelta(hours=7)
+
+    zone = Zone(
+        id=1,
+        name="UTC metadata zone",
+        capacity=1,
+        created_at=datetime(2026, 9, 8, 3, 0),
+        updated_at=datetime(2026, 9, 8, 3, 5),
+    )
+    zone_payload = service.serialize(zone)
+    assert zone_payload["created_at"].tzinfo == timezone.utc
+    assert zone_payload["updated_at"].tzinfo == timezone.utc
+
+
+def test_reservation_cannot_give_same_vehicle_a_second_slot_over_its_allocation(env):
+    allocation = service.reserve(
+        env.db,
+        env.staff,
+        AllocationCreate(**data(env, key="vehicle-allocation-0001").model_dump()),
+        allocation=True,
+    )
+    second = ParkingSlot(
+        zone_id=env.slot.zone_id,
+        vehicle_type_id=env.vehicle.vehicle_type_id,
+        slot_name="A-SECOND",
+    )
+    env.db.add(second)
+    env.db.commit()
+
+    with pytest.raises(HTTPException) as exc:
+        reserve(env, key="vehicle-reservation-0002", slot=second)
+
+    assert exc.value.status_code == 409
+    assert allocation.slot_id == env.slot.id
+    env.db.rollback()
+    assert env.db.scalar(select(func.count()).select_from(ParkingReservation)) == 0
+
+
 def test_waitlist_holds_no_capacity_then_offer_creates_exactly_one_booking(env):
     body = BookingWindow(**data(env).model_dump(exclude={"slot_id"}))
     row = service.join_waitlist(env.db, env.staff, body)
@@ -226,6 +411,11 @@ def test_waitlist_holds_no_capacity_then_offer_creates_exactly_one_booking(env):
     assert row.status == "offered"
     assert service.offer_waitlist(env.db, env.staff, row).id == offered.id
     assert env.db.scalar(select(func.count()).select_from(ParkingReservation)) == 1
+    notifications = env.db.scalars(select(PortalNotification).where(
+        PortalNotification.event_key == f"waitlist:{row.id}:offered",
+    )).all()
+    assert len(notifications) == 1
+    assert "15 phút" in notifications[0].message
 
 
 def test_foreign_site_resource_cannot_be_used_in_scoped_checkin(env):
@@ -266,6 +456,32 @@ def test_reservation_identity_and_source_have_database_backstops(env):
     with pytest.raises(IntegrityError):
         env.db.commit()
     env.db.rollback()
+
+
+def test_zone_cannot_be_deactivated_while_it_has_future_commitments(env):
+    row = reserve(env, start=env.now + timedelta(hours=1), end=env.now + timedelta(hours=2))
+
+    with pytest.raises(HTTPException) as exc:
+        update_zone(env.slot.zone_id, ZoneUpdate(is_active=False), env.db)
+
+    assert exc.value.status_code == 409
+    assert "đặt chỗ" in exc.value.detail.lower()
+    service.cancel(env.db, env.staff, row)
+    env.db.commit()
+    updated = update_zone(env.slot.zone_id, ZoneUpdate(is_active=False), env.db)
+    assert updated.is_active is False
+
+
+def test_zone_commitment_guard_rejects_direct_database_deactivation(env):
+    reserve(env, start=env.now + timedelta(hours=1), end=env.now + timedelta(hours=2))
+    zone = env.db.get(Zone, env.slot.zone_id)
+    zone.is_active = False
+
+    with pytest.raises(IntegrityError):
+        env.db.commit()
+
+    env.db.rollback()
+    assert env.db.get(Zone, env.slot.zone_id).is_active is True
 
 
 def test_zone_cannot_be_moved_to_another_site_after_assignment(env):

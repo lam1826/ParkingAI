@@ -122,7 +122,7 @@ from database import (
 from models import Base
 from sqlalchemy.schema import CreateIndex
 from sqlalchemy.dialects import sqlite
-from expansion.site_models import SITE_SQLITE_GUARDS
+from expansion.site_models import SITE_SQLITE_GUARDS, ZONE_COMMITMENT_SQLITE_GUARDS
 from expansion_demo_guards import DEMO_SQLITE_GUARD_SQL, validate_demo_ledger
 from expansion_rollout import (
     EXPANSION_TABLES, backfill_legacy_sites, migrate_sqlite_payment_demo,
@@ -255,6 +255,7 @@ _REQUIRED_TRIGGER_SQL = {
 }
 _REQUIRED_TRIGGER_SQL.update(BOOLEAN_DOMAIN_TRIGGER_SQL)
 _REQUIRED_TRIGGER_SQL.update(SITE_SQLITE_GUARDS)
+_REQUIRED_TRIGGER_SQL.update(ZONE_COMMITMENT_SQLITE_GUARDS)
 _REQUIRED_TRIGGER_SQL["trg_payment_demo_boundary"] = DEMO_SQLITE_GUARD_SQL
 _REQUIRED_TRIGGER_SQL.update({
     TRG_CHECKOUT_CONFIRMATION_INSERT: CHECKOUT_CONFIRMATION_INSERT_TRIGGER_SQL,

@@ -22,6 +22,8 @@ deploy từ commit đầy đủ 40 ký tự thuộc `main` và đã vượt work
 - chạy `alembic -c alembic.ini upgrade head` bằng `release_command` trước khi
   thay Machines;
 - kiểm tra `/ready`;
+- chạy bảo trì đơn hàng, nhắc gia hạn và dọn ảnh hết hạn mỗi 30 giây qua
+  `PORTAL_MAINTENANCE_INTERVAL_SECONDS`;
 - duy trì ít nhất một Machine chạy ở `sin`;
 - dùng rolling deployment và rollback tự động nếu health check không đạt.
 
@@ -59,16 +61,19 @@ trợ và thêm repository/environment secret:
 | Secret | Cách tạo |
 | --- | --- |
 | `FLY_API_TOKEN` | `flyctl tokens create deploy -a parkingai-api-lam1826` |
+| `SUPABASE_ACCESS_TOKEN` | token quản trị Supabase chỉ cần quyền đọc backup |
+| `SUPABASE_PROJECT_REF` | mã project Supabase production |
 
 Chỉ dùng deploy token giới hạn theo app, không dùng token tài khoản rộng. Sau
 khi CI của `main` xanh, Continuous Delivery sẽ:
 
 1. khóa SHA release và xác minh SHA thuộc `origin/main`;
 2. build frontend với `VITE_API_URL=https://api.parkingai.am` làm bằng chứng;
-3. chạy `flyctl deploy --remote-only` từ thư mục `backend`;
-4. chạy Alembic release command trên Supabase trước rollout;
-5. gắn `RELEASE_ID=<git-sha>` vào Machine;
-6. kiểm tra `/ready`, release ID và CORS từ `parkingai.am`.
+3. xác nhận PITR đang bật hoặc có backup Supabase hoàn tất trong 36 giờ gần nhất;
+4. chạy `flyctl deploy --remote-only` từ thư mục `backend`;
+5. chạy Alembic release command trên Supabase trước rollout;
+6. gắn `RELEASE_ID=<git-sha>` vào Machine;
+7. kiểm tra `/ready`, release ID và CORS từ `parkingai.am`.
 
 Có thể chạy lại chính xác một commit đã thuộc `main` bằng `workflow_dispatch`
 và input `commit_sha`.
@@ -136,7 +141,7 @@ importer vào database production đã có dữ liệu.
 
 ## 7. Rollback
 
-Liệt kê release rồi rollback image nếu cần:
+Backend: liệt kê release rồi rollback image nếu cần:
 
 ```powershell
 flyctl releases -a parkingai-api-lam1826
@@ -146,4 +151,17 @@ flyctl releases rollback <version> -a parkingai-api-lam1826
 Migration phải theo expand/contract và tương thích ngược ít nhất một release.
 Không rollback destructive migration chỉ bằng cách đổi image. Trước migration
 contract, xác nhận Supabase backup/PITR và hoàn tất thời gian quan sát release
-expand. Khi backend rollback, giữ `VITE_API_URL` và DNS không đổi.
+expand. Workflow dừng trước `flyctl deploy` nếu không đọc được metadata backup,
+PITR chưa bật và không có backup hoàn tất trong 36 giờ. Khi backend rollback,
+giữ `VITE_API_URL` và DNS không đổi.
+
+Frontend: mở Cloudflare Dashboard → **Workers & Pages** → project ParkingAI →
+**Deployments**. Trong danh sách deployment production đã build thành công,
+chọn menu của bản gắn với commit cần khôi phục rồi chọn **Rollback to this deployment**.
+Sau rollback, mở `https://parkingai.am`, kiểm tra bundle gọi đúng
+`https://api.parkingai.am`, đăng nhập và chạy một lượt tra cứu chỗ trống.
+Không dùng preview deployment làm đích rollback.
+
+Nếu lỗi chỉ nằm ở frontend, rollback Pages trước và giữ backend tương thích với
+ít nhất một phiên bản giao diện trước đó. Nếu lỗi nằm ở backend, rollback Fly
+image trước; chỉ rollback cả Pages khi hợp đồng API của giao diện cũ yêu cầu.

@@ -42,6 +42,7 @@ import ErrorBoundary from "../components/common/ErrorBoundary";
 import BrandLogo from "../components/brand/BrandLogo";
 import { useExpansion } from "../context/ExpansionContext";
 import PhotoCameraIcon from "@mui/icons-material/PhotoCamera";
+import { isMenuPathSelected } from "../utils/navigationState";
 
 const drawerWidth = 260; // Độ rộng của Sidebar
 
@@ -163,7 +164,7 @@ export default function MainLayout() {
                   if (item.role && !hasMinimumRole(user?.role, item.role)) return null;
                   if (item.role && !item.scoped && !capabilities?.legacy_workspace_allowed) return null;
 
-                  const isSelected = location.pathname === item.path || (location.pathname.startsWith(item.path) && item.path !== '/');
+                  const isSelected = isMenuPathSelected(location.pathname, item.path);
 
                   return (
                     <ListItem key={item.text} disablePadding sx={{ mb: 1, px: 2 }}>

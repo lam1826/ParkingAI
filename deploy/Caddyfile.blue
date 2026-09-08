@@ -15,6 +15,7 @@
     }
 
     reverse_proxy backend_blue:8000 {
+        header_up -Fly-Client-IP
         health_uri /ready
         health_interval 10s
         health_timeout 5s
