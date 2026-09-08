@@ -29,6 +29,12 @@ Thumbs.db
 # Microsoft Office temporary files
 ~$*.docx
 
+# Report artifacts (do not commit)
+HoSo_BaoCao_ParkingAI/**/*.docx
+ParkingAI-Report-Work/**/*.docx
+/báo cáo hệ thống parkingAI.docx
+/Hướng dẫn sử dụng và triển khai ParkingAI.docx
+
 # Ban sao/backup nguon khong thuoc version control
 frontend/src.zip
 backend/artifacts/
