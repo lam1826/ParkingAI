@@ -49,6 +49,7 @@ const drawerWidth = 260; // Độ rộng của Sidebar
 export default function MainLayout() {
   const { user, logout } = useContext(AuthContext);
   const capabilities = useExpansion();
+  const showcase = capabilities?.showcase_mode || globalThis.__PARKINGAI_CONFIG__?.DEMO;
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -124,7 +125,7 @@ export default function MainLayout() {
           <Box sx={{ flexGrow: 1 }}>
             <BrandLogo size={34} inverse />
           </Box>
-          {globalThis.__PARKINGAI_CONFIG__?.DEMO && <Chip label="DEMO đồ án" size="small" sx={{ bgcolor: "white", color: "primary.dark", mr: 2 }} />}
+          {showcase && <Chip label="DEMO đồ án" size="small" sx={{ bgcolor: "white", color: "primary.dark", mr: 2 }} />}
 
           {/* Góc phải User Profile */}
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -240,7 +241,7 @@ export default function MainLayout() {
         }}
       >
         <Toolbar /> {/* Để đẩy nội dung xuống dưới Header */}
-        {globalThis.__PARKINGAI_CONFIG__?.DEMO && <Alert severity="info" sx={{ mb: 3 }}>Dữ liệu trong bản này được tạo cho đồ án. QR chỉ mô phỏng thanh toán; lịch sử mẫu không phải số liệu của bãi xe thật.</Alert>}
+        {showcase && <Alert severity="info" sx={{ mb: 3 }}>ParkingAI — trình diễn đồ án. QR chỉ mô phỏng, không chuyển tiền. Dữ liệu tại các bãi DEMO dùng để thử chức năng; lịch sử mẫu không phải số liệu vận hành thật.</Alert>}
 
         {/* ĐÂY LÀ NƠI CÁC TRANG (Dashboard, Users,...) SẼ ĐƯỢC RENDER VÀO.
             Bọc ErrorBoundary (key theo pathname để tự reset khi đổi trang):

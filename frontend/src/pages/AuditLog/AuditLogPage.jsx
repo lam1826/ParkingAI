@@ -24,6 +24,9 @@ const actionLabels = {
   CHECK_IN: "Xe vào",
   CHECK_OUT: "Xe ra",
   AI_ACTION: "Tác vụ AI",
+  SHIFT_OPEN: "Mở ca", SHIFT_CLOSE: "Chốt ca", PAYMENT_COLLECT: "Thu tiền",
+  PAYMENT_DEMO: "Thanh toán mô phỏng", REFUND: "Hoàn tiền",
+  VISION_CAPTURE: "Nhận ảnh", VISION_REVIEW: "Duyệt biển số", VISION_DELETE: "Xóa ảnh", RESERVATION_ACTION: "Đặt chỗ / chờ",
 };
 
 export default function AuditLogPage() {
@@ -78,6 +81,9 @@ export default function AuditLogPage() {
     { field: "resource", headerName: "Đối tượng", minWidth: 140, flex: 1 },
     { field: "resource_id", headerName: "Mã đối tượng", width: 135, valueFormatter: (value) => value || "—" },
     { field: "path", headerName: "API", minWidth: 220, flex: 1.3 },
+    { field: "request_id", headerName: "Mã truy vết", minWidth: 250, flex: 1 },
+    { field: "site_id", headerName: "Bãi", width: 80 },
+    { field: "duration_ms", headerName: "Thời gian (ms)", width: 125 },
     { field: "status_code", headerName: "Mã HTTP", width: 100 },
     {
       field: "success",

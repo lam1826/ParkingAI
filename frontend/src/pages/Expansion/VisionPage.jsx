@@ -23,14 +23,28 @@ function ObservationImage({ observation }) {
   }, [observation.id]);
   if (image.id !== observation.id) return <Typography>Đang tải ảnh…</Typography>;
   if (image.error) return <Alert severity="warning">{image.error}</Alert>;
-  return <Box sx={{ position: "relative", lineHeight: 0, maxWidth: 800, width: "100%", mx: "auto" }}>
+  return <Stack spacing={2}><Box sx={{ position: "relative", lineHeight: 0, maxWidth: 800, width: "100%", mx: "auto" }}>
     <Box component="img" src={image.src} alt="Ảnh phương tiện để kiểm tra biển số" sx={{ width: "100%", height: "auto", borderRadius: 1 }} />
     {(observation.detections || []).map((detection, index) => {
       const [x1, y1, x2, y2] = detection.box;
       if (!observation.image_width || !observation.image_height) return null;
       return <Box key={index} sx={{ position: "absolute", left: `${x1 / observation.image_width * 100}%`, top: `${y1 / observation.image_height * 100}%`, width: `${(x2 - x1) / observation.image_width * 100}%`, height: `${(y2 - y1) / observation.image_height * 100}%`, border: "2px solid", borderColor: "success.main", pointerEvents: "none" }} />;
     })}
-  </Box>;
+  </Box>
+    {(observation.detections || []).map((detection, index) => {
+      if (!Array.isArray(detection.box) || detection.box.length !== 4) return null;
+      const [x1, y1, x2, y2] = detection.box;
+      const width = x2 - x1, height = y2 - y1;
+      if (width <= 0 || height <= 0 || !observation.image_width) return null;
+      return <Box key={index}>
+        <Typography variant="subtitle2">Vùng biển số {index + 1} · {detection.plate || "Chưa đọc được chữ"}</Typography>
+        <Box sx={{ width: "100%", maxWidth: 360, mt: 1 }}><svg viewBox={`${x1} ${y1} ${width} ${height}`} width="100%" role="img" aria-label={`Ảnh cắt vùng biển số ${index + 1}`}><image href={image.src} width={observation.image_width} height={observation.image_height} /></svg></Box>
+        <Typography variant="body2">Điểm phát hiện: {detection.detector_confidence?.toFixed(3) ?? "Chưa có"} · Điểm đọc chữ: {detection.ocr_confidence?.toFixed(3) ?? "Chưa có"}</Typography>
+        {detection.text_lines?.length > 0 && <Typography variant="body2">Chữ đọc được: {detection.text_lines.join(" / ")}</Typography>}
+      </Box>;
+    })}
+    {!!observation.detections?.length && <Typography variant="body2" color="text.secondary">Điểm do model trả về dùng để tham khảo, không phải tỷ lệ đọc đúng đã kiểm chứng. Kiểm tra ảnh rồi sửa biển số ở dưới nếu cần.</Typography>}
+  </Stack>;
 }
 
 export default function VisionPage() {

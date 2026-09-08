@@ -31,6 +31,13 @@ export default function InsightsPage() {
         <Records rows={forecast.predictions.map((row) => ({ ...row, id: row.at }))} columns={[{ key: "at", label: "Khung giờ", render: (row) => dateTime(row.at) }, { key: "arrivals", label: "Xe vào dự kiến" }, { key: "departures", label: "Xe ra dự kiến" }, { key: "range", label: "Khoảng xe vào", render: (row) => `${row.lower} – ${row.upper}` }, { key: "samples", label: "Tuần có bản ghi", render: (row) => `${row.samples_observed ?? 0}/${(row.samples_observed ?? 0) + (row.samples_zero_filled ?? 0)}` }]} />
       </>}
       {forecast?.backtest && <Stack direction={{ xs: "column", sm: "row" }} spacing={3} useFlexGap><Typography>Sai số dự báo (MAE): <strong>{number(forecast.backtest.mae)}</strong></Typography><Typography>Sai số phương án đối chiếu: <strong>{number(forecast.backtest.baseline_mae)}</strong></Typography><Typography>Số mẫu kiểm tra: <strong>{forecast.backtest.samples ?? 0}</strong></Typography></Stack>}
+      {forecast?.backtest?.baselines && <>
+        <Records rows={Object.entries(forecast.backtest.baselines).map(([id, values]) => ({ id, ...values }))} columns={[
+          { key: "id", label: "Phương án đối chiếu", render: (row) => ({ naive_last_hour: "Giữ nguyên giờ trước", seasonal_naive: "Cùng giờ tuần trước", same_weekday_hour_mean: "Trung bình cùng thứ / giờ" })[row.id] },
+          { key: "mae", label: "Sai số MAE (xe / giờ)", render: (row) => number(row.mae) }, { key: "samples", label: "Mẫu kiểm tra" },
+        ]} />
+        <Typography variant="body2">Khoảng ước lượng chứa kết quả thực tế: {forecast.backtest.interval_coverage == null ? "Chưa đủ mẫu" : `${(forecast.backtest.interval_coverage * 100).toFixed(1)}%`} trên {forecast.backtest.interval_samples ?? 0} giờ kiểm tra. Đây là kết quả đối chiếu lịch sử, không bảo đảm độ chính xác tương lai.</Typography>
+      </>}
       {coverage && <Box>
         <Typography variant="subtitle2" sx={{ mb: 0.5 }}>Độ phủ dữ liệu</Typography>
         <Stack direction={{ xs: "column", sm: "row" }} spacing={3} useFlexGap sx={{ flexWrap: "wrap" }}>

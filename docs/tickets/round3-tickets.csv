@@ -4,10 +4,11 @@ Nine primary references and explicit adaptation decisions",docs/REVIEW_ROUND3_SY
 PARK-202,Serialize booking cap across customer vehicles,P1,LOCAL_VERIFIED_RELEASE_PENDING,PR-02,FIX,Two PG transactions starting at four active bookings previously both succeeded and produced six.,tests/test_round3_postgres.py; tests/test_round3_site_finance.py; tests/test_acceptance_security.py,PARK-201,"At most five active bookings per customer
 Ownership is rechecked after locking
 Role downgrade overrides stale manager membership",tests/test_round3_postgres.py; tests/test_round3_site_finance.py; tests/test_acceptance_security.py,None,Revert code only; preserve reservations,PENDING
-PARK-203,"Site-scoped cash shifts, immutable receipts and zone/slot edits",P1,LOCAL_VERIFIED_RELEASE_PENDING,PR-03,ADD,Multi-site staff could not use global v1 finance and configuration.,tests/test_round3_site_finance.py; tests/test_round3_postgres.py,PARK-202,"Staff sees own shift/collections; manager sees assigned site
+PARK-203,"Site-scoped cash shifts, immutable receipts and zone/slot edits",P1,LOCAL_VERIFIED_RELEASE_PENDING,PR-03,ADD,Multi-site staff could not use global v1 finance and configuration.,"tests/test_round3_site_finance.py; tests/test_round3_postgres.py; independent review reproduced admin null-shift cross-site collections, HTTP RED201/null then GREEN409",PARK-202,"Staff sees own shift/collections; manager sees assigned site
 Source/shift/payment site cannot mismatch
 Legacy null rows remain admin-only
-Demo amounts excluded; unassigned amounts explicit",tests/test_round3_site_finance.py; tests/test_round3_postgres.py,20260908_02 additive nullable columns and guards,Revert application; keep additive schema and financial records,PENDING
+Demo amounts excluded; unassigned amounts explicit
+New legacy v1 shift resolves sole site; multi-site admin must choose site via v2. Existing null history preserved.",tests/test_round3_site_finance.py; tests/test_round3_postgres.py,20260908_02 additive nullable columns and guards,Revert application; keep additive schema and financial records,PENDING
 PARK-204,"Correlated audit, request latency and sanitized error events",P2,LOCAL_VERIFIED_RELEASE_PENDING,PR-04,FIX,v2 actions were generic; no response-to-audit correlation.,tests/test_round3_observability.py; tests/test_api_edge_hardening.py,PARK-203,"X-Request-ID on success and 500
 Audit classifies v2 operations and stores site/latency
 Worker/OCR failures log bounded metadata without bodies or secrets",tests/test_round3_observability.py; tests/test_api_edge_hardening.py,20260908_02 audit columns,Revert application; retain audit columns,PENDING
@@ -37,7 +38,7 @@ Backup gate/CI/exact SHA and authenticated online UAT pass",tests/test_round3_se
 PARK-209,Labeled Vietnamese plates and physical-phone acceptance,P2,OPEN,FUTURE,FUTURE,Two foreign CC0 photos and viewport checks cannot establish VN accuracy or phone capture.,Independent labeled benchmark and device matrix,PARK-205,"Obtain licensed labeled Vietnamese evaluation set
 Report detection, whole-plate accuracy and correction rate separately
 Test actual iOS/Android capture under representative light",Independent labeled benchmark and device matrix,None,Keep human confirmation and disable automatic flows,PENDING
-PARK-210,Disable Cloudflare-injected analytics beacon,P3,OPEN,FOLLOW-UP,FIX,Provider-injected analytics may be blocked by current CSP.,Cloudflare setting plus browser network/CSP inspection,PARK-208,"Disable automatic analytics injection for hostname
-Verify no injected beacon or CSP violation; retain CSP",Cloudflare setting plus browser network/CSP inspection,None,Restore previous Cloudflare analytics setting,PENDING
+PARK-210,Disable Cloudflare-injected analytics beacon,P3,DEFERRED_BY_USER,FOLLOW-UP,FIX,Provider-injected analytics may be blocked by current CSP.,Public HTML still contains injected beacon; CSP unchanged. Temporary automated login rejected by Cloudflare verification. User chose defer after API-token alternative.,PARK-208,"Disable automatic analytics injection for hostname
+Verify no injected beacon or CSP violation; retain CSP",Cloudflare setting plus browser network/CSP inspection,None,Restore previous Cloudflare analytics setting,Deferred: user explicitly requested continue release and handle Cloudflare later.
 PARK-211,Measure slot availability queries at larger scale,P3,OPEN,FUTURE,FUTURE,Per-slot checks may cause query growth; latency impact not demonstrated.,Read-only benchmark on isolated data,PARK-208,"Measure SQL count and p95 for increasing slots/sites
 Optimize only when improvement is demonstrated without weakening guards",Read-only benchmark on isolated data,Only if measurement justifies it,Revert measured optimization,PENDING

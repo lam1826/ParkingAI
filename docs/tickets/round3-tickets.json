@@ -18,7 +18,8 @@
     "status": "LOCAL_VERIFIED_RELEASE_PENDING",
     "online_acceptance": "PENDING",
     "spec": "intent.md; plan.md approved round3 section",
-    "owner": "ParkingAI"
+    "owner": "ParkingAI",
+    "ci_evidence": "Backend CI 34228923155 success at 3c6fdf2dac6e9627ef85e07d5672b08938e4c04a; Linux1191 pass/18skip +PG16pass; local Windows1192pass/17skip; frontend134pass/lint/build."
   },
   {
     "key": "PARK-202",
@@ -42,7 +43,8 @@
     "status": "LOCAL_VERIFIED_RELEASE_PENDING",
     "online_acceptance": "PENDING",
     "spec": "intent.md; plan.md approved round3 section",
-    "owner": "ParkingAI"
+    "owner": "ParkingAI",
+    "ci_evidence": "Backend CI 34228923155 success at 3c6fdf2dac6e9627ef85e07d5672b08938e4c04a; Linux1191 pass/18skip +PG16pass; local Windows1192pass/17skip; frontend134pass/lint/build."
   },
   {
     "key": "PARK-203",
@@ -51,7 +53,7 @@
     "classification": "ADD",
     "summary": "Site-scoped cash shifts, immutable receipts and zone/slot edits",
     "problem": "Multi-site staff could not use global v1 finance and configuration.",
-    "evidence": "tests/test_round3_site_finance.py; tests/test_round3_postgres.py",
+    "evidence": "tests/test_round3_site_finance.py; tests/test_round3_postgres.py; independent review reproduced admin null-shift cross-site collections, HTTP RED201/null then GREEN409",
     "dependencies": [
       "PARK-202"
     ],
@@ -59,7 +61,8 @@
       "Staff sees own shift/collections; manager sees assigned site",
       "Source/shift/payment site cannot mismatch",
       "Legacy null rows remain admin-only",
-      "Demo amounts excluded; unassigned amounts explicit"
+      "Demo amounts excluded; unassigned amounts explicit",
+      "New legacy v1 shift resolves sole site; multi-site admin must choose site via v2. Existing null history preserved."
     ],
     "test": "tests/test_round3_site_finance.py; tests/test_round3_postgres.py",
     "migration": "20260908_02 additive nullable columns and guards",
@@ -67,7 +70,8 @@
     "status": "LOCAL_VERIFIED_RELEASE_PENDING",
     "online_acceptance": "PENDING",
     "spec": "intent.md; plan.md approved round3 section",
-    "owner": "ParkingAI"
+    "owner": "ParkingAI",
+    "ci_evidence": "Backend CI 34228923155 success at 3c6fdf2dac6e9627ef85e07d5672b08938e4c04a; Linux1191 pass/18skip +PG16pass; local Windows1192pass/17skip; frontend134pass/lint/build."
   },
   {
     "key": "PARK-204",
@@ -91,7 +95,8 @@
     "status": "LOCAL_VERIFIED_RELEASE_PENDING",
     "online_acceptance": "PENDING",
     "spec": "intent.md; plan.md approved round3 section",
-    "owner": "ParkingAI"
+    "owner": "ParkingAI",
+    "ci_evidence": "Backend CI 34228923155 success at 3c6fdf2dac6e9627ef85e07d5672b08938e4c04a; Linux1191 pass/18skip +PG16pass; local Windows1192pass/17skip; frontend134pass/lint/build."
   },
   {
     "key": "PARK-205",
@@ -116,7 +121,8 @@
     "status": "LOCAL_VERIFIED_RELEASE_PENDING",
     "online_acceptance": "PENDING",
     "spec": "intent.md; plan.md approved round3 section",
-    "owner": "ParkingAI"
+    "owner": "ParkingAI",
+    "ci_evidence": "Backend CI 34228923155 success at 3c6fdf2dac6e9627ef85e07d5672b08938e4c04a; Linux1191 pass/18skip +PG16pass; local Windows1192pass/17skip; frontend134pass/lint/build."
   },
   {
     "key": "PARK-206",
@@ -140,7 +146,8 @@
     "status": "LOCAL_VERIFIED_RELEASE_PENDING",
     "online_acceptance": "PENDING",
     "spec": "intent.md; plan.md approved round3 section",
-    "owner": "ParkingAI"
+    "owner": "ParkingAI",
+    "ci_evidence": "Backend CI 34228923155 success at 3c6fdf2dac6e9627ef85e07d5672b08938e4c04a; Linux1191 pass/18skip +PG16pass; local Windows1192pass/17skip; frontend134pass/lint/build."
   },
   {
     "key": "PARK-207",
@@ -168,7 +175,8 @@
     "status": "LOCAL_VERIFIED_RELEASE_PENDING",
     "online_acceptance": "PENDING",
     "spec": "intent.md; plan.md approved round3 section",
-    "owner": "ParkingAI"
+    "owner": "ParkingAI",
+    "ci_evidence": "Backend CI 34228923155 success at 3c6fdf2dac6e9627ef85e07d5672b08938e4c04a; Linux1191 pass/18skip +PG16pass; local Windows1192pass/17skip; frontend134pass/lint/build."
   },
   {
     "key": "PARK-208",
@@ -231,7 +239,7 @@
     "classification": "FIX",
     "summary": "Disable Cloudflare-injected analytics beacon",
     "problem": "Provider-injected analytics may be blocked by current CSP.",
-    "evidence": "Cloudflare setting plus browser network/CSP inspection",
+    "evidence": "Public HTML still contains injected beacon; CSP unchanged. Temporary automated login rejected by Cloudflare verification. User chose defer after API-token alternative.",
     "dependencies": [
       "PARK-208"
     ],
@@ -242,8 +250,8 @@
     "test": "Cloudflare setting plus browser network/CSP inspection",
     "migration": "None",
     "rollback": "Restore previous Cloudflare analytics setting",
-    "status": "OPEN",
-    "online_acceptance": "PENDING",
+    "status": "DEFERRED_BY_USER",
+    "online_acceptance": "Deferred: user explicitly requested continue release and handle Cloudflare later.",
     "spec": "intent.md; plan.md approved round3 section",
     "owner": "ParkingAI"
   },

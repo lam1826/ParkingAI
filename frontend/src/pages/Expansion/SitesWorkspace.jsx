@@ -5,6 +5,8 @@ import { AuthContext } from "../../context/AuthContext";
 import api from "../../services/api";
 import CheckoutDialog from "../ParkingSession/components/CheckoutDialog";
 import FleetSection from "./FleetSection";
+import SiteFinance from "./SiteFinance";
+import { useExpansion } from "../../context/ExpansionContext";
 import SiteConfiguration, { CreateSiteForm } from "./SiteConfiguration";
 import { Availability, BookingForm, BookingRecords, WaitlistRecords } from "./siteComponents";
 import { checkoutAdapters } from "./siteForms";
@@ -38,6 +40,7 @@ function usePagedList(path, page, extra = "") {
 }
 
 function SiteOperations({ site, initialPlate, initialAction, onCheckoutChange }) {
+  const capabilities = useExpansion();
   const [tab, setTab] = useState("operations");
   const [checkIn, setCheckIn] = useState({ license_plate: initialAction === "check_in" ? initialPlate : "", vehicle_type_id: "", parking_slot_id: "" });
   const [search, setSearch] = useState(initialAction === "checkout_lookup" ? initialPlate : "");
@@ -89,6 +92,7 @@ function SiteOperations({ site, initialPlate, initialAction, onCheckoutChange })
     <Tabs value={tab} onChange={(_, value) => setTab(value)} variant="scrollable" scrollButtons="auto" aria-label="Vận hành bãi đỗ">
       <Tab value="operations" label="Xe vào / ra" /><Tab value="availability" label="Chỗ trống" /><Tab value="reservations" label="Đặt chỗ" />
       <Tab value="allocations" label="Bảo đảm chỗ" /><Tab value="waitlist" label="Danh sách chờ" /><Tab value="fleet" label="Đội xe" />
+      {capabilities?.site_finance_enabled && <Tab value="finance" label="Ca & chứng từ" />}
       {canManage && <Tab value="configuration" label="Cấu hình bãi" />}
     </Tabs>
     {tab === "operations" && <>
@@ -129,6 +133,7 @@ function SiteOperations({ site, initialPlate, initialAction, onCheckoutChange })
         </>}
       </RemoteSection>
     </>}
+    {tab === "finance" && <SiteFinance site={site} />}
     {tab === "availability" && <RemoteSection remote={availability} title="Tình trạng vị trí">{(data) => <Availability data={data} />}</RemoteSection>}
     {tab === "reservations" && <>
       <Section title="Đặt chỗ cho khách" description="Xe cần được gắn với hồ sơ khách hàng. Mã xe hiển thị trong cổng khách hàng và danh sách quản lý xe.">
