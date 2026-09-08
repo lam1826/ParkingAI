@@ -2,11 +2,13 @@
 
 Hệ thống quản lý bãi đỗ xe dùng FastAPI, React, SQLite và Gemini. Hệ thống hỗ trợ phân quyền, quản lý dữ liệu nền, xe vào/ra, tính phí, vé tháng, chỗ trống, báo cáo lưu lượng–doanh thu và trợ lý AI.
 
-## Bản mở rộng phục vụ đồ án
+## Phạm vi đồ án theo đề bài gốc
 
-Bản nộp đồ án trên website hiện tại tập trung vào **một bãi**, với cổng khách hàng, QR thanh toán mô phỏng, đặt chỗ/danh sách chờ, camera điện thoại dùng YOLO/OCR và dự báo theo lịch sử. Xem [hướng dẫn bản một bãi](docs/ROUND3_OPERATIONS.md) và [nghiệm thu camera/biển Việt Nam](docs/PHONE_VN_ACCEPTANCE.md). Mã nền vẫn giữ khả năng nhiều bãi đã triển khai trước đây; phần này không thuộc kịch bản nộp bài hiện tại. Bộ chạy demo SQLite riêng bên dưới vẫn dùng cấu hình tổng quát và phục vụ giao diện/API cùng địa chỉ qua Wi-Fi.
+Bản nộp tập trung vào **một bãi**, hai vai trò nghiệp vụ quản lý/nhân viên, quản lý khu vực–vị trí–xe–vé, vào/ra, phí, chỗ trống và thống kê. **AI cốt lõi:** báo cáo lưu lượng ngày/tuần, hỏi đáp dữ liệu bãi xe và gợi ý nhân sự theo cao điểm; có test và minh chứng prompt/code/test trong SDLC.
 
-Tham khảo bảy hệ thống/dự án AI và các tối ưu đã đo: [nghiên cứu](docs/RESEARCH_SINGLE_SITE_AI_PARKING.md), [kết quả tối ưu một bãi](docs/SINGLE_SITE_OPTIMIZATION.md).
+[Ma trận yêu cầu, khoảng thiếu và thứ tự hoàn thiện](docs/ORIGINAL_REQUIREMENTS.md) là căn cứ ưu tiên hiện tại. **Chưa nghiệm thu đủ đề gốc:** menu báo cáo/AI trong chế độ một bãi và phạm vi API còn cần điều chỉnh, lọc thời gian của session v2 chưa có, Gemini đang tắt và các test AI hiện hành dùng mock.
+
+Camera YOLO/OCR, portal khách, QR mô phỏng, đặt chỗ và waitlist là phần bổ sung đã có; không thay ba chức năng AI phân tích. Khả năng nhiều bãi trong mã nền không thuộc phạm vi nộp bài. Giữ [hướng dẫn vận hành website](docs/ROUND3_OPERATIONS.md), [nghiệm thu camera](docs/PHONE_VN_ACCEPTANCE.md), [nghiên cứu tham khảo](docs/RESEARCH_SINGLE_SITE_AI_PARKING.md) và [tối ưu đã phát hành](docs/SINGLE_SITE_OPTIMIZATION.md) làm tài liệu hỗ trợ.
 
 ```powershell
 ./scripts/start_demo.ps1       # Máy tính: http://localhost:8765

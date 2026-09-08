@@ -1,7 +1,20 @@
-# Intent — vòng nâng cấp 3
+# Intent — ParkingAI theo đề bài gốc
 
-## Phạm vi hiện tại sau điều chỉnh của người dùng
-Ngày08/09/2026, người dùng thu gọn mục tiêu còn **một bãi để nộp đồ án**. Website chọn sẵn bãi demo A với bốn vai trò; không tiếp tục mở rộng nhiều bãi. Giữ quyền server và dữ liệu hiện có, không reset database để đổi giao diện. Nghiệm thu điện thoại vật lý còn chờ kết quả iQOO Neo9/iPhone; số đo OCR Việt Nam có giới hạn được ghi trong docs/PHONE_VN_ACCEPTANCE.md. Những mục dưới đây là intent lịch sử của vòng3 trước điều chỉnh này.
+## Phạm vi hiện tại — đề bài gốc là căn cứ ưu tiên
+
+Ngày 08/09/2026, người dùng yêu cầu bám sát đề **Hệ thống quản lý bãi đỗ xe có tích hợp AI**, mức cơ bản, một bãi có nhiều khu/vị trí. Hai vai trò nghiệp vụ chính là quản lý và nhân viên. Không phát triển tiếp nhiều bãi.
+
+**Kết quả bắt buộc:** quản lý khu/vị trí/loại xe, phương tiện, vào/ra và thời gian gửi, tính phí, chỗ trống theo khu, tra cứu biển số/thời gian, vé tháng hoặc khách quen, thống kê lưu lượng/doanh thu/cao điểm. Ba chức năng AI chính là báo cáo ngày/tuần, hỏi đáp dữ liệu bãi xe và gợi ý nhân sự; có minh chứng sử dụng AI ở KT1/KT2/KT3/cuối kỳ và test tương ứng.
+
+**Điều kiện thành công:** từng yêu cầu có đường thao tác đúng quyền trên bản nộp; dữ liệu AI do backend tổng hợp đúng bãi/kỳ, không tự tạo số liệu; nghiệm thu AI Engine thật phải ghi riêng với test mock. Camera nhận diện biển không thay phần AI báo cáo. Không lấy tổng số test hoặc số tính năng mở rộng để công bố phần trăm hoàn thành đề bài.
+
+**Ràng buộc:** giữ FastAPI/React, SQLite/PostgreSQL và cấu trúc hiện tại; không xóa dữ liệu đang có, không nới guard để mở menu. QR chỉ mô phỏng, không tăng tài nguyên có phí. Credentials, model, ảnh và hồ sơ báo cáo Word ngoài Git. Gemini đang tắt theo lựa chọn trước: cần giải quyết cấu hình và nghiệm thu provider để đủ đề, chưa tự bật trong lần đối chiếu này.
+
+**Không phải trọng tâm:** camera, portal khách, QR, đặt chỗ, waitlist và quản lý đội xe là phần bổ sung; giữ phần đã chạy nhưng không mở rộng trước khi hoàn tất yêu cầu bắt buộc. Điện thoại thật còn chờ người dùng; không để hạng mục tùy chọn này thay thế ưu tiên AI phân tích.
+
+**Khoảng thiếu đã xác nhận:** chế độ một bãi ẩn Báo cáo/AI; các API cũ còn guard toàn hệ thống; session v2 thiếu lọc thời gian; AI hiện có test mock nhưng chưa có nghiệm thu live của bản đang chạy. Theo đề gốc, trạng thái hiện tại là NOT READY cho nghiệm thu đầy đủ, độc lập với các lần release demo thành công.
+
+**Căn cứ và công việc:** [docs/ORIGINAL_REQUIREMENTS.md](docs/ORIGINAL_REQUIREMENTS.md), PARK-217/218/219 và đầu `plan.md`. Những mục dưới đây là intent lịch sử vòng 3, không phải yêu cầu mở rộng hiện tại.
 
 ## Problem / Opportunity
 Release caaef39 đã lên website nhưng thiếu dữ liệu/tài khoản trình diễn, QR và OCR chưa bật. Vận hành nhiều bãi còn thiếu chốt ca theo bãi; audit v2 phân loại chung và chưa có request ID.

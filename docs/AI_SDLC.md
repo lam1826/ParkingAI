@@ -1,5 +1,7 @@
 # Minh chứng sử dụng AI trong SDLC – ParkingAI
 
+> Phạm vi hiện tại theo đề gốc: [ORIGINAL_REQUIREMENTS.md](ORIGINAL_REQUIREMENTS.md). Minh chứng chính là nghiệp vụ vào/ra–phí–chỗ trống và AI báo cáo ngày/tuần–hỏi đáp–nhân sự. Mã đã có, nhưng Gemini đang tắt và luồng AI/Báo cáo trong giao diện một bãi chưa được nghiệm thu đầy đủ. Các mốc model, migration và kết quả cũ bên dưới là tài liệu lịch sử; không xác nhận model hiện còn khả dụng hoặc provider đang hoạt động trên website. Prompt mẫu/tái lập phải được ghi đúng loại, không trình bày như log gốc đã dùng nếu chưa có bằng chứng.
+
 Phần mở rộng đồ án ngày 07/09/2026 có ma trận yêu cầu–code–test và prompt tái lập riêng tại [Minh chứng SDLC mở rộng](EXPANSION_SDLC.md); cách trình diễn QR, camera và dự báo tại [Hướng dẫn demo](DEMO_GUIDE.md).
 
 ## 1. Phân tích và thiết kế (KT1)
@@ -36,7 +38,7 @@ Các thực thể chính: `Zone`, `ParkingSlot`, `VehicleType`, `Vehicle`, `Cust
 
 Prompt luôn truyền dữ liệu có cấu trúc JSON, yêu cầu chỉ trả lời từ dữ liệu được cung cấp và quy định câu trả lời khi thiếu dữ liệu. Tên model đặt bằng `GEMINI_MODEL` để có thể nâng cấp mà không sửa mã.
 
-Model production hiện tại là `gemini-3.6-flash`; việc ràng buộc tính xác định của câu trả lời do prompt đảm nhiệm, không dùng "nhiệt độ thấp".
+Mốc tài liệu cũ sử dụng tên model `gemini-3.6-flash`; cấu hình được lấy từ `GEMINI_MODEL`. Đây không phải xác nhận model/provider đang hoạt động ở bản phát hành hiện tại. Prompt đặt giới hạn chỉ diễn giải dữ liệu, không bảo đảm tuyệt đối model sẽ tuân thủ; cần đối chiếu câu trả lời trong nghiệm thu.
 
 Theo migration guide chính thức, các **legacy sampling parameter** đã bị loại khỏi luồng hiện tại của model này: `temperature`, `top_p`, `top_k`, `candidate_count`, `thinking_budget` (trong đó `thinking_budget` có hướng thay thế bằng `thinking_level`). Các configuration được hỗ trợ khác **vẫn có thể tồn tại** — migration guide không cấm toàn bộ `config`.
 
@@ -86,7 +88,7 @@ Nguồn: <https://ai.google.dev/gemini-api/docs/latest-model> và <https://ai.go
 - Lỗi SQL hoặc lỗi nội bộ ngoài dự kiến ở báo cáo, tra cứu vị trí và lưu báo
   cáo AI được log phía server nhưng response chỉ trả thông báo chung; marker
   exception không xuất hiện trong JSON (`tests/test_error_response_safety.py`).
-- **Toàn bộ kiểm chứng AI đều dùng mock.** `tests/conftest.py` cài một fixture
+- **Các test AI tự động hiện hành dùng mock.** `tests/conftest.py` cài một fixture
   autouse thay `services.ai_service.genai.Client` bằng seam ném
   `AssertionError`, nên một test quên mock sẽ fail trước khi client thật được
   tạo — không có request nào rời khỏi máy. Dự án **không** tuyên bố đã chạy

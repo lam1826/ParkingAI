@@ -1,9 +1,10 @@
 # ParkingAI — release gate vòng 3, 08/09/2026
 
-**Overall: READY cho trình diễn đồ án online trong phạm vi dưới đây.** Bản tối ưu một bãi `3afc56c` đã phát hành và kiểm tra sau CD ngày 08/09/2026 (UTC+7); bằng chứng các release trước giữ riêng bên dưới. Nghiệm thu điện thoại vật lý vẫn chưa hoàn tất.
+**Theo đề bài gốc: NOT READY cho nghiệm thu đầy đủ.** Người dùng nhắc lại phạm vi bắt buộc ngày 08/09/2026. Đối chiếu mã xác nhận menu Báo cáo/AI đang bị ẩn trong chế độ một bãi, các API legacy còn chặn tài khoản theo bãi, session v2 thiếu lọc khoảng thời gian và Gemini đang tắt. Có test AI mock không thay bằng chứng chạy ba luồng AI thật.
 
-Phạm vi nộp bài hiện tại: **một bãi**, QR mô phỏng, Gemini tắt, nhân viên duyệt biển số, dùng website hiện tại. Khả năng nhiều bãi đã được kiểm tra ở vòng3 là bằng chứng lịch sử, không phải yêu cầu mở rộng tiếp. Đây không phải nghiệm thu vận hành bãi thật.
+Chi tiết yêu cầu, nguồn bằng chứng và kịch bản nghiệm thu: [ORIGINAL_REQUIREMENTS.md](ORIGINAL_REQUIREMENTS.md). PARK-217/218/219 OPEN để hoàn thiện AI, luồng nghiệp vụ và minh chứng. Backlog sau điều chỉnh có 19 ticket: 13 DONE, 4 OPEN (gồm PARK-211 FUTURE), 1 IN_PROGRESS và 1 DEFERRED_BY_USER. Chưa thay mã ứng dụng hoặc bật provider trong lần đối chiếu này.
 
+**Các kiểm tra phát hành trước vẫn hợp lệ trong phạm vi đã ghi:** ứng dụng `3afc56c` đã triển khai và qua kiểm thử demo vận hành/OCR; trạng thái ready của API và kết quả CI/CD không bị đổi thành thất bại. Tuy nhiên, các kết quả này chưa đủ kết luận đạt đề gốc. Phạm vi nộp là một bãi; QR/camera là phần bổ sung, ba luồng AI phân tích và nghiệp vụ quản lý là phần bắt buộc. Vận hành bãi thật vẫn NOT READY.
 
 ## Bản tối ưu từ hệ thống AI tham khảo — hiện tại
 
@@ -15,7 +16,7 @@ Phạm vi nộp bài hiện tại: **một bãi**, QR mô phỏng, Gemini tắt,
 - Bundle `/assets/index-DU4U-j2Z.js` khớp SHA256 `072e94f8fda1a12e1d96324b5133a89d0762614dccbee705314bf28ce342d505`; `SINGLE_SITE_ID: 2` giữ nguyên. Artifact thô ở `backend/artifacts/single-site-optimization/` ngoài Git.
 - OCR trực tiếp trên crop 457/500; cả YOLO/OCR trên crop 64/500; pilot toàn xe 20/20 cùng 9 FP. Đây là corpus hồi quy, không phải accuracy website hoặc test set độc lập. Điện thoại vật lý và nhãn pilot do người kiểm vẫn PENDING.
 
-Backlog hiện tại 16 ticket: 13 DONE, PARK-209 IN_PROGRESS, PARK-210 DEFERRED_BY_USER, PARK-211 OPEN/FUTURE. PARK-214/215/216 DONE cho ba tối ưu; PARK-211 không còn lặp lại N+1, giữ phép đo tải API thực tế nếu cần sau đồ án. Commit biên bản chỉ đổi tài liệu, không là release ứng dụng mới.
+Tại mốc phát hành tối ưu, backlog có 16 ticket: 13 DONE, PARK-209 IN_PROGRESS, PARK-210 DEFERRED_BY_USER, PARK-211 OPEN/FUTURE. PARK-214/215/216 DONE cho ba tối ưu; PARK-211 không còn lặp lại N+1, giữ phép đo tải API thực tế nếu cần sau đồ án. Commit biên bản chỉ đổi tài liệu, không là release ứng dụng mới.
 
 ## Lịch sử giao diện một bãi trước bản tối ưu
 
@@ -70,7 +71,7 @@ Sau khi CI/CD của bản sửa đạt, đã bật lại engine và thử API: c
 - QR không chuyển tiền; Gemini tắt; OCR không điều khiển barie, tự nhận/trả xe hay thu tiền.
 - Không có kết quả tải lớn, video liên tục, độ bền dài hạn, SLA hay đối soát cổng ngân hàng. PARK-211 và các mục FUTURE.
 
-Không còn gate bắt buộc thất bại trong phạm vi trình diễn đã chốt. Tại mốc trước bản tối ưu, backlog có13 ticket vòng3:10 DONE,1 FUTURE còn mở,1 IN_PROGRESS (PARK-209),1 Cloudflare hoãn theo người dùng. Các phần chưa có bằng chứng ở trên được giữ riêng, không gọi là đã hoàn thành cho bãi thật.
+Tại mốc lịch sử này, không còn gate bắt buộc thất bại trong phạm vi trình diễn khi đó. Tại mốc trước bản tối ưu, backlog có13 ticket vòng3:10 DONE,1 FUTURE còn mở,1 IN_PROGRESS (PARK-209),1 Cloudflare hoãn theo người dùng. Các phần chưa có bằng chứng ở trên được giữ riêng, không gọi là đã hoàn thành cho bãi thật.
 
 **Vận hành bãi thật: NOT READY.** Cần nghiệm thu các phần trên với dữ liệu, thiết bị, chính sách nghiệp vụ và phương án vận hành thực tế. Kết luận này độc lập với việc trình diễn đồ án.
 

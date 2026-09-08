@@ -1,5 +1,24 @@
 # Plan
 
+## Ưu tiên hiện tại — bám sát đề bài gốc (08/09/2026)
+
+**Mục tiêu:** hoàn thành một bãi, nghiệp vụ quản lý và ba luồng AI phân tích theo đề; đối chiếu chi tiết tại [ORIGINAL_REQUIREMENTS.md](docs/ORIGINAL_REQUIREMENTS.md). Các nghiên cứu và tính năng mở rộng bên dưới là lịch sử, không được ưu tiên hơn mục này.
+
+**Bối cảnh đã kiểm:** website một bãi hiện ẩn menu báo cáo/AI; guard API legacy chặn staff/manager trong DB còn nhiều bãi; session v2 thiếu khoảng thời gian. Ba chức năng AI đã có service/test mock nhưng Gemini đang tắt. Không xử lý bằng cách bỏ guard, sửa số liệu hoặc xóa bãi cũ.
+
+- [x] Đọc lại yêu cầu, map mã/route/quyền/test, cập nhật intent, README và release gate theo bằng chứng.
+- [x] Chạy 167 test liên quan: AI mock, phí, chỗ trống, vòng đời session và kỳ báo cáo; không gọi provider/DB production.
+- [x] Xuất PARK-217/218/219 vào JSON/CSV; tách rõ phần bắt buộc và phần bổ sung.
+- [ ] PARK-217: nối AI báo cáo ngày/tuần, hỏi đáp chỗ trống/cao điểm, nhân sự vào dữ liệu đúng bãi và đúng quyền. Dùng lại AIService/aggregation, kiểm rỗng/sai/provider lỗi; nghiệm thu model thật với cấu hình được phép dùng trước khi kết luận đạt AI.
+- [ ] PARK-218: sau khi API sẵn sàng, đưa báo cáo/AI vào điều hướng chính; thêm lọc thời gian vào `site_router.py`, `site_service.py`, `SitesWorkspace.jsx`; hoàn chỉnh đường quản lý loại xe/bảng giá đúng vai trò. Kiểm chứng không đọc chéo dữ liệu, ngày biên, phân trang và hành trình quản lý/nhân viên.
+- [ ] PARK-219: nghiệm thu toàn bộ kịch bản theo đề và bộ minh chứng KT1/KT2/KT3/cuối kỳ. Đối chiếu số liệu server với AI, không dùng mock hoặc ví dụ dựng lại làm bằng chứng live; cập nhật hồ sơ cục bộ theo bố cục người dùng.
+
+**Ngoài phạm vi hiện tại:** không phát triển thêm nhiều bãi, video, ngân hàng thật, tự mở barie, training model mới, GPU hoặc microservices. Các tính năng mở rộng đã phát hành được giữ như phần giới thiệu phụ.
+
+**Kiểm chứng và rollback:** thay đổi chức năng sau này cần test theo phạm vi, backend/frontend và gate phát hành/backup. Giữ schema/data tương thích; có migration nếu dữ liệu AI theo bãi thật sự cần và phải kiểm restore/rollback. Lần điều chỉnh phạm vi này chỉ sửa tài liệu, có thể revert riêng; không deploy ứng dụng hoặc bật Gemini.
+
+**Trạng thái:** đối chiếu và điều chỉnh ưu tiên đã hoàn tất; ba ticket triển khai/nghiệm thu vẫn OPEN. NOT READY cho nghiệm thu đầy đủ đề bài. READY của các release trước chỉ là kết quả trong phạm vi ghi ở từng biên bản.
+
 ## Tối ưu đồ án một bãi từ hệ thống AI tham khảo — 08/09/2026
 
 **Objective / scope:** đối chiếu hệ thống parking AI lớn và mã nguồn mở với bản `8182c3f`; chọn cải tiến có tác dụng cho một bãi trên cấu hình 1 CPU/1 GB. Giữ FastAPI/React, QR mô phỏng, Gemini tắt, nhân viên xác nhận biển. Không mở rộng nhiều bãi, video liên tục, dịch vụ trả phí hoặc thay model khi chưa có đối chứng.

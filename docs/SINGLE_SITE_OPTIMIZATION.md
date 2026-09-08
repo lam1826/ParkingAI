@@ -1,5 +1,7 @@
 # Tối ưu ParkingAI một bãi từ các hệ thống AI tham khảo
 
+> Đây là biên bản của đợt tối ưu và nghiệm thu demo trước khi người dùng yêu cầu đối chiếu lại đầy đủ đề gốc. Kết luận READY bên dưới chỉ áp dụng cho phạm vi đã kiểm trong đợt đó. Trạng thái theo toàn bộ yêu cầu bắt buộc và ưu tiên hiện tại nằm ở [ORIGINAL_REQUIREMENTS.md](ORIGINAL_REQUIREMENTS.md); còn thiếu luồng AI phân tích, báo cáo và một số thao tác nghiệp vụ của bản một bãi.
+
 Ngày 08/09/2026. Baseline `8182c3f`; bản đã phát hành `3afc56cad9cd6a4d43f56eb96766c7006141dd0f`. Kết quả phát hành online được ghi riêng ở cuối tài liệu; số đo cục bộ không thay cho nghiệm thu production.
 
 ## 1. Phạm vi và căn cứ lựa chọn

@@ -406,5 +406,79 @@
     "online_acceptance": "PASS on release3afc56c: CI34246127629/CD34247663250; 18 API checks incl one OCR upload, 31 read-only browser checks/four roles. No physical-phone or general accuracy claim. See docs/SINGLE_SITE_OPTIMIZATION.md.",
     "spec": "docs/RESEARCH_SINGLE_SITE_AI_PARKING.md; docs/SINGLE_SITE_OPTIMIZATION.md",
     "owner": "ParkingAI"
+  },
+  {
+    "key": "PARK-217",
+    "pr": "ORIGINAL ASSIGNMENT",
+    "priority": "P1",
+    "classification": "FIX",
+    "summary": "Complete core AI analytics for the selected parking lot",
+    "problem": "Core AI exists on legacy routes, but provider is disabled and site staff/manager cannot use that flow.",
+    "evidence": "backend/main.py; backend/expansion/system_router.py; backend/services/ai_service.py; frontend/src/layouts/MainLayout.jsx",
+    "dependencies": [],
+    "acceptance_criteria": [
+      "Daily and weekly reports, grounded parking Q&A and staffing suggestions use server data for the authorized lot and period",
+      "History/provenance and current availability cannot leak other lots or mislabel historical occupancy",
+      "Empty/invalid inputs, injection, disabled/unavailable provider and real provider UAT are recorded separately",
+      "Do not treat camera OCR or mocked provider tests as completion of core analytics AI"
+    ],
+    "test": "tests/test_ai.py; tests/test_ai_integrity.py; tests/test_ai_provider_fail_closed.py; future scoped aggregation/API tests",
+    "migration": "Assess scoped AI history needs before proposing a migration; keep legacy history private",
+    "rollback": "Revert the scoped change; preserve database records and authorization. Use the release/backup gate for application deployment.",
+    "status": "OPEN",
+    "online_acceptance": "PENDING; current alignment changes documentation only",
+    "spec": "docs/ORIGINAL_REQUIREMENTS.md; intent.md; plan.md current scope",
+    "owner": "ParkingAI"
+  },
+  {
+    "key": "PARK-218",
+    "pr": "ORIGINAL ASSIGNMENT",
+    "priority": "P1",
+    "classification": "FIX",
+    "summary": "Restore the original assignment journey in single-lot UI",
+    "problem": "Reports/AI are hidden, site session search lacks time filters and some configuration remains admin-only.",
+    "evidence": "frontend/src/layouts/MainLayout.jsx; frontend/src/routes/PermissionRoute.jsx; backend/expansion/site_router.py sessions; backend/expansion/system_router.py",
+    "dependencies": [
+      "PARK-217"
+    ],
+    "acceptance_criteria": [
+      "Manager/staff can finish the original assignment without using an admin account to bypass missing permissions",
+      "Add session time-range filters with explicit business timezone, stable pagination and boundary tests",
+      "Show traffic/revenue/peak reports and AI after scoped API is ready",
+      "Keep OCR/QR/portal/reservations as supplementary paths; preserve existing authorization and records"
+    ],
+    "test": "Core role journeys; time-filter/API tests; frontend regression/browser UAT",
+    "migration": "Prefer no schema change; do not remove historical sites or relax global guards",
+    "rollback": "Revert the scoped change; preserve database records and authorization. Use the release/backup gate for application deployment.",
+    "status": "OPEN",
+    "online_acceptance": "PENDING; current alignment changes documentation only",
+    "spec": "docs/ORIGINAL_REQUIREMENTS.md; intent.md; plan.md current scope",
+    "owner": "ParkingAI"
+  },
+  {
+    "key": "PARK-219",
+    "pr": "ORIGINAL ASSIGNMENT",
+    "priority": "P2",
+    "classification": "FIX",
+    "summary": "Verify original assignment and assemble traceable SDLC evidence",
+    "problem": "Earlier demo release gates did not establish completion of all original AI and core-user journeys.",
+    "evidence": "docs/ORIGINAL_REQUIREMENTS.md; docs/AI_SDLC.md; docs/ROUND3_RELEASE_GATE.md",
+    "dependencies": [
+      "PARK-217",
+      "PARK-218"
+    ],
+    "acceptance_criteria": [
+      "Record each mandatory requirement against code, tests and actual demo evidence",
+      "Capture real AI outputs for the same server dataset and distinguish mocks, examples and provider runs",
+      "Keep KT1/KT2/KT3/final-stage prompts with provenance; do not reconstruct missing original logs as historical evidence",
+      "Report READY only for verified original scope; preserve report style and keep Word dossier, credentials and images outside Git"
+    ],
+    "test": "Original-assignment acceptance scenario and evidence review",
+    "migration": "None",
+    "rollback": "Revert the scoped change; preserve database records and authorization. Use the release/backup gate for application deployment.",
+    "status": "OPEN",
+    "online_acceptance": "PENDING; current alignment changes documentation only",
+    "spec": "docs/ORIGINAL_REQUIREMENTS.md; intent.md; plan.md current scope",
+    "owner": "ParkingAI"
   }
 ]
