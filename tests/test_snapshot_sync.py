@@ -41,3 +41,10 @@ def test_local_verify_runs_the_same_snapshot_parity_gate_as_ci() -> None:
 
     assert "sync_source_snapshot.py" in verify_script
     assert "--check" in verify_script
+
+
+def test_demo_snapshot_includes_reproducible_setup_but_never_runtime_data():
+    for path in ("edge/download_vision_model.py", "backend/requirements-vision.txt", "scripts/demo_server.py", "plan.md"):
+        assert _is_allowed_candidate(Path(path), is_tracked=False), path
+    for path in ("backend/artifacts/demo/scratch.db.demo.json", "backend/artifacts/vision/MODEL_PROVENANCE.json", "backend/model.onnx", "edge/weights.pt"):
+        assert not _is_allowed_candidate(Path(path), is_tracked=True), path

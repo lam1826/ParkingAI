@@ -2,6 +2,17 @@
 
 Hệ thống quản lý bãi đỗ xe dùng FastAPI, React, SQLite và Gemini. Hệ thống hỗ trợ phân quyền, quản lý dữ liệu nền, xe vào/ra, tính phí, vé tháng, chỗ trống, báo cáo lưu lượng–doanh thu và trợ lý AI.
 
+## Bản mở rộng phục vụ đồ án
+
+Cổng khách hàng, QR thanh toán mô phỏng, đặt chỗ/danh sách chờ, vận hành nhiều bãi cùng đơn vị, camera điện thoại với YOLO/OCR và dự báo theo lịch sử đã được bổ sung. Bộ chạy demo dùng SQLite riêng và phục vụ giao diện/API cùng địa chỉ để điện thoại có thể truy cập qua Wi-Fi.
+
+```powershell
+./scripts/start_demo.ps1       # Máy tính: http://localhost:8765
+./scripts/start_demo.ps1 -Lan  # Điện thoại cùng Wi-Fi
+```
+
+Xem [hướng dẫn cài và trình diễn](docs/DEMO_GUIDE.md), [trạng thái kiểm chứng](docs/EXPANSION_IMPLEMENTATION_STATUS.md) và [nâng cấp schema](docs/EXPANSION_MIGRATION.md). QR không chuyển tiền thật; kết quả OCR phải được nhân viên kiểm tra. Model, DB demo và ảnh runtime không nằm trong Git. Bản đồ án dùng dữ liệu mẫu có nhãn riêng; chưa thay thế việc nghiệm thu cổng thanh toán hoặc camera ở bãi thực.
+
 ## Chức năng chính
 
 - Đăng ký/đăng nhập JWT; vai trò `customer`, `staff`, `manager`, `admin`.
@@ -68,7 +79,7 @@ backend và frontend. API từ chối tên vai trò tùy ý để tránh tài kh
 
 ## Cài đặt
 
-Yêu cầu Python 3.11+ và Node.js 20+.
+Yêu cầu Python 3.11–3.12 và Node.js 22.12 trở lên.
 
 ```powershell
 python -m venv .venv

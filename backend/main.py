@@ -4,7 +4,7 @@ from threading import Lock
 from time import monotonic
 
 import uvicorn
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import DBAPIError, IntegrityError
@@ -20,6 +20,11 @@ from database import engine
 from db_rollout import check_database_readiness
 from middleware.audit import AuditLogMiddleware
 from middleware.security_headers import SecurityHeadersMiddleware
+from expansion.site_router import router as site_router
+from expansion.portal_router import router as portal_router
+from expansion.vision_router import router as vision_router
+from expansion.insights_router import router as insights_router
+from expansion.system_router import router as system_router, require_legacy_workspace
 
 logger = logging.getLogger(__name__)
 RELEASE_ID = os.getenv("RELEASE_ID", "development")
@@ -109,11 +114,16 @@ async def database_error_handler(request: Request, exc: DBAPIError):
 # --- ĐĂNG KÝ CÁC ROUTERS ---
 app.include_router(auth.router, prefix="/api/auth", tags=["Auth"])
 app.include_router(auth.oauth_router, prefix="/auth", tags=["Auth"])
-app.include_router(dashboard.router)
-app.include_router(parking.router)
-app.include_router(ai_report.router)
-app.include_router(report.router)
-app.include_router(api_router, prefix="/api/v1")
+app.include_router(dashboard.router, dependencies=[Depends(require_legacy_workspace)])
+app.include_router(parking.router, dependencies=[Depends(require_legacy_workspace)])
+app.include_router(ai_report.router, dependencies=[Depends(require_legacy_workspace)])
+app.include_router(report.router, dependencies=[Depends(require_legacy_workspace)])
+app.include_router(api_router, prefix="/api/v1", dependencies=[Depends(require_legacy_workspace)])
+app.include_router(site_router)
+app.include_router(portal_router, prefix="/api/v2")
+app.include_router(vision_router)
+app.include_router(insights_router)
+app.include_router(system_router)
 
 
 

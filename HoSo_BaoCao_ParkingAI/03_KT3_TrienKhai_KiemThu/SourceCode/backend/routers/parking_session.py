@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from sqlalchemy import select
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session
 from typing import List
@@ -12,6 +13,7 @@ from schemas.checkout import CheckoutQuoteResponse
 from models.user import User
 from models.parking_slot import ParkingSlot
 from models.vehicle import Vehicle
+from expansion.site_models import ParkingSite
 
 router = APIRouter()
 
@@ -63,6 +65,15 @@ def check_in_vehicle(
     if not vehicle:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vehicle not found")
 
+    # A site-bound stay needs a physical slot so both entitlement and later
+    # scoped history can resolve the same site. A site inferred only for fee
+    # lookup would still create an unscoped session and bypass slot capacity.
+    if session_in.parking_slot_id is None and db.scalar(select(ParkingSite.id).limit(1)) is not None:
+        raise HTTPException(
+            status_code=422,
+            detail="Hãy chọn vị trí đỗ để xác định đúng bãi và quyền vé tháng trước khi nhận xe.",
+        )
+
     # Kiểm tra vị trí đỗ: tồn tại, đang hoạt động, còn trống, đúng loại xe
     slot = None
     if session_in.parking_slot_id is not None:
@@ -85,9 +96,11 @@ def check_in_vehicle(
             vehicle_id=vehicle.id,
             vehicle_type_id=vehicle.vehicle_type_id,
             check_in_time=check_in_time,
+            site_id=slot.zone.site_id if slot else None,
         )
         monthly_coverage_end = crud_session.resolve_check_in_monthly_coverage_end(
             db, monthly_pass_id=monthly_pass_id, check_in_time=check_in_time,
+            site_id=slot.zone.site_id if slot else None,
         )
     except crud_session.MissingEffectiveCheckInPriceError:
         db.rollback()
@@ -108,6 +121,9 @@ def check_in_vehicle(
             slot.id,
             expected_zone_id=slot.zone_id,
             expected_vehicle_type_id=vehicle.vehicle_type_id,
+            expected_site_id=slot.zone.site_id,
+            vehicle_id=vehicle.id,
+            check_in_time=check_in_time,
         ):
             db.rollback()
             raise HTTPException(

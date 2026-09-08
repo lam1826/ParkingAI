@@ -47,7 +47,8 @@ class ParkingService:
     def find_available_slot(
         self,
         vehicle_type_id: int,
-        zone_id: Optional[int] = None
+        zone_id: Optional[int] = None,
+        vehicle_id: Optional[int] = None,
     ) -> Optional[ParkingSlot]:
 
         try:
@@ -63,7 +64,13 @@ class ParkingService:
             if zone_id:
                 stmt = stmt.where(ParkingSlot.zone_id == zone_id)
 
-            return self.db.execute(stmt.limit(1)).scalar_one_or_none()
+            from expansion.reservations import admission_allowed
+            from core.clock import business_now
+            at = business_now()
+            for candidate in self.db.scalars(stmt.order_by(ParkingSlot.id)):
+                if admission_allowed(self.db, candidate.id, vehicle_id=vehicle_id, at=at, lock=False):
+                    return candidate
+            return None
 
         except SQLAlchemyError as db_err:
             raise internal_server_error(
@@ -186,7 +193,11 @@ class ParkingService:
         vehicle_type_id: int,
         staff_id: int,
         zone_id: Optional[int] = None,
-        parking_slot_id: Optional[int] = None
+        parking_slot_id: Optional[int] = None,
+        *,
+        _check_in_time: datetime | None = None,
+        _expected_site_id: int | None = None,
+        _commit: bool = True,
     ) -> Dict[str, Any]:
 
         try:
@@ -244,6 +255,7 @@ class ParkingService:
                 # chống race thật sự.
                 slot = self.db.execute(
                     select(ParkingSlot).where(ParkingSlot.id == parking_slot_id)
+                    .execution_options(populate_existing=True)
                 ).scalar_one_or_none()
 
                 if slot is None or not slot.is_active or not slot.zone.is_active:
@@ -251,6 +263,11 @@ class ParkingService:
                         status_code=404,
                         detail="Vị trí đỗ hoặc khu vực không tồn tại hoặc đang bảo trì."
                     )
+
+                if _expected_site_id is not None and self.db.scalar(select(Zone.id).where(
+                    Zone.id == slot.zone_id, Zone.site_id == _expected_site_id,
+                )) is None:
+                    raise HTTPException(404, "Vị trí không còn thuộc bãi đã chọn. Hãy tải lại vị trí.")
 
                 if slot.is_occupied:
                     raise HTTPException(
@@ -273,7 +290,7 @@ class ParkingService:
             else:
                 # Preserve the established "lot full" result before checking
                 # billing configuration, but do not claim the candidate yet.
-                slot = self.find_available_slot(vehicle_type_id, zone_id)
+                slot = self.find_available_slot(vehicle_type_id, zone_id, vehicle.id)
                 if slot is None:
                     raise HTTPException(
                         status_code=404,
@@ -283,17 +300,23 @@ class ParkingService:
             # Sample the business clock exactly once. Before any slot claim,
             # either snapshot a valid monthly-pass entitlement or prove that
             # a non-monthly checkout rate is already active/effective.
-            check_in_time = crud_parking_session.server_now()
+            # Reservation arrival supplies the instant already sampled after
+            # its slot lock. It must not cross the arrival deadline on a second
+            # clock read. These keyword-only values are never API body fields.
+            check_in_time = _check_in_time if _check_in_time is not None else crud_parking_session.server_now()
+            admission_site_id = _expected_site_id if _expected_site_id is not None else slot.zone.site_id
             monthly_pass_id = (
                 crud_parking_session.resolve_check_in_monthly_pass_id(
                     self.db,
                     vehicle_id=vehicle.id,
                     vehicle_type_id=vehicle_type_id,
                     check_in_time=check_in_time,
+                    site_id=admission_site_id,
                 )
             )
             monthly_coverage_end = crud_parking_session.resolve_check_in_monthly_coverage_end(
                 self.db, monthly_pass_id=monthly_pass_id, check_in_time=check_in_time,
+                site_id=admission_site_id,
             )
 
             if parking_slot_id is not None:
@@ -302,6 +325,9 @@ class ParkingService:
                     slot.id,
                     expected_zone_id=slot.zone_id,
                     expected_vehicle_type_id=vehicle_type_id,
+                    expected_site_id=admission_site_id,
+                    vehicle_id=vehicle.id,
+                    check_in_time=check_in_time,
                 ):
                     # Thua race: slot vừa bị request khác chiếm giữa lúc đọc
                     # và lúc UPDATE. Transaction chưa ghi gì khác nên trả 409.
@@ -321,12 +347,15 @@ class ParkingService:
                         slot.id,
                         expected_zone_id=slot.zone_id,
                         expected_vehicle_type_id=vehicle_type_id,
+                        expected_site_id=admission_site_id,
+                        vehicle_id=vehicle.id,
+                        check_in_time=check_in_time,
                     ):
                         break
                     # Candidate vừa bị chiếm: làm mới trạng thái ORM để vòng
                     # lặp sau không chọn lại bản ghi cũ trong identity map.
                     self.db.expire(slot)
-                    slot = self.find_available_slot(vehicle_type_id, zone_id)
+                    slot = self.find_available_slot(vehicle_type_id, zone_id, vehicle.id)
                     if slot is None:
                         raise HTTPException(
                             status_code=404,
@@ -351,10 +380,21 @@ class ParkingService:
             )
 
             self.db.add(session)
+            self.db.flush()
+            from expansion.reservations import record_admission
+            from expansion.portal_service import capture_session_ownership
+            record_admission(self.db, session)
+            capture_session_ownership(self.db, session)
 
             # Claim slot + INSERT session cùng một transaction: commit ở đây
             # là điểm cùng-thành-công; mọi nhánh lỗi phía dưới rollback cả hai.
-            self.db.commit()
+            if _commit:
+                self.db.commit()
+            else:
+                # The reservation caller verifies the session binding before
+                # committing the whole arrival. A failed verification can then
+                # roll back the slot, session and reservation together.
+                self.db.flush()
             self.db.refresh(session)
 
             return {

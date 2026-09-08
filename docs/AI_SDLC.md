@@ -1,5 +1,7 @@
 # Minh chứng sử dụng AI trong SDLC – ParkingAI
 
+Phần mở rộng đồ án ngày 07/09/2026 có ma trận yêu cầu–code–test và prompt tái lập riêng tại [Minh chứng SDLC mở rộng](EXPANSION_SDLC.md); cách trình diễn QR, camera và dự báo tại [Hướng dẫn demo](DEMO_GUIDE.md).
+
 ## 1. Phân tích và thiết kế (KT1)
 
 ### Bài toán nghiệp vụ

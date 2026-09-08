@@ -120,6 +120,14 @@ from database import (
     run_sqlite_migrations,
 )
 from models import Base
+from sqlalchemy.schema import CreateIndex
+from sqlalchemy.dialects import sqlite
+from expansion.site_models import SITE_SQLITE_GUARDS
+from expansion_demo_guards import DEMO_SQLITE_GUARD_SQL, validate_demo_ledger
+from expansion_rollout import (
+    EXPANSION_TABLES, backfill_legacy_sites, migrate_sqlite_payment_demo,
+    validate_expansion_checks, validate_zone_site_assignment,
+)
 from models.cash_shift import SHIFT_SQLITE_CLOSE_TRIGGER, SHIFT_SQLITE_TRIGGERS
 from models.payment import PAYMENT_SQLITE_SOURCE_TRIGGERS, PAYMENT_SQLITE_TRIGGERS
 from finance_rollout import MONTHLY_CARD_SQLITE_TRIGGERS, backfill_legacy_finance, validate_finance_invariants
@@ -246,6 +254,8 @@ _REQUIRED_TRIGGER_SQL = {
     ),
 }
 _REQUIRED_TRIGGER_SQL.update(BOOLEAN_DOMAIN_TRIGGER_SQL)
+_REQUIRED_TRIGGER_SQL.update(SITE_SQLITE_GUARDS)
+_REQUIRED_TRIGGER_SQL["trg_payment_demo_boundary"] = DEMO_SQLITE_GUARD_SQL
 _REQUIRED_TRIGGER_SQL.update({
     TRG_CHECKOUT_CONFIRMATION_INSERT: CHECKOUT_CONFIRMATION_INSERT_TRIGGER_SQL,
     TRG_CHECKOUT_CONFIRMATION_UPDATE: CHECKOUT_CONFIRMATION_UPDATE_TRIGGER_SQL,
@@ -293,6 +303,10 @@ _REQUIRED_INDEX_SQL = {
     "uq_payment_source_receipt": "CREATE UNIQUE INDEX uq_payment_source_receipt ON payments(source_type, source_id) WHERE kind = 'receipt'",
     "uq_cash_shift_one_open_per_staff": "CREATE UNIQUE INDEX uq_cash_shift_one_open_per_staff ON cash_shifts(staff_id) WHERE status = 'open'",
 }
+for _table in Base.metadata.sorted_tables:
+    for _index in _table.indexes:
+        if _table.name in EXPANSION_TABLES or _index.name == "ix_zones_site_id":
+            _REQUIRED_INDEX_SQL[_index.name] = str(CreateIndex(_index).compile(dialect=sqlite.dialect()))
 
 # Hai cột tiền tệ này từng được khai báo FLOAT trong schema legacy. Trigger
 # insert/update hiện khóa giá trị ở số nguyên VND, nên rollout additive chấp
@@ -647,6 +661,7 @@ def _validate_table_contract(target_engine) -> None:
 def verify_schema(target_engine) -> None:
     """Fail loudly nếu thiếu DB backstop hoặc definition bị stale."""
     _validate_table_contract(target_engine)
+    validate_expansion_checks(target_engine, Base.metadata)
     _validate_index_definitions(
         _index_definitions(target_engine),
         require_all=True,
@@ -658,7 +673,9 @@ def verify_schema(target_engine) -> None:
 
 
 def _validate_business_invariants(connection) -> None:
+    validate_zone_site_assignment(connection)
     validate_finance_invariants(connection)
+    validate_demo_ledger(connection)
     """Validate denormalized state that schema shape alone cannot express."""
     invalid_confirmation = connection.exec_driver_sql(
         "SELECT id FROM parking_sessions WHERE "
@@ -923,8 +940,10 @@ def _initialize_candidate(target: Path) -> None:
             require_all=False,
         )
         run_sqlite_migrations(target_engine)
+        migrate_sqlite_payment_demo(target_engine)
         Base.metadata.create_all(bind=target_engine)
         with target_engine.begin() as connection:
+            backfill_legacy_sites(connection)
             backfill_legacy_finance(connection)
             connection.exec_driver_sql(SESSION_MONTHLY_COVERAGE_INSERT_TRIGGER_SQL)
             connection.exec_driver_sql(SESSION_MONTHLY_COVERAGE_UPDATE_TRIGGER_SQL)

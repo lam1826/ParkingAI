@@ -1239,8 +1239,13 @@ def test_readiness_rejects_wrong_definition_for_every_required_schema_object(
         quoted_table = table_name.replace('"', '""')
         connection.execute(f'DROP {object_type.upper()} "{quoted_name}"')
         if object_type == "index":
+            # Snapshot grants use parking_session_id as their primary key;
+            # schema corruption fixtures must not assume every table has id.
+            primary_key = next(
+                row[1] for row in connection.execute(f'PRAGMA table_info("{quoted_table}")') if row[5]
+            ).replace('"', '""')
             connection.execute(
-                f'CREATE INDEX "{quoted_name}" ON "{quoted_table}"(id)'
+                f'CREATE INDEX "{quoted_name}" ON "{quoted_table}"("{primary_key}")'
             )
         else:
             connection.execute(
@@ -1395,9 +1400,14 @@ def test_readiness_rejects_nullable_text_primary_key(tmp_path: Path) -> None:
             1,
         ).replace("id VARCHAR(36) NOT NULL", "id VARCHAR(36)", 1)
         assert replacement_sql != create_sql
+        # Other tables now have reservation triggers referencing sessions. Keep
+        # those references while replacing this empty fixture table, so SQLite
+        # reaches the intentionally nullable PK instead of rejecting the
+        # temporary gap between DROP and RENAME.
         connection.executescript(
             f"""
             PRAGMA foreign_keys=OFF;
+            PRAGMA legacy_alter_table=ON;
             DROP TRIGGER trg_payment_receipt_source;
             DROP TRIGGER trg_zones_operational_update_guard;
             DROP TRIGGER trg_parking_slots_operational_update_guard;
@@ -1411,6 +1421,7 @@ def test_readiness_rejects_nullable_text_primary_key(tmp_path: Path) -> None:
                     {replacement_sql};
             DROP TABLE parking_sessions;
             ALTER TABLE parking_sessions_replacement RENAME TO parking_sessions;
+            PRAGMA legacy_alter_table=OFF;
             """
         )
 

@@ -29,7 +29,7 @@ class PaymentResponse(BaseModel):
     source_id: str
     kind: PaymentKind
     amount: int
-    method: Literal["cash", "transfer", "legacy_unknown"]
+    method: Literal["cash", "transfer", "legacy_unknown", "demo"]
     collected_by_id: int | None
     shift_id: str | None
     created_at: datetime

@@ -1,0 +1,6 @@
+# Optional local student demo, Python 3.10-3.12. Install separately from the API.
+# ONNX detector is downloaded explicitly by edge/download_vision_model.py.
+onnxruntime==1.23.2
+rapidocr-onnxruntime==1.4.4
+opencv-python==4.12.0.88
+numpy==2.2.6

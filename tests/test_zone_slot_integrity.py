@@ -862,8 +862,11 @@ def test_parking_session_router_claims_validated_assignment_snapshot(
     vehicle,
     parking_slot: ParkingSlot,
     price_config,
+    business_reference_now,
+    monkeypatch,
 ):
     """The lower-level check-in endpoint must close the same admin-wins race."""
+    monkeypatch.setattr("crud.parking_session.server_now", lambda: business_reference_now)
     with patch(
         "routers.parking_session.crud_session.claim_parking_slot",
         return_value=False,
@@ -880,7 +883,10 @@ def test_parking_session_router_claims_validated_assignment_snapshot(
     assert response.status_code == 409
     assert claim.call_args.kwargs == {
         "expected_zone_id": parking_slot.zone_id,
+        "expected_site_id": parking_slot.zone.site_id,
         "expected_vehicle_type_id": vehicle.vehicle_type_id,
+        "vehicle_id": vehicle.id,
+        "check_in_time": business_reference_now,
     }
 
 

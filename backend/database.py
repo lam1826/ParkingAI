@@ -881,6 +881,16 @@ def run_sqlite_migrations(target_engine=engine) -> None:
     if not str(target_engine.url).startswith("sqlite"):
         return
     with target_engine.begin() as conn:
+        zone_columns = {row[1] for row in conn.exec_driver_sql("PRAGMA table_info(zones)")}
+        if zone_columns:
+            # SQLite resolves even a NULL foreign key's parent table on later
+            # writes. Create that parent before adding the reference, including
+            # callers migrating a partial legacy schema without create_all().
+            from expansion.site_models import ParkingSite
+            ParkingSite.__table__.create(bind=conn, checkfirst=True)
+            if "site_id" not in zone_columns:
+                conn.exec_driver_sql("ALTER TABLE zones ADD COLUMN site_id INTEGER REFERENCES parking_sites(id)")
+            conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_zones_site_id ON zones(site_id)")
         # --- roles: role name duy nhất như ORM contract ---
         role_columns = {
             row[1] for row in conn.exec_driver_sql("PRAGMA table_info(roles)")

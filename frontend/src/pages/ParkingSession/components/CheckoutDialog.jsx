@@ -7,11 +7,12 @@ import { formatParkingDuration } from "../sessionPresentation";
 import { createCheckoutFlow } from "../checkoutFlow";
 import parkingSessionService from "../services/parkingSessionService";
 
-export default function CheckoutDialog({ sessionId, onClose, onCompleted }) {
+export default function CheckoutDialog({ sessionId, onClose, onCompleted,
+  loadQuote = parkingSessionService.getCheckoutQuote, confirmCheckout = parkingSessionService.checkOut }) {
   const [flow] = useState(() => {
     const token = localStorage.getItem("token");
-    return createCheckoutFlow({ sessionId, loadQuote: parkingSessionService.getCheckoutQuote,
-      confirmCheckout: parkingSessionService.checkOut, onCompleted,
+    return createCheckoutFlow({ sessionId, loadQuote,
+      confirmCheckout, onCompleted,
       isAuthorized: () => Boolean(token) && localStorage.getItem("token") === token });
   });
   const state = useSyncExternalStore(flow.subscribe, flow.getSnapshot, flow.getSnapshot);

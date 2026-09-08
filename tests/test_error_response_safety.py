@@ -16,6 +16,12 @@ class FailingQuerySession:
     def execute(self, *_args, **_kwargs):
         raise SQLAlchemyError(INTERNAL_MARKER)
 
+    def scalars(self, *_args, **_kwargs):
+        # SQLAlchemy 2.x scalar queries must fail at the same database boundary.
+        # Keep the sensitive marker so the public error-redaction assertion
+        # still proves that internal connection details cannot reach the user.
+        raise SQLAlchemyError(INTERNAL_MARKER)
+
 
 @pytest.mark.parametrize(
     ("call", "expected_detail"),

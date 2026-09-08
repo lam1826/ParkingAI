@@ -95,6 +95,16 @@ def renew_subscription(db, original_id, data, staff_id):
                 raise HTTPException(409, "Mã yêu cầu đã được dùng cho giao dịch khác.")
             db.commit()
             return existing
+        # Portal periods carry site scope in their originating order. A legacy
+        # renewal creates no order, so it would silently become a global pass.
+        # Already collected retries above keep their original receipt; new
+        # portal renewals must use the order flow that preserves the site.
+        from expansion.portal_models import PortalOrder
+        if db.scalar(select(PortalOrder.id).where(PortalOrder.monthly_pass_id == original.id)) is not None:
+            raise HTTPException(
+                409,
+                "Vé thuộc gói theo bãi. Hãy gia hạn qua cổng khách hàng để giữ đúng bãi và điều kiện gói vé.",
+            )
         if data.start_date <= original.end_date:
             raise HTTPException(409, "Kỳ gia hạn phải bắt đầu sau ngày hết hạn của kỳ đã chọn.")
         overlap = get_overlapping_active_pass_by_vehicle(db, original.vehicle_id, data.start_date, data.end_date)

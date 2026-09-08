@@ -49,7 +49,7 @@ export const AuthProvider = ({ children }) => {
       // Lấy thông tin user hiện tại từ /api/auth/me
       const userData = await refreshUser();
       
-      navigate(userData.role === "customer" ? "/account" : "/");
+      navigate(userData.role === "customer" ? "/portal" : "/");
       return { success: true };
     } catch (error) {
       if (issuedToken && localStorage.getItem("token") === issuedToken) {

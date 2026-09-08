@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Session
-from sqlalchemy import select, and_, update
+from sqlalchemy import select, and_, or_, exists, update
 from sqlalchemy.exc import DBAPIError
 from datetime import date, datetime
 from fastapi import HTTPException
@@ -52,6 +52,9 @@ def claim_parking_slot(
     *,
     expected_zone_id: int | None = None,
     expected_vehicle_type_id: int | None = None,
+    expected_site_id: int | None = None,
+    vehicle_id: int | None = None,
+    check_in_time: datetime | None = None,
 ) -> bool:
     """Chiếm vị trí đỗ NGUYÊN TỬ bằng conditional UPDATE.
 
@@ -61,6 +64,21 @@ def claim_parking_slot(
     409/404 thay vì ghi đè. KHÔNG commit tại đây: claim phải nằm cùng
     transaction với INSERT session để cùng commit hoặc cùng rollback.
     """
+    from expansion.reservations import admission_allowed
+    if not admission_allowed(db, slot_id, vehicle_id=vehicle_id, at=check_in_time):
+        return False
+    if expected_site_id is not None:
+        from expansion.site_models import ParkingSite
+        # admission_allowed holds the slot lock. Hold its current zone/site
+        # through session insertion as well, so PostgreSQL cannot reassign the
+        # zone after this scope check but before the session gains history.
+        scoped_zone = db.scalar(select(Zone.id).join(ParkingSlot, ParkingSlot.zone_id == Zone.id)
+            .join(ParkingSite, ParkingSite.id == Zone.site_id).where(
+                ParkingSlot.id == slot_id, Zone.site_id == expected_site_id,
+                Zone.is_active.is_(True), ParkingSite.is_active.is_(True),
+            ).with_for_update(read=True, of=[Zone, ParkingSite]))
+        if scoped_zone is None:
+            return False
     conditions = [
             ParkingSlot.id == slot_id,
             ParkingSlot.is_occupied == False,  # noqa: E712
@@ -78,6 +96,10 @@ def claim_parking_slot(
         conditions.append(
             ParkingSlot.vehicle_type_id == expected_vehicle_type_id
         )
+    if expected_site_id is not None:
+        conditions.append(ParkingSlot.zone_id.in_(
+            select(Zone.id).where(Zone.site_id == expected_site_id)
+        ))
 
     result = db.execute(
         update(ParkingSlot)
@@ -132,6 +154,7 @@ def resolve_check_in_monthly_pass_id(
     vehicle_id: int,
     vehicle_type_id: int,
     check_in_time: datetime,
+    site_id: int | None = None,
 ) -> int | None:
     """Resolve the entitlement/rate required to admit one check-in.
 
@@ -149,12 +172,18 @@ def resolve_check_in_monthly_pass_id(
     if effective_price is None:
         raise MissingEffectiveCheckInPriceError
 
+    from expansion.portal_models import PortalOrder
+    portal_origin = exists(select(PortalOrder.id).where(PortalOrder.monthly_pass_id == MonthlyPass.id))
+    matching_site = exists(select(PortalOrder.id).where(
+        PortalOrder.monthly_pass_id == MonthlyPass.id, PortalOrder.site_id == site_id,
+    )) if site_id is not None else False
     monthly_pass = db.execute(
         select(MonthlyPass).where(
             MonthlyPass.vehicle_id == vehicle_id,
             MonthlyPass.is_active == True,  # noqa: E712
             MonthlyPass.start_date <= check_in_date,
             MonthlyPass.end_date >= check_in_date,
+            or_(~portal_origin, matching_site),
         )
     ).scalars().first()
     if monthly_pass is not None:
@@ -164,6 +193,7 @@ def resolve_check_in_monthly_pass_id(
 
 def resolve_check_in_monthly_coverage_end(
     db: Session, *, monthly_pass_id: int | None, check_in_time: datetime,
+    site_id: int | None = None,
 ) -> date | None:
     """Freeze continuous existing coverage; later renewals cannot extend a stay.
 
@@ -182,11 +212,17 @@ def resolve_check_in_monthly_coverage_end(
     coverage_end = original.end_date
     if original.card_id is None:
         return coverage_end
+    from expansion.portal_models import PortalOrder
+    portal_origin = exists(select(PortalOrder.id).where(PortalOrder.monthly_pass_id == MonthlyPass.id))
+    matching_site = exists(select(PortalOrder.id).where(
+        PortalOrder.monthly_pass_id == MonthlyPass.id, PortalOrder.site_id == site_id,
+    )) if site_id is not None else False
     periods = db.scalars(select(MonthlyPass).where(
         MonthlyPass.card_id == original.card_id,
         MonthlyPass.vehicle_id == original.vehicle_id,
         MonthlyPass.is_active.is_(True),
         MonthlyPass.end_date > coverage_end,
+        or_(~portal_origin, matching_site),
     ).order_by(MonthlyPass.start_date, MonthlyPass.id).with_for_update(read=True)).all()
     for period in periods:
         if (period.start_date - coverage_end).days > 1:
@@ -232,6 +268,11 @@ def create_parking_session(
         status="active"
     )
     db.add(db_session)
+    db.flush()
+    from expansion.reservations import record_admission
+    from expansion.portal_service import capture_session_ownership
+    record_admission(db, db_session)
+    capture_session_ownership(db, db_session)
     db.commit()
     db.refresh(db_session)
     return db_session

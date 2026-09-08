@@ -173,6 +173,7 @@ def test_checkout_survives_production_autoflush_settings(
     vehicle: Vehicle,
     parking_session: ParkingSession,
     price_config: PriceConfig,
+    monkeypatch,
 ):
     """`SessionLocal` production dùng autoflush MẶC ĐỊNH (True).
 
@@ -181,6 +182,9 @@ def test_checkout_survives_production_autoflush_settings(
     suite nếu không có test này. Bật autoflush đúng như production để đường
     check-out được kiểm ở cùng cấu hình session mà người dùng thật chạy.
     """
+    # This tests flush order, not a quote crossing the first billable second.
+    frozen = parking_session.check_in_time + datetime.timedelta(minutes=5)
+    monkeypatch.setattr("crud.parking_session.server_now", lambda: frozen)
     db_session.autoflush = True
     confirmation = quote_confirmation(client, auth_headers, parking_session.id)
     try:

@@ -20,6 +20,10 @@ from .ai_report import AiReport
 from .audit_log import AuditLog
 from .cash_shift import CashShift
 from .payment import Payment
+from expansion import site_models  # noqa: F401 - register optional site/booking tables
+from expansion import portal_models  # noqa: F401 - register verified portal authority
+from expansion import vision_models  # noqa: F401 - register private camera observations
+import expansion_demo_guards  # noqa: F401 - same demo boundary on fresh databases
 from finance_rollout import MONTHLY_CARD_SQLITE_TRIGGERS
 
 for _card_trigger_sql in MONTHLY_CARD_SQLITE_TRIGGERS:

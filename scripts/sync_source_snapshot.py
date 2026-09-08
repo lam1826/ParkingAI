@@ -27,22 +27,24 @@ ALLOWED_TOP_LEVEL = {
     "backend",
     "deploy",
     "docs",
+    "edge",
     "frontend",
     "scripts",
     "tests",
 }
-ALLOWED_ROOT_FILES = {"README.md", "package.json", "package-lock.json", "pytest.ini"}
+ALLOWED_ROOT_FILES = {"README.md", "plan.md", "package.json", "package-lock.json", "pytest.ini"}
 EXCLUDED_PARTS = {
     ".git",
     ".pytest_cache",
     ".venv",
     "__pycache__",
     "database",
+    "artifacts",
     "dist",
     "node_modules",
     "venv",
 }
-FORBIDDEN_SUFFIXES = {".db", ".pyc", ".pyo", ".log", ".zip"}
+FORBIDDEN_SUFFIXES = {".db", ".pyc", ".pyo", ".log", ".zip", ".onnx", ".pt", ".pth"}
 SECRET_SUFFIXES = {".pem", ".key", ".p12", ".pfx", ".crt", ".cer"}
 SECRET_EXACT_NAMES = {".npmrc", ".pypirc", "id_rsa", "id_ed25519"}
 SECRET_NAME_MARKERS = {"credential", "service-account", "service_account"}
@@ -71,6 +73,7 @@ SAFE_UNTRACKED_PATHS = {
     Path("backend/alembic.ini"),
     Path("backend/alembic/script.py.mako"),
     Path("backend/fly.toml"),
+    Path("backend/requirements-vision.txt"),
     Path("deploy/.env.production.example"),
     Path("deploy/Caddyfile.blue"),
     Path("deploy/Caddyfile.green"),

@@ -44,8 +44,10 @@ class PaymentService:
         collected_by_id: int | None, method: str = "cash", created_at: datetime | None = None,
     ) -> Payment:
         """Idempotently collect once per source; flush only, never commit."""
-        if source_type not in {"parking_session", "monthly_pass"} or method not in {"cash", "transfer"}:
+        if source_type not in {"parking_session", "monthly_pass"} or method not in {"cash", "transfer", "demo"}:
             raise HTTPException(422, "Nguồn thu hoặc phương thức thanh toán không hợp lệ.")
+        if method == "demo" and (source_type != "monthly_pass" or collected_by_id is not None):
+            raise HTTPException(422, "Thu mô phỏng chỉ áp dụng đơn vé tháng và không gán nhân viên thu tiền.")
         amount = require_exact_vnd(amount)
         source_id = str(source_id)
         if not source_id or len(source_id) > 36:
@@ -86,7 +88,7 @@ class PaymentService:
         """Record an authorized compensating transaction without altering a receipt."""
         check_permission(actor, "manager")
         amount = require_exact_vnd(amount)
-        if amount == 0 or method not in {"cash", "transfer"} or not reason.strip():
+        if amount == 0 or method not in {"cash", "transfer", "demo"} or not reason.strip():
             raise HTTPException(422, "Số tiền, lý do hoặc phương thức hoàn tiền không hợp lệ.")
         lock_cash_operator(db, actor.id)
         original = db.execute(select(Payment).where(Payment.id == payment_id).with_for_update()).scalar_one_or_none()
@@ -94,6 +96,8 @@ class PaymentService:
             raise HTTPException(404, "Không tìm thấy phiếu thu.")
         if original.kind != "receipt":
             raise HTTPException(409, "Chỉ được hoàn tiền từ phiếu thu gốc.")
+        if (original.method == "demo") != (method == "demo"):
+            raise HTTPException(409, "Giao dịch mô phỏng chỉ được hoàn bằng luồng mô phỏng.")
         refund_key = f"refund:{idempotency_key}"
         existing = db.execute(select(Payment).where(Payment.idempotency_key == refund_key)).scalar_one_or_none()
         if existing is not None:
@@ -109,7 +113,7 @@ class PaymentService:
         when = business_now()
         if when < original.created_at:
             raise HTTPException(409, "Thời điểm hoàn tiền không được trước thời điểm thu.")
-        shift = db.execute(select(CashShift).where(
+        shift = None if method == "demo" else db.execute(select(CashShift).where(
             CashShift.staff_id == actor.id, CashShift.status == "open", CashShift.opened_at <= when,
         ).with_for_update()).scalar_one_or_none()
         refund = Payment(
@@ -162,7 +166,7 @@ class PaymentService:
         events = union_all(
             select(Payment.created_at.label("at"), Payment.source_type.label("source"),
                    Payment.kind.label("kind"), Payment.amount.label("amount"), literal(False).label("metadata_utc")).where(
-                Payment.created_at >= start, Payment.created_at < end,
+                Payment.created_at >= start, Payment.created_at < end, Payment.method != "demo",
             ),
             select(ParkingSession.check_out_time, literal("parking_session"), literal("receipt"),
                    ParkingSession.parking_fee, literal(False)).where(

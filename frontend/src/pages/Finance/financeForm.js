@@ -16,4 +16,4 @@ export function buildRefundPayload({ amount, method, reason, idempotencyKey, ref
   return { amount: parsedAmount, method, reason: trimmedReason, idempotency_key: idempotencyKey };
 }
 
-export const paymentMethodLabels = { cash: "Tiền mặt", transfer: "Chuyển khoản", legacy_unknown: "Không rõ (dữ liệu cũ)" };
+export const paymentMethodLabels = { cash: "Tiền mặt", transfer: "Chuyển khoản", legacy_unknown: "Không rõ (dữ liệu cũ)", demo: "Mô phỏng đồ án" };

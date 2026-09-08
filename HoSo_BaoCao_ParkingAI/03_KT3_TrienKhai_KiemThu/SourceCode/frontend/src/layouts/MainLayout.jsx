@@ -16,6 +16,8 @@ import {
   ListItemText,
   Menu,
   MenuItem,
+  Alert,
+  Chip,
 } from "@mui/material";
 
 // Import Icons
@@ -38,11 +40,14 @@ import { AuthContext } from "../context/AuthContext";
 import AIChatbot from "../components/ai/AIChatbot";
 import ErrorBoundary from "../components/common/ErrorBoundary";
 import BrandLogo from "../components/brand/BrandLogo";
+import { useExpansion } from "../context/ExpansionContext";
+import PhotoCameraIcon from "@mui/icons-material/PhotoCamera";
 
 const drawerWidth = 260; // Độ rộng của Sidebar
 
 export default function MainLayout() {
   const { user, logout } = useContext(AuthContext);
+  const capabilities = useExpansion();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -53,6 +58,12 @@ export default function MainLayout() {
 
   // Danh sách các menu trong Sidebar
   const menuItems = [
+    { text: "Bãi xe của tôi", icon: <DirectionsCarIcon />, path: "/portal", scoped: true },
+    { text: "Đặt chỗ của tôi", icon: <LocalParkingIcon />, path: "/reservations", scoped: true },
+    { text: "Vận hành bãi", icon: <DomainIcon />, path: "/sites", role: "staff", scoped: true },
+    { text: "Khách & đơn vé", icon: <CardMembershipIcon />, path: "/portal-admin", role: "manager", scoped: true },
+    { text: "Camera & biển số", icon: <PhotoCameraIcon />, path: "/vision", role: "staff", scoped: true },
+    { text: "Dự báo & điều hành", icon: <AssessmentIcon />, path: "/insights", role: "staff", scoped: true },
     { text: "Tài khoản của tôi", icon: <AccountCircleIcon />, path: "/account" },
     { text: "Dashboard", icon: <DashboardIcon />, path: "/", role: "staff" },
     { text: "Phiên Đỗ Xe", icon: <LocalParkingIcon />, path: "/sessions", role: "staff" },
@@ -112,6 +123,7 @@ export default function MainLayout() {
           <Box sx={{ flexGrow: 1 }}>
             <BrandLogo size={34} inverse />
           </Box>
+          {globalThis.__PARKINGAI_CONFIG__?.DEMO && <Chip label="DEMO đồ án" size="small" sx={{ bgcolor: "white", color: "primary.dark", mr: 2 }} />}
 
           {/* Góc phải User Profile */}
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -149,6 +161,7 @@ export default function MainLayout() {
                 {menuItems.map((item) => {
                   // Ẩn menu nếu có yêu cầu role mà user không thỏa mãn (ví dụ giả lập)
                   if (item.role && !hasMinimumRole(user?.role, item.role)) return null;
+                  if (item.role && !item.scoped && !capabilities?.legacy_workspace_allowed) return null;
 
                   const isSelected = location.pathname === item.path || (location.pathname.startsWith(item.path) && item.path !== '/');
 
@@ -226,6 +239,7 @@ export default function MainLayout() {
         }}
       >
         <Toolbar /> {/* Để đẩy nội dung xuống dưới Header */}
+        {globalThis.__PARKINGAI_CONFIG__?.DEMO && <Alert severity="info" sx={{ mb: 3 }}>Dữ liệu trong bản này được tạo cho đồ án. QR chỉ mô phỏng thanh toán; lịch sử mẫu không phải số liệu của bãi xe thật.</Alert>}
 
         {/* ĐÂY LÀ NƠI CÁC TRANG (Dashboard, Users,...) SẼ ĐƯỢC RENDER VÀO.
             Bọc ErrorBoundary (key theo pathname để tự reset khi đổi trang):
@@ -234,7 +248,7 @@ export default function MainLayout() {
           <Outlet />
         </ErrorBoundary>
       </Box>
-      {(["staff", "manager", "admin"].includes(String(user?.role).toLowerCase())) && <AIChatbot />}
+      {capabilities?.legacy_workspace_allowed && (["staff", "manager", "admin"].includes(String(user?.role).toLowerCase())) && <AIChatbot />}
     </Box>
   );
 }

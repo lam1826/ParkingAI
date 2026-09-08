@@ -1,7 +1,7 @@
 from typing import List
 from datetime import datetime
 
-from sqlalchemy import DDL, String, Integer, Boolean, Index, event
+from sqlalchemy import DDL, String, Integer, Boolean, ForeignKey, Index, event
 from sqlalchemy.sql import func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -15,6 +15,7 @@ class Zone(Base):
     __tablename__ = "zones"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    site_id: Mapped[int | None] = mapped_column(ForeignKey("parking_sites.id"), nullable=True, index=True)
     name: Mapped[str] = mapped_column(String(50))
     capacity: Mapped[int] = mapped_column(Integer)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)

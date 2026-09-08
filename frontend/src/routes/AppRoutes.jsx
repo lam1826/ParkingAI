@@ -1,10 +1,12 @@
 import { Routes, Route, Navigate } from "react-router-dom";
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useContext } from "react";
 import { Box, CircularProgress } from "@mui/material";
 
 import MainLayout from "../layouts/MainLayout";
 import PrivateRoute from "./PrivateRoute";
 import PermissionRoute from "./PermissionRoute";
+import { AuthContext } from "../context/AuthContext";
+import { ExpansionProvider, useExpansion } from "../context/ExpansionContext";
 
 // --- Pages ---
 const Dashboard = lazy(() => import("../pages/Dashboard/DashboardPage"));
@@ -30,6 +32,20 @@ const ReportPage = lazy(() => import("../pages/Report/ReportPage"));
 const AuditLogPage = lazy(() => import("../pages/AuditLog/AuditLogPage"));
 const AIPage = lazy(() => import("../pages/AI/AIPage"));
 const FinancePage = lazy(() => import("../pages/Finance/index"));
+const CustomerPortal = lazy(() => import("../pages/Expansion/CustomerPortal"));
+const PortalAdminPage = lazy(() => import("../pages/Expansion/PortalAdminPage"));
+const SitesWorkspace = lazy(() => import("../pages/Expansion/SitesWorkspace"));
+const ReservationsPage = lazy(() => import("../pages/Expansion/ReservationsPage"));
+const VisionPage = lazy(() => import("../pages/Expansion/VisionPage"));
+const InsightsPage = lazy(() => import("../pages/Expansion/InsightsPage"));
+
+function HomePage() {
+  const { user } = useContext(AuthContext);
+  const capabilities = useExpansion();
+  if (user?.role === "customer") return <Navigate to="/portal" replace />;
+  if (!capabilities.legacy_workspace_allowed) return <Navigate to="/sites" replace />;
+  return <PermissionRoute minimumRole="staff"><Dashboard /></PermissionRoute>;
+}
 
 const AppRoutes = () => {
   return (
@@ -43,12 +59,18 @@ const AppRoutes = () => {
       <Route
         element={
           <PrivateRoute>
-            <MainLayout />
+            <ExpansionProvider><MainLayout /></ExpansionProvider>
           </PrivateRoute>
         }
       >
         {/* Dashboard */}
-        <Route index element={<PermissionRoute minimumRole="staff"><Dashboard /></PermissionRoute>} />
+        <Route index element={<HomePage />} />
+        <Route path="portal" element={<CustomerPortal />} />
+        <Route path="reservations" element={<ReservationsPage />} />
+        <Route path="portal-admin" element={<PermissionRoute minimumRole="manager" legacy={false}><PortalAdminPage /></PermissionRoute>} />
+        <Route path="sites" element={<PermissionRoute minimumRole="staff" legacy={false}><SitesWorkspace /></PermissionRoute>} />
+        <Route path="vision" element={<PermissionRoute minimumRole="staff" legacy={false}><VisionPage /></PermissionRoute>} />
+        <Route path="insights" element={<PermissionRoute minimumRole="staff" legacy={false}><InsightsPage /></PermissionRoute>} />
         <Route path="account" element={<AccountPage />} />
         <Route path="profile" element={<ProfilePage />} />
         <Route path="settings" element={<SettingsPage />} />

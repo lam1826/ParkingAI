@@ -1,6 +1,7 @@
 from sqlalchemy.orm import Session
 from sqlalchemy import func, select
 from sqlalchemy.exc import SQLAlchemyError
+from fastapi import HTTPException
 from models.zone import Zone  # Đảm bảo bạn có class Zone trong models/
 from schemas import zone as zone_schema
 
@@ -22,7 +23,15 @@ def get_zones(db: Session, skip: int = 0, limit: int = 100):
     return db.execute(stmt).scalars().all()
 
 def create_zone(db: Session, zone_in: zone_schema.ZoneCreate) -> Zone:
-    db_zone = Zone(**zone_in.model_dump())
+    from expansion.site_models import ParkingSite
+
+    # The legacy payload cannot choose a site. Preserve zero-site fixtures,
+    # but once sites exist never create a zone outside their operational scope.
+    # Closed sites still count because their historical identity is retained.
+    site_ids = list(db.scalars(select(ParkingSite.id).order_by(ParkingSite.id).limit(2)))
+    if len(site_ids) > 1:
+        raise HTTPException(409, "Hệ thống có nhiều bãi. Hãy tạo khu vực trong mục Vận hành bãi và chọn bãi cụ thể.")
+    db_zone = Zone(site_id=site_ids[0] if site_ids else None, **zone_in.model_dump())
     db.add(db_zone)
     try:
         db.commit()

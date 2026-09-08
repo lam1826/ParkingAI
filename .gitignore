@@ -31,3 +31,4 @@ Thumbs.db
 
 # Ban sao/backup nguon khong thuoc version control
 frontend/src.zip
+backend/artifacts/

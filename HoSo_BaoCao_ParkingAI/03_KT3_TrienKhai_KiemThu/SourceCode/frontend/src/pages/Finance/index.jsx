@@ -1,3 +1,4 @@
+import { requestId as newRequestId } from "../../utils/requestId";
 import { useCallback, useContext, useEffect, useRef, useState } from "react";
 import {
   Alert, Box, Button, Chip, CircularProgress, Dialog, DialogActions,
@@ -99,7 +100,7 @@ export default function FinancePage() {
 
   const startRefund = (payment) => {
     setFormError("");
-    setRefund({ payment, amount: String(payment.refundable_amount), method: payment.method === "transfer" ? "transfer" : "cash", reason: "", idempotencyKey: crypto.randomUUID() });
+    setRefund({ payment, amount: String(payment.refundable_amount), method: payment.method === "transfer" ? "transfer" : "cash", reason: "", idempotencyKey: newRequestId() });
   };
 
   const paymentColumns = [
@@ -110,7 +111,7 @@ export default function FinancePage() {
     { field: "method", headerName: "Phương thức", minWidth: 160, flex: 1, valueFormatter: (value) => paymentMethodLabels[value] || value },
     { field: "source_id", headerName: "Mã vé / lượt gửi", minWidth: 140, flex: 1 },
     { field: "shift_id", headerName: "Ghi nhận ca", width: 140, renderCell: ({ value }) => <Typography variant="body2" sx={{ lineHeight: "inherit" }}>{value ? "Trong ca" : "Ngoài ca"}</Typography> },
-    ...(isManager ? [{ field: "refund_action", headerName: "Thao tác", width: 125, sortable: false, filterable: false, renderCell: ({ row }) => row.kind === "receipt" && row.refundable_amount > 0 ? <Button size="small" disabled={loading || mutating || Boolean(error)} onClick={() => startRefund(row)}>Hoàn tiền</Button> : "—" }] : []),
+    ...(isManager ? [{ field: "refund_action", headerName: "Thao tác", width: 125, sortable: false, filterable: false, renderCell: ({ row }) => row.kind === "receipt" && row.refundable_amount > 0 && row.method !== "demo" ? <Button size="small" disabled={loading || mutating || Boolean(error)} onClick={() => startRefund(row)}>Hoàn tiền</Button> : "—" }] : []),
   ];
   const shiftColumns = [
     { field: "staff_name", headerName: "Nhân viên", minWidth: 170, flex: 1 },

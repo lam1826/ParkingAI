@@ -1,3 +1,4 @@
+import { requestId as newRequestId } from "../../../utils/requestId";
 import { useState, useEffect } from "react";
 import { Alert, Dialog, DialogTitle, DialogContent, DialogActions, Button, TextField, Grid, MenuItem, CircularProgress } from "@mui/material";
 
@@ -16,7 +17,7 @@ const MonthlyPassDialog = ({ isOpen, onClose, onSave, pass, vehicles, customers,
   const [requestId, setRequestId] = useState("");
 
   useEffect(() => {
-    setRequestId(crypto.randomUUID());
+    setRequestId(newRequestId());
     if (pass) {
       const nextStart = new Date(`${pass.end_date}T12:00:00Z`);
       nextStart.setUTCDate(nextStart.getUTCDate() + 1);

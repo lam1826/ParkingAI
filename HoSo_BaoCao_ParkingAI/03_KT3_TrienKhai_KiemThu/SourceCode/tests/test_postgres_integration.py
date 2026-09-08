@@ -319,7 +319,8 @@ def test_postgres_populated_legacy_migration_preserves_history():
         check_out = datetime(2026, 10, 1, 0, 30)
         with temporary_engine.begin() as connection:
             assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == "20260828_01"
-            role_id = connection.execute(text("INSERT INTO roles (name) VALUES ('legacy_staff') RETURNING id")).scalar_one()
+            role_id = connection.execute(text("INSERT INTO roles (name) VALUES ('staff') RETURNING id")).scalar_one()
+            legacy_zone_id = connection.execute(text("INSERT INTO zones (name,capacity) VALUES ('Legacy migration zone',2) RETURNING id")).scalar_one()
             staff_id = connection.execute(
                 text("INSERT INTO users (role_id, username, password_hash, full_name) VALUES (:role, 'legacy_staff', 'unused', 'Legacy Staff') RETURNING id"),
                 {"role": role_id},
@@ -386,6 +387,11 @@ def test_postgres_populated_legacy_migration_preserves_history():
                 assert receipt["shift_id"] is None
                 assert receipt["original_payment_id"] is None
             assert connection.execute(text("SELECT count(*) FROM cash_shifts")).scalar_one() == 0
+            default_site_id = connection.execute(text("SELECT id FROM parking_sites WHERE name='Bãi xe mặc định'")).scalar_one()
+            assert connection.execute(text("SELECT site_id FROM zones WHERE id=:id"), {"id": legacy_zone_id}).scalar_one() == default_site_id
+            assert tuple(connection.execute(text("SELECT site_id,user_id,role FROM site_memberships")).one()) == (default_site_id, staff_id, "staff")
+            for authority_table in ("portal_account_links", "portal_vehicle_ownerships", "portal_session_grants"):
+                assert connection.execute(text(f"SELECT count(*) FROM {authority_table}")).scalar_one() == 0
 
         check_postgres_readiness(temporary_engine, deep=True)
         upgrade("head")
@@ -604,3 +610,69 @@ def test_postgres_parallel_checkouts_same_cashier_do_not_upgrade_fk_locks():
             )).all()
             assert sorted(tuple(row) for row in receipts) == sorted((session_id, 30000, staff, shift_id) for session_id in session_ids)
         check_postgres_readiness(engine, deep=True)
+
+
+def test_postgres_expansion_commitments_and_demo_ledger_guards():
+    """Actual migrated PostgreSQL executes the new guards, not ORM substitutes."""
+    from core.clock import business_now
+    from expansion.site_models import ParkingSite, ParkingReservation
+    from models import Customer, MonthlyPass, ParkingSlot, Payment, Role, User, Vehicle, VehicleType, Zone
+
+    engine = create_engine(POSTGRES_TEST_URL, pool_pre_ping=True)
+    suffix = uuid.uuid4().hex[:8]
+    try:
+        with engine.connect() as connection:
+            transaction = connection.begin()
+            try:
+                with Session(bind=connection, join_transaction_mode="create_savepoint") as db:
+                    role = Role(name="expansion_" + suffix)
+                    customer = Customer(full_name="Expansion customer", phone_number="EXP-" + suffix)
+                    vehicle_type = VehicleType(name="Expansion car " + suffix)
+                    site = ParkingSite(name="Expansion site " + suffix)
+                    db.add_all([role, customer, vehicle_type, site])
+                    db.flush()
+                    staff = User(role_id=role.id, username="expansion_" + suffix, password_hash="unused", full_name="Expansion Staff", is_active=True)
+                    vehicle = Vehicle(license_plate="EX-" + suffix, vehicle_type_id=vehicle_type.id, customer_id=customer.id)
+                    zone = Zone(name="Expansion zone " + suffix, capacity=2, site_id=site.id, is_active=True)
+                    db.add_all([staff, vehicle, zone])
+                    db.flush()
+                    slot = ParkingSlot(zone_id=zone.id, vehicle_type_id=vehicle_type.id, slot_name="EX-" + suffix, is_active=True, is_occupied=False)
+                    db.add(slot)
+                    db.flush()
+                    start = business_now() + timedelta(days=2)
+                    reservation = ParkingReservation(site_id=site.id, slot_id=slot.id, customer_id=customer.id, vehicle_id=vehicle.id,
+                                                     start_at=start, end_at=start + timedelta(hours=2), arrival_deadline=start + timedelta(minutes=15),
+                                                     request_id=uuid.uuid4().hex, created_by_id=staff.id)
+                    real_period = MonthlyPass(customer_id=customer.id, vehicle_id=vehicle.id, price=500000, start_date=date(2027, 1, 1), end_date=date(2027, 1, 31), is_active=True)
+                    demo_period = MonthlyPass(customer_id=customer.id, vehicle_id=vehicle.id, price=500000, start_date=date(2027, 2, 1), end_date=date(2027, 2, 28), is_active=True)
+                    db.add_all([reservation, real_period, demo_period])
+                    db.flush()
+                    real_receipt = Payment(source_type="monthly_pass", source_id=str(real_period.id), kind="receipt", amount=500000, method="cash", idempotency_key=uuid.uuid4().hex)
+                    demo_receipt = Payment(source_type="monthly_pass", source_id=str(demo_period.id), kind="receipt", amount=500000, method="demo", idempotency_key=uuid.uuid4().hex)
+                    db.add_all([real_receipt, demo_receipt])
+                    db.flush()
+                    values = {"id": reservation.id, "slot": slot.id, "zone": zone.id}
+                    _expect_database_rejection(connection, "UPDATE zones SET site_id=NULL WHERE id=:zone", values)
+                    _expect_database_rejection(connection, "UPDATE parking_slots SET is_active=false WHERE id=:slot", values)
+                    _expect_database_rejection(connection, "UPDATE parking_reservations SET end_at=end_at+INTERVAL '1 hour' WHERE id=:id", values)
+                    _expect_database_rejection(connection, """
+                        INSERT INTO parking_reservations (id,site_id,slot_id,customer_id,vehicle_id,start_at,end_at,arrival_deadline,status,request_id,created_by_id,created_at)
+                        SELECT :new_id,site_id,slot_id,customer_id,vehicle_id,start_at,end_at,arrival_deadline,status,:request_id,created_by_id,created_at
+                        FROM parking_reservations WHERE id=:id
+                    """, {**values, "new_id": str(uuid.uuid4()), "request_id": uuid.uuid4().hex})
+                    refund_sql = """
+                        INSERT INTO payments (id,source_type,source_id,kind,amount,method,collected_by_id,shift_id,created_at,idempotency_key,original_payment_id,reason)
+                        VALUES (:id,'monthly_pass',:source,'refund',100,:method,NULL,NULL,clock_timestamp() AT TIME ZONE 'Asia/Ho_Chi_Minh',:key,:original,'Demo boundary test')
+                    """
+                    for original, method in ((real_receipt, "demo"), (demo_receipt, "cash")):
+                        with pytest.raises(DBAPIError, match="demo payment"):
+                            with connection.begin_nested():
+                                connection.execute(text(refund_sql), {"id": str(uuid.uuid4()), "source": original.source_id, "method": method, "key": uuid.uuid4().hex, "original": original.id})
+                    connection.execute(text(refund_sql), {"id": str(uuid.uuid4()), "source": demo_receipt.source_id, "method": "demo", "key": uuid.uuid4().hex, "original": demo_receipt.id})
+                    connection.execute(text("UPDATE parking_reservations SET status='cancelled' WHERE id=:id"), values)
+                    connection.execute(text("UPDATE parking_slots SET is_active=false WHERE id=:slot"), values)
+                    check_postgres_readiness(engine, deep=True)
+            finally:
+                transaction.rollback()
+    finally:
+        engine.dispose()
