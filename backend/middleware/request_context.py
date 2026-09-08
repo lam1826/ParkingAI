@@ -10,6 +10,7 @@ from pathlib import Path
 
 from starlette.datastructures import Headers, MutableHeaders
 from starlette.responses import JSONResponse
+from middleware.security_headers import apply_security_headers
 
 request_id_context = ContextVar("parkingai_request_id", default=None)
 logger = logging.getLogger("parkingai.requests")
@@ -54,7 +55,8 @@ class RequestContextMiddleware:
                 "error_type": type(error).__name__, "source": f"{Path(last.filename).name}:{last.lineno}" if last else None}))
             if response_started:
                 raise
-            headers = {"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff", "X-Frame-Options": "DENY"}
+            headers = {"Cache-Control": "no-store"}
+            apply_security_headers(headers, str(scope.get("path", "")))
             from core.config import settings
             origin = Headers(scope=scope).get("origin")
             if origin and origin in {value.strip() for value in settings.CORS_ORIGINS.split(",")}:

@@ -34,3 +34,6 @@ def test_unhandled_errors_keep_correlation_without_leaking_details():
     assert response.status_code == 500
     assert response.headers["X-Request-ID"] == "broken-123"
     assert "private prompt" not in response.text
+    assert response.headers["Strict-Transport-Security"] == "max-age=31536000; includeSubDomains"
+    assert response.headers["Referrer-Policy"] == "no-referrer"
+    assert response.headers["Permissions-Policy"] == "camera=(), microphone=(), geolocation=()"

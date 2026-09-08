@@ -18,6 +18,14 @@ class CashShiftService:
 
     @staticmethod
     def open_shift(db: Session, actor: User, *, opening_cash: int = 0, site_id: int | None = None) -> CashShift:
+        if site_id is None:
+            from expansion.site_models import ParkingSite
+            sites = list(db.scalars(select(ParkingSite.id).limit(2)))
+            if len(sites) > 1:
+                raise HTTPException(409, "Hãy chọn bãi và mở ca trong mục Vận hành bãi.")
+            # Legacy installations with no site remain compatible until rollout
+            # creates their default site. Never create new unscoped multi-site shifts.
+            site_id = sites[0] if sites else None
         if site_id is not None:
             from expansion.site_scope import require_site_access
             require_site_access(db, actor, site_id)

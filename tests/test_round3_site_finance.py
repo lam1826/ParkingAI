@@ -10,6 +10,23 @@ from services.parking_service import ParkingService
 from models.role import Role
 
 
+def test_admin_cannot_open_new_unscoped_shift_when_multiple_sites_exist(env):
+    from fastapi import Depends
+    from routers.cash_shift import router as cash_router
+    from expansion.system_router import require_legacy_workspace
+    env.client.app.include_router(cash_router, prefix="/api/v1/cash-shifts", dependencies=[Depends(require_legacy_workspace)])
+    role = env.db.scalar(select(Role).where(Role.name == "admin"))
+    if role is None:
+        role = Role(name="admin"); env.db.add(role); env.db.flush()
+    env.staff.role = role
+    env.db.commit()
+    response = env.client.post("/api/v1/cash-shifts", json={"opening_cash": 0})
+    assert response.status_code == 409, response.text
+    assert env.db.scalars(select(CashShift)).all() == []
+    scoped = env.client.post(f"/api/v2/sites/{env.a.id}/cash-shifts", json={"opening_cash": 0})
+    assert scoped.status_code == 201 and scoped.json()["site_id"] == env.a.id
+
+
 def test_scoped_shift_open_close_and_foreign_site_denial(env):
     root = f"/api/v2/sites/{env.a.id}"
     opened = env.client.post(root + "/cash-shifts", json={"opening_cash": 100000})
