@@ -4,6 +4,8 @@ Ngày truy cập nguồn: **08/09/2026**. Baseline mã ParkingAI khi khảo sát
 
 Phạm vi hiện tại là **một bãi để trình diễn và nộp đồ án**: FastAPI/React, PostgreSQL/SQLite, Fly 1 CPU/1 GB, điện thoại chụp hoặc tải ảnh, QR mô phỏng, Gemini tắt. Tài liệu này ghi kết quả nghiên cứu và đề xuất; **không xác nhận các đề xuất đã được triển khai hoặc phát hành**. Kết quả triển khai phải đối chiếu commit và bằng chứng kiểm thử riêng. Phạm vi nhiều bãi trong `REVIEW_ROUND3_RESEARCH.md` là lịch sử, không phải yêu cầu mở rộng hiện tại.
 
+Kết quả áp dụng ba tối ưu đã chọn được theo dõi tại [SINGLE_SITE_OPTIMIZATION.md](SINGLE_SITE_OPTIMIZATION.md), tách khỏi nhận xét từ nguồn tham khảo trong tài liệu này.
+
 ## 1. Kết luận áp dụng
 
 Nên tối ưu các luồng đã có trước khi thêm model hoặc hạ tầng: tra chỗ trống ít truy vấn hơn, danh sách nhận diện không tải dữ liệu ảnh không dùng, và ghép các đoạn chữ biển số theo hình học thay vì chia tọa độ Y thành các dải cố định. Đây là ba cải tiến nhỏ, có thể đo và giải thích được khi bảo vệ đồ án.

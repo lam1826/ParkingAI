@@ -1,11 +1,23 @@
 # ParkingAI — release gate vòng 3, 08/09/2026
 
-**Overall: READY cho trình diễn đồ án online trong phạm vi dưới đây.** Bản một bãi được đối chiếu lúc22:08 ngày08/09/2026 (UTC+7); bằng chứng lịch sử vòng3 được giữ riêng bên dưới. Nghiệm thu điện thoại vật lý vẫn chưa hoàn tất.
+**Overall: READY cho trình diễn đồ án online trong phạm vi dưới đây.** Bản tối ưu một bãi `3afc56c` đã phát hành và kiểm tra sau CD ngày 08/09/2026 (UTC+7); bằng chứng các release trước giữ riêng bên dưới. Nghiệm thu điện thoại vật lý vẫn chưa hoàn tất.
 
 Phạm vi nộp bài hiện tại: **một bãi**, QR mô phỏng, Gemini tắt, nhân viên duyệt biển số, dùng website hiện tại. Khả năng nhiều bãi đã được kiểm tra ở vòng3 là bằng chứng lịch sử, không phải yêu cầu mở rộng tiếp. Đây không phải nghiệm thu vận hành bãi thật.
 
 
-## Bổ sung theo yêu cầu một bãi và nghiệm thu camera
+## Bản tối ưu từ hệ thống AI tham khảo — hiện tại
+
+Đã tham khảo bảy hệ thống/dự án, sửa ba vấn đề có ca tái hiện: availability N+1, đọc BLOB thừa trong danh sách ảnh và đảo thứ tự chữ OCR. Không đổi schema, model, cấu hình Fly hoặc phạm vi một bãi. Bằng chứng nguồn, phép đo trước/sau và giới hạn: [SINGLE_SITE_OPTIMIZATION.md](SINGLE_SITE_OPTIMIZATION.md).
+
+- Application `3afc56cad9cd6a4d43f56eb96766c7006141dd0f`; [CI34246127629](https://github.com/lam1826/ParkingAI/actions/runs/34246127629) và [CD34247663250](https://github.com/lam1826/ParkingAI/actions/runs/34247663250) thành công. Linux 1.235 passed/21 skipped, PostgreSQL: 17 passed, Windows release safety: 190 passed/1 skipped; frontend: 139 passed/lint/build. Docker OCR 6 ảnh, 1 CPU/640 MiB, đỉnh 350,6 MiB.
+- Recovery gate đạt với backup Supabase hoàn tất `2026-09-07T16:54:11.668000+00:00`; đã lưu snapshot ứng dụng trước thay đổi. Không restore DB lại trong bản không đổi schema; bằng chứng restore PG17 vòng 3 vẫn ở phần lịch sử. CD xác nhận đúng SHA/ready/CORS lúc 22:55 UTC+7.
+- 18 kiểm tra API sau CD đạt, gồm một upload OCR có nhãn/quyền sử dụng; ảnh được nhận dạng và vẫn chờ xác nhận, không tạo lượt gửi hoặc thanh toán. OCR lượt này 9,683 giây; không phải p95 hoặc accuracy. 31 kiểm tra giao diện bốn vai trò đạt, không lỗi JavaScript; có 4 cảnh báo Cloudflare CSP đã biết. Hai nhóm có phần kiểm trùng, không cộng thành số ca duy nhất; viewport không tính là điện thoại thật.
+- Bundle `/assets/index-DU4U-j2Z.js` khớp SHA256 `072e94f8fda1a12e1d96324b5133a89d0762614dccbee705314bf28ce342d505`; `SINGLE_SITE_ID: 2` giữ nguyên. Artifact thô ở `backend/artifacts/single-site-optimization/` ngoài Git.
+- OCR trực tiếp trên crop 457/500; cả YOLO/OCR trên crop 64/500; pilot toàn xe 20/20 cùng 9 FP. Đây là corpus hồi quy, không phải accuracy website hoặc test set độc lập. Điện thoại vật lý và nhãn pilot do người kiểm vẫn PENDING.
+
+Backlog hiện tại 16 ticket: 13 DONE, PARK-209 IN_PROGRESS, PARK-210 DEFERRED_BY_USER, PARK-211 OPEN/FUTURE. PARK-214/215/216 DONE cho ba tối ưu; PARK-211 không còn lặp lại N+1, giữ phép đo tải API thực tế nếu cần sau đồ án. Commit biên bản chỉ đổi tài liệu, không là release ứng dụng mới.
+
+## Lịch sử giao diện một bãi trước bản tối ưu
 
 Phạm vi nộp bài đã thu gọn còn một bãi (demo A, ID2). Ứng dụng `76ef211821c52c3e5fae11bb5c980dcd8cabd35c` đã qua139 test/lint/build,33 kiểm tra trình duyệt cục bộ và31 kiểm tra trên website sau CD, gồm đăng nhập bốn vai trò và OCR status available. Lượt online không ghi nghiệp vụ hoặc upload ảnh, không có lỗi JavaScript; có bốn cảnh báo beacon Cloudflare bị CSP chặn đã được người dùng hoãn xử lý. Trước khi API triển khai có30 kiểm tra online; không cộng hai lượt thành61 ca độc lập. Mô phỏng viewport không tính là điện thoại thật. API/schema/model không đổi trong bản này.
 
@@ -58,7 +70,7 @@ Sau khi CI/CD của bản sửa đạt, đã bật lại engine và thử API: c
 - QR không chuyển tiền; Gemini tắt; OCR không điều khiển barie, tự nhận/trả xe hay thu tiền.
 - Không có kết quả tải lớn, video liên tục, độ bền dài hạn, SLA hay đối soát cổng ngân hàng. PARK-211 và các mục FUTURE.
 
-Không còn gate bắt buộc thất bại trong phạm vi trình diễn đã chốt. Backlog có13 ticket vòng3:10 DONE,1 FUTURE còn mở,1 IN_PROGRESS (PARK-209),1 Cloudflare hoãn theo người dùng. Các phần chưa có bằng chứng ở trên được giữ riêng, không gọi là đã hoàn thành cho bãi thật.
+Không còn gate bắt buộc thất bại trong phạm vi trình diễn đã chốt. Tại mốc trước bản tối ưu, backlog có13 ticket vòng3:10 DONE,1 FUTURE còn mở,1 IN_PROGRESS (PARK-209),1 Cloudflare hoãn theo người dùng. Các phần chưa có bằng chứng ở trên được giữ riêng, không gọi là đã hoàn thành cho bãi thật.
 
 **Vận hành bãi thật: NOT READY.** Cần nghiệm thu các phần trên với dữ liệu, thiết bị, chính sách nghiệp vụ và phương án vận hành thực tế. Kết luận này độc lập với việc trình diễn đồ án.
 

@@ -261,21 +261,22 @@
     "pr": "FUTURE",
     "priority": "P3",
     "classification": "FUTURE",
-    "summary": "Measure slot availability queries at larger scale",
-    "problem": "Per-slot checks may cause query growth; latency impact not demonstrated.",
-    "evidence": "Read-only benchmark on isolated data",
+    "summary": "Measure realistic single-site API load when required",
+    "problem": "The N+1 query issue is addressed by PARK-214. Local service timings do not establish production HTTP latency or concurrency capacity.",
+    "evidence": "docs/SINGLE_SITE_OPTIMIZATION.md: isolated SQLite 10/100/500-slot benchmark; actual PostgreSQL correctness test in CI. No production load test.",
     "dependencies": [
-      "PARK-208"
+      "PARK-214"
     ],
     "acceptance_criteria": [
-      "Measure SQL count and p95 for increasing slots/sites",
-      "Optimize only when improvement is demonstrated without weakening guards"
+      "If operational scale is required, define realistic one-site occupancy and booking distributions on an isolated PostgreSQL clone",
+      "Measure HTTP p95, SQL count, memory and concurrency without benchmarking against the live demo",
+      "Keep admission and ownership guards; do not expand to multiple sites for school submission"
     ],
-    "test": "Read-only benchmark on isolated data",
-    "migration": "Only if measurement justifies it",
+    "test": "Future isolated one-site API load test; local service baseline already recorded by PARK-214",
+    "migration": "None unless later measurements justify it",
     "rollback": "Revert measured optimization",
     "status": "OPEN",
-    "online_acceptance": "PENDING",
+    "online_acceptance": "FUTURE; no live load test planned for school submission",
     "spec": "intent.md; plan.md approved round3 section",
     "owner": "ParkingAI"
   },
@@ -330,5 +331,80 @@
     "spec": "User scope correction 2026-09-08; docs/PHONE_VN_ACCEPTANCE.md",
     "owner": "ParkingAI",
     "ci_evidence": "CI34241074566 success: Linux1216pass/19skip; PG16pass; Windows190pass/1skip; frontend139pass/lint/build; isolated OCR6 samples, peak345.1MiB. CD34242469234 success including backup gate."
+  },
+  {
+    "key": "PARK-214",
+    "pr": "SINGLE-SITE OPTIMIZATION",
+    "priority": "P2",
+    "classification": "FIX",
+    "summary": "Batch one-site availability commitment queries",
+    "problem": "100 empty slots caused 201 SELECTs inside the availability service.",
+    "evidence": "Before/after RED/GREEN: 100 slots: 201 to 1 SELECT; 10 slots: 21 to 1. Site already loaded; excludes authentication queries.",
+    "dependencies": [
+      "PARK-213"
+    ],
+    "acceptance_criteria": [
+      "Bound query count as slot count grows",
+      "Keep future commitments, deadline/end boundaries and read-only behavior",
+      "Keep admission locks and revalidation",
+      "Pass isolated PostgreSQL and online availability check"
+    ],
+    "test": "tests/test_expansion_sites.py; tests/test_round3_postgres.py",
+    "migration": "None; no schema/model/resource changes",
+    "rollback": "Restore application 76ef211 and matching frontend; preserve database records",
+    "status": "DONE",
+    "online_acceptance": "PASS on release3afc56c: CI34246127629/CD34247663250; 18 API checks incl one OCR upload, 31 read-only browser checks/four roles. No physical-phone or general accuracy claim. See docs/SINGLE_SITE_OPTIMIZATION.md.",
+    "spec": "docs/RESEARCH_SINGLE_SITE_AI_PARKING.md; docs/SINGLE_SITE_OPTIMIZATION.md",
+    "owner": "ParkingAI"
+  },
+  {
+    "key": "PARK-215",
+    "pr": "SINGLE-SITE OPTIMIZATION",
+    "priority": "P2",
+    "classification": "FIX",
+    "summary": "Keep private image blobs out of observation metadata lists",
+    "problem": "The list query loaded image_bytes although serialization did not use it.",
+    "evidence": "SQL assertion failed before defer/raiseload and passed after; image endpoint still reads authorized image.",
+    "dependencies": [
+      "PARK-205"
+    ],
+    "acceptance_criteria": [
+      "List SQL must omit image_bytes without a lazy reload",
+      "Keep authorized image retrieval and foreign-image denial",
+      "Pass online metadata list and image checks"
+    ],
+    "test": "tests/test_expansion_vision_api.py",
+    "migration": "None; no schema/model/resource changes",
+    "rollback": "Restore application 76ef211 and matching frontend; preserve database records",
+    "status": "DONE",
+    "online_acceptance": "PASS on release3afc56c: CI34246127629/CD34247663250; 18 API checks incl one OCR upload, 31 read-only browser checks/four roles. No physical-phone or general accuracy claim. See docs/SINGLE_SITE_OPTIMIZATION.md.",
+    "spec": "docs/RESEARCH_SINGLE_SITE_AI_PARKING.md; docs/SINGLE_SITE_OPTIMIZATION.md",
+    "owner": "ParkingAI"
+  },
+  {
+    "key": "PARK-216",
+    "pr": "SINGLE-SITE OPTIMIZATION",
+    "priority": "P2",
+    "classification": "FIX",
+    "summary": "Preserve OCR row order on slightly sloped plates",
+    "problem": "Fixed 10 px y buckets reversed text boxes belonging to one physical row.",
+    "evidence": "Geometry RED/GREEN; real pinned corpus: direct OCR: 456 to 457 of 500, no right-to-wrong regression; full pipeline 64/500 and full-frame pilot 20/20 plus 9 FP unchanged.",
+    "dependencies": [
+      "PARK-209",
+      "PARK-212"
+    ],
+    "acceptance_criteria": [
+      "Keep left-to-right order within physical rows across image scales",
+      "Retain separate motorcycle rows and human confirmation",
+      "Compare fixed corpora without presenting crop OCR as website accuracy",
+      "Pass memory gate and online OCR smoke"
+    ],
+    "test": "tests/test_vision_runtime_budget.py; tests/test_plate_evaluation.py; edge/evaluate_plates.py",
+    "migration": "None; no schema/model/resource changes",
+    "rollback": "Restore application 76ef211 and matching frontend; preserve database records",
+    "status": "DONE",
+    "online_acceptance": "PASS on release3afc56c: CI34246127629/CD34247663250; 18 API checks incl one OCR upload, 31 read-only browser checks/four roles. No physical-phone or general accuracy claim. See docs/SINGLE_SITE_OPTIMIZATION.md.",
+    "spec": "docs/RESEARCH_SINGLE_SITE_AI_PARKING.md; docs/SINGLE_SITE_OPTIMIZATION.md",
+    "owner": "ParkingAI"
   }
 ]

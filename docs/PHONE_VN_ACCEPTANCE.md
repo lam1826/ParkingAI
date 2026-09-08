@@ -85,6 +85,10 @@ Archive crop SHA-256: `34c5c11d6bd73e9f403a67d8b970c598a144d74a8e4e23689876e3caf
 
 Kết quả từng ảnh và dữ liệu gốc: `backend/artifacts/phone-vn-acceptance/`. Mọi tỷ lệ chỉ mô tả mẫu đã đo. Tập huấn luyện model publisher không được công bố nên chưa xác minh được không trùng dữ liệu training. Khoảng Wilson trong JSON là mô tả có điều kiện, không thay cho lấy mẫu đại diện ngoài bãi.
 
+### 3.4. Đối chiếu sau sửa thứ tự dòng OCR
+
+Bản tối ưu `3afc56c` giữ model và cả hai manifest ở trên. OCR trực tiếp đạt457/500 (91,4%): ô tô225/250, xe máy232/250; trước đó456/500. Một ảnh từ sai thành đúng, không có ảnh trước đúng thành sai. Cả YOLO→OCR trên crop vẫn64/500; pilot20frame vẫn20đúng và9box thừa. Đây là kiểm tra hồi quy trên tập cũ, không phải bằng chứng accuracy website91,4% hoặc khả năng tổng quát tăng. [Chi tiết thay đổi và phát hành](SINGLE_SITE_OPTIMIZATION.md).
+
 ## 4. Biên bản và phần còn thiếu
 
 | Hạng mục | Trạng thái hiện tại |

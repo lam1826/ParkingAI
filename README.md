@@ -6,6 +6,8 @@ Hệ thống quản lý bãi đỗ xe dùng FastAPI, React, SQLite và Gemini. H
 
 Bản nộp đồ án trên website hiện tại tập trung vào **một bãi**, với cổng khách hàng, QR thanh toán mô phỏng, đặt chỗ/danh sách chờ, camera điện thoại dùng YOLO/OCR và dự báo theo lịch sử. Xem [hướng dẫn bản một bãi](docs/ROUND3_OPERATIONS.md) và [nghiệm thu camera/biển Việt Nam](docs/PHONE_VN_ACCEPTANCE.md). Mã nền vẫn giữ khả năng nhiều bãi đã triển khai trước đây; phần này không thuộc kịch bản nộp bài hiện tại. Bộ chạy demo SQLite riêng bên dưới vẫn dùng cấu hình tổng quát và phục vụ giao diện/API cùng địa chỉ qua Wi-Fi.
 
+Tham khảo bảy hệ thống/dự án AI và các tối ưu đã đo: [nghiên cứu](docs/RESEARCH_SINGLE_SITE_AI_PARKING.md), [kết quả tối ưu một bãi](docs/SINGLE_SITE_OPTIMIZATION.md).
+
 ```powershell
 ./scripts/start_demo.ps1       # Máy tính: http://localhost:8765
 ./scripts/start_demo.ps1 -Lan  # Điện thoại cùng Wi-Fi

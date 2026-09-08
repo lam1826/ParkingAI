@@ -2,23 +2,26 @@
 
 ## Tối ưu đồ án một bãi từ hệ thống AI tham khảo — 08/09/2026
 
-**Objective / scope:** đối chiếu hệ thống parking AI lớn và mã nguồn mở với bản `8182c3f`; chọn cải tiến có tác dụng cho một bãi trên CPU1GB. Giữ FastAPI/React, QR mô phỏng, Gemini tắt, nhân viên xác nhận biển. Không thêm nhiều bãi, stream camera, dịch vụ trả phí hoặc thay model khi chưa có đối chứng.
+**Objective / scope:** đối chiếu hệ thống parking AI lớn và mã nguồn mở với bản `8182c3f`; chọn cải tiến có tác dụng cho một bãi trên cấu hình 1 CPU/1 GB. Giữ FastAPI/React, QR mô phỏng, Gemini tắt, nhân viên xác nhận biển. Không mở rộng nhiều bãi, video liên tục, dịch vụ trả phí hoặc thay model khi chưa có đối chứng.
 
-**Context:** `site_service.availability` gọi hai truy vấn cam kết cho từng chỗ trống; `vision_router.observations` tải cả BLOB ảnh khi chỉ trả metadata; OCR đang sắp chữ theo các dải y cố định10px. Benchmark Việt Nam trước đây phân biệt rõ crop OCR456/500 và YOLO/OCR trên crop64/500; không dùng chúng như accuracy website.
+**Context:** availability có hai truy vấn cam kết cho mỗi chỗ trống; danh sách observation tải cả BLOB ảnh; OCR sắp chữ theo dải y cố định 10 px có thể đảo chữ cùng dòng. Các vấn đề đã được tái hiện trước khi sửa.
 
 **Implementation / verification:**
-- [x] Nghiên cứu bảy hệ thống/dự án chính chủ, ghi license/revision và KEEP/ADAPT/FUTURE trong `docs/RESEARCH_SINGLE_SITE_AI_PARKING.md`; không cài model/stack tham khảo.
-- [x] Tái hiện availability10chỗ21SQL/100chỗ201SQL; sau sửa đều1SQL trong service khi site đã nạp. Dùng chung predicate với admission, giữ khóa;11 ca trạng thái/thời điểm đạt, thêm ca PostgreSQL chờ CI.
-- [x] Test SQL của danh sách ảnh thất bại trước sửa, đạt sau defer BLOB với raiseload; endpoint ảnh riêng vẫn đọc được khi có quyền.
-- [x] Tái hiện chữ cùng dòng bị đảo bởi bucket10px; helper dùng chồng lấp dọc, có test hai dòng/nhiều tỷ lệ. Cùng manifest/model500crop: OCR456→457, một ảnh từ sai thành đúng/không ảnh đúng thành sai; pipeline64 không đổi. Pilot20frame vẫn20đúng/9FP. Chỉ coi là regression trên tập cũ, không khẳng định accuracy tổng quát tăng.
-- [x] Hướng dẫn chụp có phần xe xung quanh và phục hồi khi no_plate;8 kiểm tra desktop/mobile với OCR giả lập đạt, đã xem ảnh render. Không coi viewport là điện thoại thật.
-- [ ] Regression liên quan, frontend test/lint/build, CI PostgreSQL/Windows và OCR memory gate; backup gate, đúng SHA và UAT sau phát hành nếu các gate đạt. Cập nhật bằng chứng và ticket theo kết quả thật.
 
-**Risks:** lệch ngữ nghĩa future booking, vô tình lazy-load ảnh, đọc sai hai dòng sau đổi sort. Dùng cùng thời điểm server cho truy vấn, đối chiếu admission guard và giữ corpus/hash trước đo; không benchmark tải cạnh API production. Số đo cục bộ không suy ra p95 production hoặc accuracy Việt Nam tổng quát.
+- [x] Nghiên cứu bảy hệ thống/dự án chính chủ, ghi license/revision và quyết định trong `docs/RESEARCH_SINGLE_SITE_AI_PARKING.md`; không cài model/stack tham khảo.
+- [x] Availability 10 chỗ: 21→1 SELECT; 100 chỗ: 201→1 SELECT trong service khi site đã nạp. Dùng chung predicate với admission, giữ khóa. Test thời điểm/trạng thái, PostgreSQL thật và benchmark SQLite 10/100/500 chỗ đạt; không suy ra tốc độ production.
+- [x] Danh sách observation defer BLOB/raiseload; test SQL và quyền đọc ảnh đạt.
+- [x] Gom chữ OCR theo chồng lấp dọc, giữ thứ tự từng dòng; test nhiều tỷ lệ. Cùng manifest/model: OCR crop 456→457/500, không ảnh đúng thành sai; cả pipeline 64/500 không đổi. Pilot 20 frame vẫn 20 đúng/9 FP. Đây là hồi quy trên tập đã dùng, không phải accuracy tổng quát.
+- [x] Hướng dẫn chụp giữ một phần xe và phục hồi khi no_plate; 8 kiểm tra desktop/mobile với OCR giả lập đạt; đã xem ảnh render.
+- [x] 110 test liên quan cục bộ; CI Linux 1.235 passed/21 skipped, PostgreSQL 17 passed, Windows release safety 190 passed/1 skipped; frontend 139 passed/lint/build. Gate Docker OCR một CPU/640 MiB xử lý 6 ảnh, đỉnh 350,6 MiB.
+- [x] CI34246127629/CD34247663250 thành công, gồm Supabase recovery gate. Website/API khớp `3afc56c`; 18 kiểm tra API với một ảnh thử và 31 kiểm tra giao diện bốn vai trò sau CD đạt. Chi tiết, snapshot, backup/restore và rollback: `docs/SINGLE_SITE_OPTIMIZATION.md`.
+- [x] Cập nhật release gate, PARK-214/215/216 DONE và JSON/CSV cùng dữ liệu. PARK-209 còn IN_PROGRESS; PARK-211 thu gọn FUTURE về tải API một bãi.
 
-**Rollback / recovery:** thay đổi dự kiến không cần schema/model mới; quay lại application SHA trước nếu regression. Giữ dữ liệu/chứng từ; backup trước cập nhật website theo quy trình hiện có. Nghiên cứu do agent độc lập viết một file; main phụ trách sửa mã, test và phát hành.
+**Risks / limits:** giữ future commitment, deadline/end, quyền sở hữu và xác nhận nhân viên. Không benchmark tải trên Fly. Bộ crop/pilot đã dùng không phải test set độc lập; chưa có chụp vật lý iQOO/iPhone. Có cảnh báo beacon Cloudflare bị CSP chặn đã được người dùng hoãn xử lý.
 
-**Open questions / status:** đang kiểm chứng ba giả thuyết tối ưu; chụp vật lý iQOO/iPhone vẫn chờ người dùng. Không mở lại yêu cầu mở rộng nhiều bãi.
+**Rollback / recovery:** không đổi schema/model/tài nguyên. Quay lại application `76ef211` và frontend tương ứng nếu hồi quy; giữ dữ liệu/chứng từ. Snapshot trước cập nhật, recovery gate và bằng chứng restore PG17 hiện có được ghi riêng; không coi snapshot frontend là backup database.
+
+**Status:** đã phát hành ba tối ưu và nghiệm thu online trong phạm vi đồ án một bãi. READY cho demo; NOT READY cho vận hành bãi thật. Chờ thao tác điện thoại và tập ảnh Việt Nam đại diện trước khi kết luận rộng hơn.
 
 ## PARK-209 — nghiệm thu điện thoại thật và biển Việt Nam (08/09/2026)
 
