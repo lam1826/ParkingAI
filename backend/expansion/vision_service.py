@@ -13,6 +13,7 @@ import warnings
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
+from time import perf_counter
 
 from fastapi import HTTPException
 from PIL import Image, ImageOps, UnidentifiedImageError
@@ -130,8 +131,12 @@ class YoloRapidOCR:
         import onnxruntime as ort
         from rapidocr_onnxruntime import RapidOCR
 
+        expected = os.getenv("PARKING_VISION_MODEL_SHA256", "")
+        if expected and (not re.fullmatch(r"[a-f0-9]{64}", expected) or hashlib.sha256(Path(model_path).read_bytes()).hexdigest() != expected):
+            raise ValueError("Model checksum verification failed")
+
         options = ort.SessionOptions()
-        options.intra_op_num_threads = 2
+        options.intra_op_num_threads = 1
         options.inter_op_num_threads = 1
         self.detector = ort.InferenceSession(str(model_path), sess_options=options, providers=["CPUExecutionProvider"])
         self.input = self.detector.get_inputs()[0]
@@ -146,7 +151,7 @@ class YoloRapidOCR:
             raise ValueError("Generic COCO weights are not license-plate weights")
         # RapidOCR 1.4.4 distributes its PaddleOCR ONNX models inside the wheel.
         # Missing package/model files raise; this adapter never downloads them.
-        self.ocr = RapidOCR(intra_op_num_threads=2, inter_op_num_threads=1)
+        self.ocr = RapidOCR(intra_op_num_threads=1, inter_op_num_threads=1)
 
     def recognize(self, image):
         import numpy as np
@@ -187,7 +192,9 @@ class YoloRapidOCR:
             scores = [float(line[2]) for line in lines if math.isfinite(float(line[2]))]
             text_confidence = min(scores) if scores else 0.0
             selected.append({"box": box, "plate": plate, "confidence": round(min(1.0, max(0.0, confidence * text_confidence)), 4),
-                             "detector_confidence": round(min(1.0, confidence), 4)})
+                             "detector_confidence": round(min(1.0, confidence), 4),
+                             "ocr_confidence": round(min(1.0, max(0.0, text_confidence)), 4),
+                             "text_lines": [str(line[1])[:40] for line in lines[:8]]})
             if len(selected) >= 5:
                 break
         return selected
@@ -199,7 +206,8 @@ def recognize_image(image):
     if not configured_ready:
         return {"ocr_status": "unavailable", "engine": configured, "detections": [], "suggested_plate": None, "confidence": None}
     if not _inference_lock.acquire(blocking=False):
-        raise HTTPException(429, "Bộ nhận diện đang xử lý ảnh khác. Thử lại sau vài giây.")
+        raise HTTPException(429, "Bộ nhận diện đang xử lý ảnh khác. Thử lại sau vài giây.", headers={"Retry-After": "3"})
+    started = perf_counter()
     try:
         path = Path(os.environ["PARKING_VISION_MODEL"]).resolve()
         with _engine_lock:
@@ -217,10 +225,13 @@ def recognize_image(image):
         raise
     except Exception:
         # Do not expose model paths, external-library traces, or OCR snippets.
-        logger.exception("Local license-plate engine failed")
+        from middleware.request_context import request_id_context
+        logger.error("vision_inference_failed request_id=%s", request_id_context.get())
         _last_engine_error = business_now().replace(tzinfo=BUSINESS_TZ).isoformat()
         return {"ocr_status": "error", "engine": "yolo_rapidocr", "detections": [], "suggested_plate": None, "confidence": None}
     finally:
+        from middleware.request_context import request_id_context
+        logger.info("vision_inference_completed request_id=%s duration_ms=%d", request_id_context.get(), round((perf_counter() - started) * 1000))
         _inference_lock.release()
 
 

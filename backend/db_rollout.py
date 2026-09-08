@@ -130,6 +130,7 @@ from expansion_rollout import (
 )
 from models.cash_shift import SHIFT_SQLITE_CLOSE_TRIGGER, SHIFT_SQLITE_TRIGGERS
 from models.payment import PAYMENT_SQLITE_SOURCE_TRIGGERS, PAYMENT_SQLITE_TRIGGERS
+from site_finance_guards import SITE_FINANCE_SQLITE_GUARDS
 from finance_rollout import MONTHLY_CARD_SQLITE_TRIGGERS, backfill_legacy_finance, validate_finance_invariants
 
 
@@ -254,6 +255,7 @@ _REQUIRED_TRIGGER_SQL = {
     ),
 }
 _REQUIRED_TRIGGER_SQL.update(BOOLEAN_DOMAIN_TRIGGER_SQL)
+_REQUIRED_TRIGGER_SQL.update(SITE_FINANCE_SQLITE_GUARDS)
 _REQUIRED_TRIGGER_SQL.update(SITE_SQLITE_GUARDS)
 _REQUIRED_TRIGGER_SQL.update(ZONE_COMMITMENT_SQLITE_GUARDS)
 _REQUIRED_TRIGGER_SQL["trg_payment_demo_boundary"] = DEMO_SQLITE_GUARD_SQL

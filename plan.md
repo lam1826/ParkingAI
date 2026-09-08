@@ -1,5 +1,21 @@
 # Plan
 
+## Vòng 3 — kế hoạch đã được người dùng duyệt 08/09/2026
+- [x] PR-01: system map, 14 mục review, research, benchmark và backlog cập nhật.
+- [x] PR-02: kiểm chứng correctness/security, nhất là cap đặt chỗ nhiều xe cùng khách.
+- [x] PR-03: chốt ca/chứng từ/doanh thu theo bãi; sửa khu/chỗ trong phạm vi bãi.
+- [x] PR-04: phân loại audit v2, request ID, timing và log worker.
+- [ ] PR-05: đóng gói YOLO/OCR online, bằng chứng crop/candidates/model; đo tài nguyên.
+- [x] PR-06: so sánh ba baseline và đo coverage khoảng ước lượng.
+- [x] PR-07: UX bốn vai trò và mobile, xử lý lỗi/thao tác lặp.
+- [ ] PR-08: backup và restore rehearsal, deploy đúng SHA, seed namespace riêng, UAT online, bàn giao.
+
+Quyết định: website hiện tại là nơi trình diễn; YOLO chạy trên Fly hiện có, chưa tăng gói. Gemini tắt; QR mock. Bổ sung nullable site_id cho ca/chứng từ, dữ liệu lịch sử không suy diễn bãi. API v1 giữ nguyên boundary; API mới theo v2/sites. Mật khẩu ngẫu nhiên lưu file ignored; không reset database.
+
+Trạng thái trước phát hành: PG16 thực 16 ca tranh chấp/integration đạt; PG17 phục hồi dump public schema 36 bảng khớp số dòng, clone nâng revision và seed/replay đạt. Frontend 134 test/lint/build đạt; browser 19 ca với bốn vai trò và viewport mobile đạt. OCR đã build image và đo trên Fly 1 GB, còn chờ UAT API sau deploy; chưa nghiệm thu accuracy biển Việt Nam hoặc điện thoại vật lý. Lỗi cap nhiều xe được tái hiện đỏ trước sửa. Runbook: docs/ROUND3_OPERATIONS.md; ticket JSON/CSV: docs/tickets/round3-tickets.*. Full regression cuối và phát hành đang tiếp tục; chưa coi các dấu hoàn tất cài đặt ở trên là nghiệm thu production.
+
+Kiểm tra từng batch trước khi chuyển tiếp: focused tests, regression liên quan, SQLite/PostgreSQL, frontend test/lint/build, Docker, CI, backup/recovery, release SHA và UAT. Rollback code nếu schema tương thích; không tự downgrade hoặc xóa chứng từ phát sinh. Mọi trạng thái bên dưới là lịch sử trước vòng 3.
+
 ## Objective
 Hoàn thiện bản đồ án ParkingAI với cổng khách hàng, QR thanh toán mô phỏng, đặt chỗ, quản lý nhiều bãi thuộc cùng đơn vị và camera điện thoại dùng YOLO/OCR.
 

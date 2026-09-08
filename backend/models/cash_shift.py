@@ -25,6 +25,7 @@ class CashShift(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     staff_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    site_id: Mapped[int | None] = mapped_column(ForeignKey("parking_sites.id"), index=True)
     opened_at: Mapped[datetime] = mapped_column(DateTime, default=business_now)
     closed_at: Mapped[datetime | None] = mapped_column(DateTime)
     opening_cash: Mapped[int] = mapped_column(VND_DATABASE_TYPE, default=0)

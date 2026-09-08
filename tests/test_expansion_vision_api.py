@@ -146,7 +146,8 @@ def test_engine_failure_is_logged_and_reported_until_a_success(tmp_path, monkeyp
     assert result["ocr_status"] == "error"
     assert status["available"] is False and status["degraded"] is True
     assert status["last_error"]
-    assert "private model path" in caplog.text
+    assert "vision_inference_failed" in caplog.text
+    assert "private model path" not in caplog.text
 
     class Recovered:
         def recognize(self, _image):

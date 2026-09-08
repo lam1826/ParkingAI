@@ -883,6 +883,22 @@ def run_sqlite_migrations(target_engine=engine) -> None:
     if not str(target_engine.url).startswith("sqlite"):
         return
     with target_engine.begin() as conn:
+        # Add nullable attribution only: legacy rows must not acquire guessed sites.
+        additions = {
+            "cash_shifts": {"site_id": "INTEGER REFERENCES parking_sites(id)"},
+            "payments": {"site_id": "INTEGER REFERENCES parking_sites(id)"},
+            "audit_logs": {"request_id": "VARCHAR(64)", "site_id": "INTEGER", "duration_ms": "INTEGER"},
+        }
+        for table, fields in additions.items():
+            present = {row[1] for row in conn.exec_driver_sql(f"PRAGMA table_info({table})")}
+            if present:
+                from expansion.site_models import ParkingSite
+                ParkingSite.__table__.create(bind=conn, checkfirst=True)
+                for column, sql_type in fields.items():
+                    if column not in present:
+                        conn.exec_driver_sql(f"ALTER TABLE {table} ADD COLUMN {column} {sql_type}")
+                    if column != "duration_ms":
+                        conn.exec_driver_sql(f"CREATE INDEX IF NOT EXISTS ix_{table}_{column} ON {table}({column})")
         zone_columns = {row[1] for row in conn.exec_driver_sql("PRAGMA table_info(zones)")}
         if zone_columns:
             # SQLite resolves even a NULL foreign key's parent table on later

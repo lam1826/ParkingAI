@@ -19,12 +19,15 @@ def read_audit_logs(
     action: Optional[str] = Query(None),
     username: Optional[str] = Query(None, max_length=50),
     success: Optional[bool] = Query(None),
+    request_id: Optional[str] = Query(None, max_length=64, pattern=r"^[A-Za-z0-9._-]{1,64}$"),
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=500),
 ):
     query = db.query(AuditLog)
     if action:
         query = query.filter(AuditLog.action == action.upper())
+    if request_id:
+        query = query.filter(AuditLog.request_id == request_id)
     if username:
         query = query.filter(AuditLog.username.ilike(f"%{username.strip()}%"))
     if success is not None:

@@ -38,7 +38,7 @@ _upload_gate = threading.BoundedSemaphore(value=1)
 async def _admit_upload():
     """Shed concurrent camera work before authentication opens a DB session."""
     if not _upload_gate.acquire(blocking=False):
-        raise HTTPException(429, "Hệ thống đang xử lý một ảnh khác. Vui lòng thử lại sau vài giây.")
+        raise HTTPException(429, "Hệ thống đang xử lý một ảnh khác. Vui lòng thử lại sau vài giây.", headers={"Retry-After": "3"})
     try:
         yield
     finally:

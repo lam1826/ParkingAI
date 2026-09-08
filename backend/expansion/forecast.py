@@ -71,7 +71,8 @@ def build_forecast(arrivals, departures, now, horizon_hours=24):
     coverage = _coverage(arrivals, departures, start, cutoff, days)
     base = {"status": "insufficient_data", "model": "same_weekday_hour_mean", "as_of": now.replace(tzinfo=BUSINESS_TZ).isoformat(),
             "coverage": coverage,
-            "backtest": {"method": "rolling_origin", "mae": None, "baseline_mae": None, "samples": 0}, "predictions": [],
+            "backtest": {"method": "rolling_origin", "mae": None, "baseline_mae": None, "samples": 0,
+                         "baselines": {}, "interval_coverage": None, "interval_samples": 0}, "predictions": [],
             "warnings": ["Giờ không có bản ghi được xem là 0 lượt; cần đối chiếu nhật ký mất dữ liệu trước khi sử dụng dự báo.",
                          "Khoảng dự báo phản ánh biến động lịch sử, chưa được hiệu chuẩn bằng dữ liệu camera thực tế."]}
     if coverage["sparse_history"]:
@@ -82,17 +83,31 @@ def build_forecast(arrivals, departures, now, horizon_hours=24):
         return base
     # Every target sees only earlier weekly buckets. Test labels never enter
     # its predictor, even though the complete history is in memory.
-    errors, naive_errors = [], []
+    errors, naive_errors, last_hour_errors, interval_widths = [], [], [], []
+    covered = 0
     target = max(start + timedelta(days=28), cutoff - timedelta(days=14))
     while target < cutoff:
-        predicted, _ = _seasonal(arrivals, target, start)
+        predicted, samples = _seasonal(arrivals, target, start)
         actual = arrivals.get(target, 0)
+        # Evaluate the interval BEFORE seeing this target. Only errors from
+        # preceding origins may enlarge it; the current/future label cannot.
+        calibration = mean(errors) if errors else 0.0
+        lower = max(0.0, min(predicted, _quantile(samples, .1) - calibration))
+        upper = max(predicted, _quantile(samples, .9) + calibration)
+        covered += int(lower <= actual <= upper)
+        interval_widths.append(upper - lower)
         errors.append(abs(predicted - actual))
         naive_errors.append(abs(arrivals.get(target - timedelta(weeks=1), 0) - actual))
+        last_hour_errors.append(abs(arrivals.get(target - timedelta(hours=1), 0) - actual))
         target += timedelta(hours=1)
     mae = mean(errors)
     base["status"] = "ready"
-    base["backtest"] = {"method": "rolling_origin", "mae": round(mae, 3), "baseline_mae": round(mean(naive_errors), 3), "samples": len(errors)}
+    base["backtest"] = {"method": "rolling_origin", "mae": round(mae, 3), "baseline_mae": round(mean(naive_errors), 3), "samples": len(errors),
+        "baselines": {name: {"mae": round(mean(values), 3), "samples": len(values)} for name, values in (
+            ("naive_last_hour", last_hour_errors), ("seasonal_naive", naive_errors), ("same_weekday_hour_mean", errors))},
+        "interval_coverage": round(covered / len(errors), 4), "interval_samples": len(errors),
+        "mean_interval_width": round(mean(interval_widths), 3),
+        "interval_note": "Độ phủ đo ngoài mẫu theo thời gian; không cam kết mức tin cậy trên dữ liệu tương lai."}
     first = cutoff + timedelta(hours=int(now.replace(tzinfo=None) > cutoff))
     for offset in range(horizon_hours):
         at = first + timedelta(hours=offset)

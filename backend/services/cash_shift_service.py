@@ -17,12 +17,15 @@ class CashShiftService:
             raise HTTPException(403, "Bạn chỉ được xem hoặc chốt ca của mình.")
 
     @staticmethod
-    def open_shift(db: Session, actor: User, *, opening_cash: int = 0) -> CashShift:
+    def open_shift(db: Session, actor: User, *, opening_cash: int = 0, site_id: int | None = None) -> CashShift:
+        if site_id is not None:
+            from expansion.site_scope import require_site_access
+            require_site_access(db, actor, site_id)
         opening_cash = require_exact_vnd(opening_cash)
         lock_cash_operator(db, actor.id)
         if db.execute(select(CashShift.id).where(CashShift.staff_id == actor.id, CashShift.status == "open")).first():
             raise HTTPException(409, "Bạn đang có ca mở. Hãy chốt ca hiện tại trước.")
-        shift = CashShift(staff_id=actor.id, opened_at=business_now(), opening_cash=opening_cash, status="open")
+        shift = CashShift(staff_id=actor.id, site_id=site_id, opened_at=business_now(), opening_cash=opening_cash, status="open")
         db.add(shift)
         db.flush()
         return shift
@@ -32,6 +35,9 @@ class CashShiftService:
         shift = db.get(CashShift, shift_id)
         if shift is None:
             raise HTTPException(404, "Không tìm thấy ca làm việc.")
+        if shift.site_id is not None:
+            from expansion.site_scope import require_site_access
+            require_site_access(db, actor, shift.site_id, "staff" if shift.staff_id == actor.id else "manager")
         CashShiftService._check_access(shift, actor)
         totals = {"cash_receipts": 0, "cash_refunds": 0, "transfer_receipts": 0, "transfer_refunds": 0}
         count = 0
@@ -42,7 +48,7 @@ class CashShiftService:
         expected = signed_exact_vnd(shift.opening_cash + totals["cash_receipts"] - totals["cash_refunds"])
         staff = db.get(User, shift.staff_id)
         return {
-            "id": shift.id, "staff_id": shift.staff_id, "staff_name": staff.full_name if staff else "",
+            "id": shift.id, "site_id": shift.site_id, "staff_id": shift.staff_id, "staff_name": staff.full_name if staff else "",
             "opened_at": shift.opened_at, "closed_at": shift.closed_at, "status": shift.status,
             "opening_cash": shift.opening_cash, "counted_cash": shift.counted_cash,
             "expected_cash": shift.expected_cash if shift.status == "closed" else expected,
@@ -58,6 +64,9 @@ class CashShiftService:
         shift = db.get(CashShift, shift_id)
         if shift is None:
             raise HTTPException(404, "Không tìm thấy ca làm việc.")
+        if shift.site_id is not None:
+            from expansion.site_scope import require_site_access
+            require_site_access(db, actor, shift.site_id, "staff" if shift.staff_id == actor.id else "manager")
         CashShiftService._check_access(shift, actor)
         # Collection and close take the same staff lock, even when a manager
         # closes another operator's shift. Refresh after waiting for that lock.

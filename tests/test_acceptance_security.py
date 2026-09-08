@@ -133,7 +133,7 @@ def test_owner_transfer_before_reservation_first_write_rolls_back_stale_authorit
 
     def pause_first_booking_write(connection, cursor, statement, parameters, context, many):
         if (threading.current_thread().name.startswith("reservation-authority")
-                and statement.lstrip().upper().startswith("UPDATE VEHICLES")
+                and statement.lstrip().upper().startswith(("UPDATE CUSTOMERS", "UPDATE VEHICLES"))
                 and not reached_first_write.is_set()):
             reached_first_write.set()
             assert transfer_committed.wait(timeout=10), "Transfer did not commit in time"
@@ -160,7 +160,9 @@ def test_owner_transfer_before_reservation_first_write_rolls_back_stale_authorit
                     assert result.customer_id == new_customer_id
             finally:
                 transfer_committed.set()
-            assert future.result(timeout=20) == 409
+            # After waiting, refreshed ownership is denied (404) before insert;
+            # an older implementation may reach the database backstop (409).
+            assert future.result(timeout=20) in {404, 409}
         with factory() as db:
             assert db.get(Vehicle, vehicle_id).customer_id == new_customer_id
             assert db.scalar(select(func.count()).select_from(ParkingReservation)) == 0

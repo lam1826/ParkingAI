@@ -170,13 +170,25 @@ def test_ai_flow_outer_handlers_preserve_http_exception(
 def test_unmocked_valid_ai_request_is_blocked_before_provider_instantiation(
     client: TestClient,
     ai_auth_headers: dict[str, str],
+    monkeypatch,
 ) -> None:
+    from services import ai_service
+    blocked_provider = ai_service.genai.Client
+    attempted = MagicMock(wraps=blocked_provider)
+    monkeypatch.setattr(ai_service.genai, "Client", attempted)
+    # The provider seam still raises before constructing a network client.
     with pytest.raises(
         AssertionError,
         match="Live AI provider access is forbidden during pytest",
     ):
-        client.post(
-            "/ai/ask",
-            json={"question": "Phân tích", "parking_stats": {"total": 1}},
-            headers=ai_auth_headers,
-        )
+        attempted()
+    attempted.reset_mock()
+    response = client.post(
+        "/ai/ask",
+        json={"question": "Phân tích", "parking_stats": {"total": 1}},
+        headers=ai_auth_headers,
+    )
+    attempted.assert_called_once()
+    assert response.status_code == 500
+    assert response.headers["X-Request-ID"]
+    assert "Live AI provider" not in response.text

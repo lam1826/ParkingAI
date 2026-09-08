@@ -4,6 +4,7 @@ Run explicitly from the maintenance job. Each item commits independently and
 uses the same transaction locks as HTTP confirmation; safe to run concurrently.
 """
 from datetime import timedelta
+import logging
 
 from sqlalchemy import String, cast, literal, select
 
@@ -11,6 +12,8 @@ from core.clock import business_now
 from expansion.portal_models import PortalPaymentEvent, PortalOrder, PortalAccountLink, PortalNotification
 from expansion.portal_service import process_event, _lock_order_context, _notify
 from models.monthly_pass import MonthlyPass
+
+logger = logging.getLogger(__name__)
 
 
 def run_portal_maintenance(db, limit=100):
@@ -26,6 +29,8 @@ def run_portal_maintenance(db, limit=100):
             result["processed"] += 1
         except Exception:
             db.rollback()
+            # Stable identifiers only; exception strings may contain SQL params.
+            logger.warning("portal_fulfillment_retry event_id=%s", event_id)
             event = db.get(PortalPaymentEvent, event_id)
             if event and event.status == "received":
                 event.attempts += 1

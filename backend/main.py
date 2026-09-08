@@ -23,6 +23,7 @@ from database import engine
 from db_rollout import check_database_readiness
 from middleware.audit import AuditLogMiddleware
 from middleware.security_headers import SecurityHeadersMiddleware
+from middleware.request_context import RequestContextMiddleware
 from expansion.site_router import router as site_router
 from expansion.portal_router import router as portal_router
 from expansion.vision_router import router as vision_router
@@ -42,9 +43,12 @@ def _run_maintenance_cycle() -> None:
     from expansion.vision_service import purge_expired
 
     with SessionLocal() as db:
-        run_portal_maintenance(db)
-        purge_expired(db)
+        result = run_portal_maintenance(db)
+        removed = purge_expired(db)
         db.commit()
+        if any(result.values()) or removed:
+            logger.info("maintenance_cycle processed=%s retry=%s expired=%s reminders=%s images_removed=%s",
+                        result["processed"], result["retry"], result["expired"], result["reminders"], removed)
 
 
 @asynccontextmanager
@@ -87,9 +91,11 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["X-Request-ID"],
 )
 app.add_middleware(AuditLogMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(RequestContextMiddleware)
 
 
 @app.exception_handler(ExactVndRangeError)

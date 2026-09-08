@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     # Fail closed: có API key vẫn chưa đủ để gọi provider. Mỗi môi trường
     # phải bật AI một cách tường minh sau khi đã duyệt dữ liệu/chi phí.
     AI_ENABLED: bool = False
+    PARKINGAI_SHOWCASE_MODE: bool = False
     GEMINI_API_KEY: str = ""
     GEMINI_MODEL: str = "gemini-3.6-flash"
     AI_PROVIDER_TIMEOUT_MS: int = 85_000

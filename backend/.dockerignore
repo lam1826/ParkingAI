@@ -14,3 +14,7 @@ tests/
 scratchpad/
 dist/
 build/
+artifacts/
+*.onnx
+*.pt
+*.zip

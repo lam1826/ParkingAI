@@ -1,0 +1,273 @@
+[
+  {
+    "key": "PARK-201",
+    "pr": "PR-01",
+    "priority": "P2",
+    "classification": "ADD",
+    "summary": "System map, 14-section review and evidence-backed backlog",
+    "problem": "Old reports described past state as present.",
+    "evidence": "docs/REVIEW_ROUND3_SYSTEM_MAP.md; docs/REVIEW_ROUND3_RESEARCH.md",
+    "dependencies": [],
+    "acceptance_criteria": [
+      "Map actual entities/callers/constraints/tests",
+      "Nine primary references and explicit adaptation decisions"
+    ],
+    "test": "docs/REVIEW_ROUND3_SYSTEM_MAP.md; docs/REVIEW_ROUND3_RESEARCH.md",
+    "migration": "None",
+    "rollback": "Revert documentation only",
+    "status": "LOCAL_VERIFIED_RELEASE_PENDING",
+    "online_acceptance": "PENDING",
+    "spec": "intent.md; plan.md approved round3 section",
+    "owner": "ParkingAI"
+  },
+  {
+    "key": "PARK-202",
+    "pr": "PR-02",
+    "priority": "P1",
+    "classification": "FIX",
+    "summary": "Serialize booking cap across customer vehicles",
+    "problem": "Two PG transactions starting at four active bookings previously both succeeded and produced six.",
+    "evidence": "tests/test_round3_postgres.py; tests/test_round3_site_finance.py; tests/test_acceptance_security.py",
+    "dependencies": [
+      "PARK-201"
+    ],
+    "acceptance_criteria": [
+      "At most five active bookings per customer",
+      "Ownership is rechecked after locking",
+      "Role downgrade overrides stale manager membership"
+    ],
+    "test": "tests/test_round3_postgres.py; tests/test_round3_site_finance.py; tests/test_acceptance_security.py",
+    "migration": "None",
+    "rollback": "Revert code only; preserve reservations",
+    "status": "LOCAL_VERIFIED_RELEASE_PENDING",
+    "online_acceptance": "PENDING",
+    "spec": "intent.md; plan.md approved round3 section",
+    "owner": "ParkingAI"
+  },
+  {
+    "key": "PARK-203",
+    "pr": "PR-03",
+    "priority": "P1",
+    "classification": "ADD",
+    "summary": "Site-scoped cash shifts, immutable receipts and zone/slot edits",
+    "problem": "Multi-site staff could not use global v1 finance and configuration.",
+    "evidence": "tests/test_round3_site_finance.py; tests/test_round3_postgres.py",
+    "dependencies": [
+      "PARK-202"
+    ],
+    "acceptance_criteria": [
+      "Staff sees own shift/collections; manager sees assigned site",
+      "Source/shift/payment site cannot mismatch",
+      "Legacy null rows remain admin-only",
+      "Demo amounts excluded; unassigned amounts explicit"
+    ],
+    "test": "tests/test_round3_site_finance.py; tests/test_round3_postgres.py",
+    "migration": "20260908_02 additive nullable columns and guards",
+    "rollback": "Revert application; keep additive schema and financial records",
+    "status": "LOCAL_VERIFIED_RELEASE_PENDING",
+    "online_acceptance": "PENDING",
+    "spec": "intent.md; plan.md approved round3 section",
+    "owner": "ParkingAI"
+  },
+  {
+    "key": "PARK-204",
+    "pr": "PR-04",
+    "priority": "P2",
+    "classification": "FIX",
+    "summary": "Correlated audit, request latency and sanitized error events",
+    "problem": "v2 actions were generic; no response-to-audit correlation.",
+    "evidence": "tests/test_round3_observability.py; tests/test_api_edge_hardening.py",
+    "dependencies": [
+      "PARK-203"
+    ],
+    "acceptance_criteria": [
+      "X-Request-ID on success and 500",
+      "Audit classifies v2 operations and stores site/latency",
+      "Worker/OCR failures log bounded metadata without bodies or secrets"
+    ],
+    "test": "tests/test_round3_observability.py; tests/test_api_edge_hardening.py",
+    "migration": "20260908_02 audit columns",
+    "rollback": "Revert application; retain audit columns",
+    "status": "LOCAL_VERIFIED_RELEASE_PENDING",
+    "online_acceptance": "PENDING",
+    "spec": "intent.md; plan.md approved round3 section",
+    "owner": "ParkingAI"
+  },
+  {
+    "key": "PARK-205",
+    "pr": "PR-05",
+    "priority": "P1",
+    "classification": "ADD",
+    "summary": "Pinned YOLO/OCR runtime and human verification on website",
+    "problem": "Production had no model/runtime; crop and stage scores were missing.",
+    "evidence": "tests/test_expansion_vision_api.py; browser UAT; Fly resource probe",
+    "dependencies": [
+      "PARK-204"
+    ],
+    "acceptance_criteria": [
+      "Build from pinned revision/checksum and document conflicting license metadata",
+      "Upload/crop/correct/confirm reaches separate operation screen",
+      "One inference at a time, clear busy response",
+      "Measure API responsiveness and memory on current 1 GB Fly VM"
+    ],
+    "test": "tests/test_expansion_vision_api.py; browser UAT; Fly resource probe",
+    "migration": "None; optional image runtime",
+    "rollback": "Deploy prior image; disable engine, preserve observations",
+    "status": "LOCAL_VERIFIED_RELEASE_PENDING",
+    "online_acceptance": "PENDING",
+    "spec": "intent.md; plan.md approved round3 section",
+    "owner": "ParkingAI"
+  },
+  {
+    "key": "PARK-206",
+    "pr": "PR-06",
+    "priority": "P2",
+    "classification": "ADD",
+    "summary": "Rolling-origin comparisons and empirical interval coverage",
+    "problem": "Forecast lacked comparable alternative baselines.",
+    "evidence": "tests/test_round3_forecast.py; tests/test_expansion_forecast.py",
+    "dependencies": [
+      "PARK-201"
+    ],
+    "acceptance_criteria": [
+      "Three baselines evaluated on same time window",
+      "No future samples or residuals used",
+      "Keep existing model; sparse/empty warning visible"
+    ],
+    "test": "tests/test_round3_forecast.py; tests/test_expansion_forecast.py",
+    "migration": "None",
+    "rollback": "Revert forecast code",
+    "status": "LOCAL_VERIFIED_RELEASE_PENDING",
+    "online_acceptance": "PENDING",
+    "spec": "intent.md; plan.md approved round3 section",
+    "owner": "ParkingAI"
+  },
+  {
+    "key": "PARK-207",
+    "pr": "PR-07",
+    "priority": "P2",
+    "classification": "ADD",
+    "summary": "Role-based finance, configuration, OCR and forecast UI",
+    "problem": "Required operations were not connected to a complete multi-site UI.",
+    "evidence": "frontend test/lint/build; browser_round3.cjs, 19 local checks",
+    "dependencies": [
+      "PARK-203",
+      "PARK-204",
+      "PARK-205",
+      "PARK-206"
+    ],
+    "acceptance_criteria": [
+      "Four role journeys and 390px viewport pass",
+      "Double-click guarded, independent API errors/retry preserved",
+      "QR and showcase banner explicit",
+      "New API consumers enabled only after backend ready"
+    ],
+    "test": "frontend test/lint/build; browser_round3.cjs, 19 local checks",
+    "migration": "None",
+    "rollback": "Rollback Cloudflare frontend deployment",
+    "status": "LOCAL_VERIFIED_RELEASE_PENDING",
+    "online_acceptance": "PENDING",
+    "spec": "intent.md; plan.md approved round3 section",
+    "owner": "ParkingAI"
+  },
+  {
+    "key": "PARK-208",
+    "pr": "PR-08",
+    "priority": "P1",
+    "classification": "ADD",
+    "summary": "Backed-up release and two-site online demonstration",
+    "problem": "Website lacked independent demo accounts, data and authenticated acceptance evidence.",
+    "evidence": "tests/test_round3_seed.py; restore-evidence.json; final CI/CD and online artifacts",
+    "dependencies": [
+      "PARK-202",
+      "PARK-203",
+      "PARK-204",
+      "PARK-205",
+      "PARK-206",
+      "PARK-207"
+    ],
+    "acceptance_criteria": [
+      "PG17 restore matches public-schema dump and passes migration/readiness",
+      "Seven independent accounts, two namespaced sites, idempotent seed",
+      "Preserve previous data; simulated history zero fees",
+      "Backup gate/CI/exact SHA and authenticated online UAT pass"
+    ],
+    "test": "tests/test_round3_seed.py; restore-evidence.json; final CI/CD and online artifacts",
+    "migration": "Apply 20260908_02; seed only separate namespace",
+    "rollback": "Rollback application first; DB recovery only via tested runbook",
+    "status": "IN_PROGRESS",
+    "online_acceptance": "PENDING",
+    "spec": "intent.md; plan.md approved round3 section",
+    "owner": "ParkingAI"
+  },
+  {
+    "key": "PARK-209",
+    "pr": "FUTURE",
+    "priority": "P2",
+    "classification": "FUTURE",
+    "summary": "Labeled Vietnamese plates and physical-phone acceptance",
+    "problem": "Two foreign CC0 photos and viewport checks cannot establish VN accuracy or phone capture.",
+    "evidence": "Independent labeled benchmark and device matrix",
+    "dependencies": [
+      "PARK-205"
+    ],
+    "acceptance_criteria": [
+      "Obtain licensed labeled Vietnamese evaluation set",
+      "Report detection, whole-plate accuracy and correction rate separately",
+      "Test actual iOS/Android capture under representative light"
+    ],
+    "test": "Independent labeled benchmark and device matrix",
+    "migration": "None",
+    "rollback": "Keep human confirmation and disable automatic flows",
+    "status": "OPEN",
+    "online_acceptance": "PENDING",
+    "spec": "intent.md; plan.md approved round3 section",
+    "owner": "ParkingAI"
+  },
+  {
+    "key": "PARK-210",
+    "pr": "FOLLOW-UP",
+    "priority": "P3",
+    "classification": "FIX",
+    "summary": "Disable Cloudflare-injected analytics beacon",
+    "problem": "Provider-injected analytics may be blocked by current CSP.",
+    "evidence": "Cloudflare setting plus browser network/CSP inspection",
+    "dependencies": [
+      "PARK-208"
+    ],
+    "acceptance_criteria": [
+      "Disable automatic analytics injection for hostname",
+      "Verify no injected beacon or CSP violation; retain CSP"
+    ],
+    "test": "Cloudflare setting plus browser network/CSP inspection",
+    "migration": "None",
+    "rollback": "Restore previous Cloudflare analytics setting",
+    "status": "OPEN",
+    "online_acceptance": "PENDING",
+    "spec": "intent.md; plan.md approved round3 section",
+    "owner": "ParkingAI"
+  },
+  {
+    "key": "PARK-211",
+    "pr": "FUTURE",
+    "priority": "P3",
+    "classification": "FUTURE",
+    "summary": "Measure slot availability queries at larger scale",
+    "problem": "Per-slot checks may cause query growth; latency impact not demonstrated.",
+    "evidence": "Read-only benchmark on isolated data",
+    "dependencies": [
+      "PARK-208"
+    ],
+    "acceptance_criteria": [
+      "Measure SQL count and p95 for increasing slots/sites",
+      "Optimize only when improvement is demonstrated without weakening guards"
+    ],
+    "test": "Read-only benchmark on isolated data",
+    "migration": "Only if measurement justifies it",
+    "rollback": "Revert measured optimization",
+    "status": "OPEN",
+    "online_acceptance": "PENDING",
+    "spec": "intent.md; plan.md approved round3 section",
+    "owner": "ParkingAI"
+  }
+]

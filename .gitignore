@@ -15,6 +15,7 @@ htmlcov/
 .coverage
 *.db
 backend/.env
+/.env.production-test.local
 
 # VSCode
 .vscode/

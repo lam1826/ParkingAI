@@ -56,7 +56,7 @@ jobs:
       - name: Run PostgreSQL integration tests
         env:
           POSTGRES_TEST_URL: postgresql+psycopg://parkingai_test:parkingai_test@127.0.0.1:5432/parkingai_test
-        run: python -m pytest tests/test_postgres_integration.py -q
+        run: python -m pytest tests/test_postgres_integration.py tests/test_round3_postgres.py -q
 
       - name: Set up Node.js
         uses: actions/setup-node@v4

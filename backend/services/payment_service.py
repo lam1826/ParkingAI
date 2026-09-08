@@ -39,6 +39,20 @@ def lock_cash_operator(db: Session, staff_id: int) -> None:
 
 class PaymentService:
     @staticmethod
+    def source_site(db: Session, source_type: str, source_id):
+        if source_type == "monthly_pass":
+            from expansion.portal_models import PortalOrder
+            # The frozen order owns site scope. During fulfillment its period FK
+            # is not set yet; the immutable server-generated renewal key binds it.
+            return db.scalar(select(PortalOrder.site_id).join(MonthlyPass,
+                MonthlyPass.renewal_key == literal("portal:") + PortalOrder.id).where(MonthlyPass.id == int(source_id)))
+        from models.parking_slot import ParkingSlot
+        from models.zone import Zone
+        return db.scalar(select(Zone.site_id).join(ParkingSlot, ParkingSlot.zone_id == Zone.id)
+            .join(ParkingSession, ParkingSession.parking_slot_id == ParkingSlot.id)
+            .where(ParkingSession.id == str(source_id)))
+
+    @staticmethod
     def record_receipt(
         db: Session, source_type: str, source_id, amount: int,
         collected_by_id: int | None, method: str = "cash", created_at: datetime | None = None,
@@ -62,6 +76,7 @@ class PaymentService:
                 raise HTTPException(409, "Nguồn thu đã có chứng từ với số tiền hoặc phương thức khác.")
             return existing
         when = created_at or business_now()
+        site_id = PaymentService.source_site(db, source_type, source_id)
         if when.tzinfo is not None:
             when = when.astimezone(BUSINESS_TZ).replace(tzinfo=None)
         shift = None
@@ -70,8 +85,10 @@ class PaymentService:
                 CashShift.staff_id == collected_by_id, CashShift.status == "open",
                 CashShift.opened_at <= when,
             ).with_for_update()).scalar_one_or_none()
+        if shift is not None and shift.site_id is not None and shift.site_id != site_id:
+            raise HTTPException(409, "Ca đang mở thuộc bãi khác. Hãy chốt ca trước khi thu tại bãi này.")
         payment = Payment(
-            source_type=source_type, source_id=source_id, kind="receipt", amount=amount,
+            source_type=source_type, source_id=source_id, site_id=site_id, kind="receipt", amount=amount,
             method=method, collected_by_id=collected_by_id,
             shift_id=shift.id if shift else None, created_at=when,
             idempotency_key=f"receipt:{source_type}:{source_id}",
@@ -94,6 +111,9 @@ class PaymentService:
         original = db.execute(select(Payment).where(Payment.id == payment_id).with_for_update()).scalar_one_or_none()
         if original is None:
             raise HTTPException(404, "Không tìm thấy phiếu thu.")
+        if original.site_id is not None:
+            from expansion.site_scope import require_site_access
+            require_site_access(db, actor, original.site_id, "manager")
         if original.kind != "receipt":
             raise HTTPException(409, "Chỉ được hoàn tiền từ phiếu thu gốc.")
         if (original.method == "demo") != (method == "demo"):
@@ -116,8 +136,11 @@ class PaymentService:
         shift = None if method == "demo" else db.execute(select(CashShift).where(
             CashShift.staff_id == actor.id, CashShift.status == "open", CashShift.opened_at <= when,
         ).with_for_update()).scalar_one_or_none()
+        if shift is not None and shift.site_id is not None and shift.site_id != original.site_id:
+            raise HTTPException(409, "Ca đang mở thuộc bãi khác. Hãy chốt ca trước khi hoàn tại bãi này.")
         refund = Payment(
             source_type=original.source_type, source_id=original.source_id,
+            site_id=original.site_id,
             kind="refund", amount=amount, method=method, collected_by_id=actor.id,
             shift_id=shift.id if shift else None, created_at=when,
             idempotency_key=refund_key, original_payment_id=original.id, reason=reason.strip(),
@@ -134,7 +157,7 @@ class PaymentService:
                 Payment.original_payment_id == payment.id, Payment.kind == "refund"
             )).scalars())
         return {
-            "id": payment.id, "source_type": payment.source_type, "source_id": payment.source_id,
+            "id": payment.id, "site_id": payment.site_id, "source_type": payment.source_type, "source_id": payment.source_id,
             "kind": payment.kind, "amount": payment.amount, "method": payment.method,
             "collected_by_id": payment.collected_by_id, "shift_id": payment.shift_id,
             "created_at": payment.created_at, "original_payment_id": payment.original_payment_id,

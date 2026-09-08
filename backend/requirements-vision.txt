@@ -1,5 +1,5 @@
-# Optional local student demo, Python 3.10-3.12. Install separately from the API.
-# ONNX detector is downloaded explicitly by edge/download_vision_model.py.
+# Optional student demo runtime, Python 3.10-3.12. Docker enables it with INSTALL_VISION=1.
+# Pinned ONNX detector is downloaded by vision_model_install.py during the image build.
 onnxruntime==1.23.2
 rapidocr-onnxruntime==1.4.4
 opencv-python==4.12.0.88

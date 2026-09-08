@@ -11,6 +11,9 @@ class AuditLogResponse(BaseModel):
     action: str
     resource: str
     resource_id: Optional[str]
+    request_id: Optional[str] = None
+    site_id: Optional[int] = None
+    duration_ms: Optional[int] = None
     method: str
     path: str
     status_code: int

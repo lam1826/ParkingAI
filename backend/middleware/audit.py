@@ -1,5 +1,6 @@
 import re
 import logging
+from time import monotonic
 from collections.abc import Generator
 
 import jwt
@@ -49,6 +50,23 @@ def _persist_audit(app, values: dict, method: str, path: str) -> None:
 
 def _classify_action(method: str, path: str) -> str:
     normalized_path = path.rstrip("/") or "/"
+    if normalized_path.startswith("/api/v2/"):
+        if normalized_path.endswith("/check-in"):
+            return "CHECK_IN"
+        if normalized_path.endswith("/check-out"):
+            return "CHECK_OUT"
+        if "/vision/" in normalized_path:
+            return "VISION_REVIEW" if normalized_path.endswith("/review") else "VISION_CAPTURE" if method == "POST" else "VISION_DELETE"
+        if "/cash-shifts" in normalized_path:
+            return "SHIFT_CLOSE" if normalized_path.endswith("/close") else "SHIFT_OPEN"
+        if normalized_path.endswith("/collect"):
+            return "PAYMENT_COLLECT"
+        if normalized_path.endswith("/simulate"):
+            return "PAYMENT_DEMO"
+        if "/refund" in normalized_path:
+            return "REFUND"
+        if "/reservations" in normalized_path or "/waitlist" in normalized_path:
+            return "RESERVATION_ACTION"
     if normalized_path in {"/api/auth/login", "/auth/login"}:
         return "LOGIN"
     if normalized_path == "/api/auth/register":
@@ -70,6 +88,15 @@ def _classify_action(method: str, path: str) -> str:
 
 def _extract_resource(path: str) -> tuple[str, str | None]:
     parts = [part for part in path.split("/") if part]
+    if parts[:2] == ["api", "v2"]:
+        tail = parts[2:]
+        if tail[:1] == ["sites"] and len(tail) > 2:
+            tail = tail[2:]
+        elif tail[:1] in (["me"], ["vision"], ["portal"]):
+            tail = tail[2:] if tail[:2] == ["portal", "admin"] else tail[1:]
+        resource = tail[0] if tail else "system"
+        identity = tail[1] if len(tail) > 1 else None
+        return resource, identity if identity and re.fullmatch(r"[A-Za-z0-9_-]{1,80}", identity) else None
     if path.startswith("/parking/check-"):
         return "parking-sessions", None
     if path.startswith("/ai/"):
@@ -130,6 +157,9 @@ class AuditLogMiddleware(BaseHTTPMiddleware):
                 "action": _classify_action(request.method, request.url.path),
                 "resource": resource[:80],
                 "resource_id": resource_id,
+                "request_id": getattr(request.state, "request_id", None),
+                "site_id": int(request.path_params["site_id"]) if str(request.path_params.get("site_id", "")).isdigit() else None,
+                "duration_ms": max(0, round((monotonic() - getattr(request.state, "started_at", monotonic())) * 1000)),
                 "method": request.method,
                 "path": request.url.path[:255],
                 "status_code": response.status_code,

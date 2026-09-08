@@ -17,9 +17,14 @@ from expansion_demo_guards import validate_demo_ledger
 from expansion_rollout import validate_zone_site_assignment
 
 
-POSTGRES_SCHEMA_REVISION = "20260908_01"
+POSTGRES_SCHEMA_REVISION = "20260908_02"
 
 REQUIRED_COLUMN_CONTRACTS = frozenset({
+    "payments.site_id:integer::YES",
+    "cash_shifts.site_id:integer::YES",
+    "audit_logs.request_id:character varying:64:YES",
+    "audit_logs.site_id:integer::YES",
+    "audit_logs.duration_ms:integer::YES",
     "parking_sessions.checkout_quote_hash:character varying:64:YES",
     "parking_sessions.checkout_payment_method:character varying:8:YES",
 })
@@ -365,6 +370,8 @@ REQUIRED_TRIGGERS = REQUIRED_TRIGGERS | frozenset(['trg_parking_reservations_gua
  'trg_zone_site_immutable'])
 REQUIRED_TRIGGERS = REQUIRED_TRIGGERS | frozenset({"trg_zone_commitment_guard"})
 REQUIRED_TRIGGERS = REQUIRED_TRIGGERS | frozenset({"trg_payment_demo_boundary"})
+REQUIRED_TRIGGERS = REQUIRED_TRIGGERS | frozenset({"trg_payment_site_guard", "trg_cash_shift_site_immutable"})
+REQUIRED_INDEXES = REQUIRED_INDEXES | frozenset({"ix_payments_site_id", "ix_cash_shifts_site_id", "ix_audit_logs_request_id", "ix_audit_logs_site_id"})
 
 
 def _require_all(kind: str, actual: Iterable[str], expected: frozenset[str]) -> None:

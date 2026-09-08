@@ -530,7 +530,12 @@ def test_audit_keeps_legacy_parking_check_out_domain_action(
     staff_headers: dict[str, str],
     parking_session,
     price_config,
+    monkeypatch,
 ):
+    from datetime import timedelta
+    from crud import parking_session as session_crud
+    frozen = parking_session.check_in_time + timedelta(minutes=5)
+    monkeypatch.setattr(session_crud, "server_now", lambda: frozen)
     path = "/parking/check-out"
     confirmation = quote_confirmation(client, staff_headers, parking_session.id)
     response = client.post(

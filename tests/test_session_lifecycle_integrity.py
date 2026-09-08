@@ -143,7 +143,12 @@ def test_put_checkout_goes_through_checking_out_to_completed(
     parking_slot: ParkingSlot,
     price_config: PriceConfig,
     statuses_seen_while_billing: list[str],
+    monkeypatch,
 ):
+    # This tests the state transition. Keep quote/confirm away from the first
+    # billable second so scheduler timing cannot change a legitimately stale fee.
+    frozen = parking_session.check_in_time + datetime.timedelta(minutes=5)
+    monkeypatch.setattr("crud.parking_session.server_now", lambda: frozen)
     confirmation = quote_confirmation(client, auth_headers, parking_session.id)
     response = client.put(
         f"/api/v1/parking-sessions/{parking_session.id}/check-out",
@@ -151,7 +156,7 @@ def test_put_checkout_goes_through_checking_out_to_completed(
         headers=auth_headers,
     )
 
-    assert response.status_code == 200
+    assert response.status_code == 200, response.text
     assert statuses_seen_while_billing == ["active", "checking_out"]  # Preview then confirm.
 
     db_session.expire_all()

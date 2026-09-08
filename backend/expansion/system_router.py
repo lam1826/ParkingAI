@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 
 from database import get_db
+from core.config import settings
 from expansion.gateway import PortalSettings
 from expansion.site_models import ParkingSite, SiteMembership
 from expansion.site_scope import is_global_admin
@@ -42,4 +43,6 @@ def capabilities(db=Depends(get_db), user=Depends(get_current_user)):
         "demo_payments_enabled": PortalSettings().DEMO_PAYMENTS_ENABLED,
         "scope": "single_operator",
         "camera_confirmation_required": True,
+        "site_finance_enabled": True,
+        "showcase_mode": settings.PARKINGAI_SHOWCASE_MODE,
     }

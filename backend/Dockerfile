@@ -7,13 +7,24 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1
 
 WORKDIR /app
+ARG INSTALL_VISION=0
 
 RUN addgroup --system --gid 10001 parkingai \
     && adduser --system --uid 10001 --ingroup parkingai --home /nonexistent parkingai
 
 COPY requirements.txt ./requirements.txt
+COPY requirements-vision.txt vision_model_install.py ./
 RUN python -m pip install --upgrade pip \
     && python -m pip install --requirement requirements.txt
+
+# CPU-only optional image; weights are fetched at build time by immutable digest.
+# Runtime inference never downloads code or weights and remains single-worker.
+RUN if [ "$INSTALL_VISION" = "1" ]; then \
+      apt-get update && apt-get install -y --no-install-recommends libgl1 libglib2.0-0 \
+      && rm -rf /var/lib/apt/lists/* \
+      && python -m pip install --requirement requirements-vision.txt \
+      && python vision_model_install.py --output /opt/parkingai-models; \
+    fi
 
 COPY --chown=parkingai:parkingai . .
 

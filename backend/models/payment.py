@@ -27,6 +27,7 @@ class Payment(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     source_type: Mapped[str] = mapped_column(String(24))
+    site_id: Mapped[int | None] = mapped_column(ForeignKey("parking_sites.id"), index=True)
     source_id: Mapped[str] = mapped_column(String(36))
     kind: Mapped[str] = mapped_column(String(8))
     amount: Mapped[int] = mapped_column(VND_DATABASE_TYPE)

@@ -21,9 +21,13 @@ from models.user import User
 from models.vehicle import Vehicle
 from models.zone import Zone
 from schemas.checkout import CheckoutConfirmation, CheckoutQuoteResponse
+from schemas.zone import ZoneUpdate
+from schemas.parking_slot import ParkingSlotUpdate
 from services.auth_service import get_current_user
 
 router = APIRouter(prefix="/api/v2", tags=["Sites and reservations"])
+from expansion.site_finance import router as finance_router
+router.include_router(finance_router)
 
 
 def _save(db, action):
@@ -85,7 +89,7 @@ def sites(db: Session = Depends(get_db), actor: User = Depends(get_current_user)
     for row in db.scalars(query):
         data = booking.serialize(row)
         if actor.role.name != "customer":
-            data["role"] = "admin" if is_global_admin(actor) else memberships.get(row.id, "staff")
+            data["role"] = "admin" if is_global_admin(actor) else "staff" if actor.role.name == "staff" else memberships.get(row.id, "staff")
         result.append(data)
     return result
 
@@ -106,6 +110,15 @@ def site_availability(site_id: int, db: Session = Depends(get_db), actor: User =
 def site_zones(site_id: int, db: Session = Depends(get_db), actor: User = Depends(get_current_user)):
     require_site_access(db, actor, site_id)
     return [booking.serialize(row) for row in db.scalars(select(Zone).where(Zone.site_id == site_id).order_by(Zone.id))]
+
+
+@router.get("/sites/{site_id}/slots")
+def site_slots(site_id: int, limit: int = PageLimit, offset: int = PageOffset,
+               db: Session = Depends(get_db), actor: User = Depends(get_current_user)):
+    require_site_access(db, actor, site_id, "manager")
+    rows = db.scalars(select(ParkingSlot).join(Zone).where(Zone.site_id == site_id)
+                      .order_by(ParkingSlot.id).offset(offset).limit(limit))
+    return [booking.serialize(row) for row in rows]
 
 
 @router.get("/sites/{site_id}/vehicles")
@@ -156,6 +169,42 @@ def create_site_slot(site_id: int, body: SiteSlotCreate, db: Session = Depends(g
         db.flush()
         return row
     return _save(db, create)
+
+
+@router.patch("/sites/{site_id}/zones/{zone_id}")
+def update_site_zone(site_id: int, zone_id: int, body: ZoneUpdate, db: Session = Depends(get_db), actor: User = Depends(get_current_user)):
+    require_site_access(db, actor, site_id, "manager")
+    zone = db.scalar(select(Zone).where(Zone.id == zone_id, Zone.site_id == site_id).with_for_update(key_share=True))
+    if zone is None:
+        raise HTTPException(404, "Khu vực không thuộc bãi này.")
+    from routers.zone import update_zone
+    try:
+        return booking.serialize(update_zone(zone_id, body, db))
+    except (IntegrityError, OperationalError) as exc:
+        db.rollback()
+        raise HTTPException(409, "Không thể sửa khu vực khi đang có xe hoặc cam kết đặt chỗ.") from exc
+
+
+@router.patch("/sites/{site_id}/slots/{slot_id}")
+def update_site_slot(site_id: int, slot_id: int, body: ParkingSlotUpdate, db: Session = Depends(get_db), actor: User = Depends(get_current_user)):
+    require_site_access(db, actor, site_id, "manager")
+    # Lock destination zones before the slot, consistently with slot creation.
+    slot = db.scalar(select(ParkingSlot).join(Zone).where(ParkingSlot.id == slot_id, Zone.site_id == site_id))
+    if slot is None:
+        raise HTTPException(404, "Vị trí không thuộc bãi này.")
+    zone_ids = sorted({slot.zone_id, body.zone_id or slot.zone_id})
+    zones = list(db.scalars(select(Zone).where(Zone.id.in_(zone_ids), Zone.site_id == site_id).order_by(Zone.id).with_for_update(key_share=True)))
+    if len(zones) != len(zone_ids):
+        raise HTTPException(404, "Khu vực không thuộc bãi này.")
+    db.refresh(slot, with_for_update=True)
+    if slot.zone_id not in zone_ids:
+        raise HTTPException(409, "Vị trí vừa đổi khu vực. Hãy tải lại.")
+    from routers.parking_slot import update_parking_slot
+    try:
+        return booking.serialize(update_parking_slot(slot_id, body, db))
+    except (IntegrityError, OperationalError) as exc:
+        db.rollback()
+        raise HTTPException(409, "Không thể sửa vị trí đang có xe, lịch sử hoặc cam kết đặt chỗ.") from exc
 
 
 @router.get("/sites/{site_id}/members")

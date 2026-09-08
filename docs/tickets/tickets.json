@@ -1,206 +1,829 @@
 [
   {
-    "key": "PARK-101", "type": "Bug", "priority": "P0", "epic": "PARK-E1", "finding": "F-002",
+    "key": "PARK-101",
+    "type": "Bug",
+    "priority": "P0",
+    "epic": "PARK-E1",
+    "finding": "F-002",
     "summary": "v1 customers/vehicles trả 500 vì response_model re-validate email; seed demo dùng .invalid",
     "description": "Symptom: admin_demo GET /api/v1/customers, /customers/1, /api/v1/vehicles, /vehicles/1 -> 500 text/plain; PUT /api/v1/customers/1 commit xong vẫn 500. Impact: 3 trang admin (Khách hàng, Phương tiện, Vé tháng) chết trên mọi DB do seeder tạo; sửa khách báo lỗi dù đã lưu. Expected: dữ liệu đã lưu serialize nguyên trạng; seed dùng địa chỉ hợp lệ; lỗi serialize vẫn trả JSON {detail}.",
-    "acceptance_criteria": ["[ ] CustomerResponse.email là Optional[str] (không re-validate đầu ra); CustomerCreate/Update vẫn dùng EmailStr", "[ ] demo_seed dùng customer@example.com", "[ ] Handler ResponseValidationError trả JSON 500 {detail}", "[ ] 4 route v1 trả 200 với khách có email customer@example.invalid; PUT trả 200"],
+    "acceptance_criteria": [
+      "[ ] CustomerResponse.email là Optional[str] (không re-validate đầu ra); CustomerCreate/Update vẫn dùng EmailStr",
+      "[ ] demo_seed dùng customer@example.com",
+      "[ ] Handler ResponseValidationError trả JSON 500 {detail}",
+      "[ ] 4 route v1 trả 200 với khách có email customer@example.invalid; PUT trả 200"
+    ],
     "root_cause": "CustomerBase.email: Optional[EmailStr] được CustomerResponse kế thừa nên FastAPI re-validate giá trị DB; VehicleResponse lồng CustomerResponse; seed ghi domain đặc biệt .invalid (email_validator 2.3 từ chối).",
-    "components": ["Backend", "Database"], "related_files": ["backend/schemas/customer.py:15,54-57", "backend/schemas/vehicle.py:45-50", "backend/expansion/demo_seed.py:72", "backend/main.py (exception handlers)"],
-    "estimate_days": 0.5, "dependencies": [],
-    "test_cases": ["Case 1: tạo Customer email customer@example.invalid + 1 xe; GET 4 route v1 -> 200", "Case 2: PUT /api/v1/customers/{id} full_name -> 200 và body có tên mới", "Case 3: POST /api/v1/customers email a@example.invalid -> 422 (input vẫn chặt)", "Case 4: test_expansion_demo_seed: email seed validate được bằng CustomerCreate"],
-    "dor": {"scope": "rõ", "owner": "Backend Lead", "env": "pytest in-memory + demo DB mới"},
-    "dod": {"code": true, "test": "tests/test_customer_v1_response.py (2 scratch test chuyển vào)", "docs": "DEMO_GUIDE không đổi", "evidence": "pytest log + curl demo server 200"}
+    "components": [
+      "Backend",
+      "Database"
+    ],
+    "related_files": [
+      "backend/schemas/customer.py:15,54-57",
+      "backend/schemas/vehicle.py:45-50",
+      "backend/expansion/demo_seed.py:72",
+      "backend/main.py (exception handlers)"
+    ],
+    "estimate_days": 0.5,
+    "dependencies": [],
+    "test_cases": [
+      "Case 1: tạo Customer email customer@example.invalid + 1 xe; GET 4 route v1 -> 200",
+      "Case 2: PUT /api/v1/customers/{id} full_name -> 200 và body có tên mới",
+      "Case 3: POST /api/v1/customers email a@example.invalid -> 422 (input vẫn chặt)",
+      "Case 4: test_expansion_demo_seed: email seed validate được bằng CustomerCreate"
+    ],
+    "dor": {
+      "scope": "rõ",
+      "owner": "Backend Lead",
+      "env": "pytest in-memory + demo DB mới"
+    },
+    "dod": {
+      "code": true,
+      "test": "tests/test_customer_v1_response.py (2 scratch test chuyển vào)",
+      "docs": "DEMO_GUIDE không đổi",
+      "evidence": "pytest log + curl demo server 200"
+    },
+    "reviewed_against": "caaef39042ea15fc93f01938af46a7ac64890258",
+    "implementation_status": "VERIFIED_BASELINE",
+    "release_evidence": "CI 34215316423 success; CD 34216909674 attempt 2 success; public API release_id caaef39042ea15fc93f01938af46a7ac64890258. See REVIEW_ROUND2_RESOLUTION_2026-09-08.md.",
+    "online_acceptance_status": "PENDING_AUTHENTICATED_ROUND3_UAT"
   },
   {
-    "key": "PARK-102", "type": "Bug", "priority": "P0", "epic": "PARK-E1", "finding": "F-001",
+    "key": "PARK-102",
+    "type": "Bug",
+    "priority": "P0",
+    "epic": "PARK-E1",
+    "finding": "F-001",
     "summary": "Replay/no-op của portal giữ khóa ghi SQLite tới sau response: stall ~5 s, mất dòng audit, chặn writer khác",
     "description": "Symptom: POST /api/v2/me/orders lặp cùng idempotency_key -> 200 sau 5,8 s; log 'Unable to persist audit metadata ... database is locked'; check-in đồng thời chờ 4,7 s. Impact: mọi retry/double-click của khách đóng băng ghi toàn bãi ~5 s và mất audit (audit cũng là nguồn rate-limit). Expected: replay trả trong vài chục ms, transaction kết thúc trước khi trả, audit đầy đủ.",
-    "acceptance_criteria": ["[ ] portal_router.write() commit sau operation() thành công (hoặc rollback trước mọi return existing/item)", "[ ] AuditLogMiddleware ghi audit ngoài event loop (run_in_threadpool) và không cần connection thứ hai khi có thể", "[ ] Test file-backed SQLite (busy timeout 1 s): replay < 0,5 s, 2 dòng audit CREATE"],
+    "acceptance_criteria": [
+      "[ ] portal_router.write() commit sau operation() thành công (hoặc rollback trước mọi return existing/item)",
+      "[ ] AuditLogMiddleware ghi audit ngoài event loop (run_in_threadpool) và không cần connection thứ hai khi có thể",
+      "[ ] Test file-backed SQLite (busy timeout 1 s): replay < 0,5 s, 2 dòng audit CREATE"
+    ],
     "root_cause": "Nhánh replay chạy lock_cash_operator/_lock_vehicle (UPDATE no-op lấy RESERVED lock) rồi return không commit; FastAPI 0.141 đóng dependency sau khi gửi response; BaseHTTPMiddleware audit INSERT chờ chính khóa đó -> tự deadlock tới busy timeout.",
-    "components": ["Backend", "Database"], "related_files": ["backend/expansion/portal_router.py:38-43", "backend/expansion/portal_service.py:96-102,114-119,141-149,160-167,222-234,388-396,409-414,428-434", "backend/middleware/audit.py:98-129", "backend/services/payment_service.py:31-33"],
-    "estimate_days": 1, "dependencies": [],
-    "test_cases": ["Case 1: scratch test_replay_holds_sqlite_writer_lock.py chuyển vào tests/ -> pass", "Case 2: replay vehicle-request, link-request, refund-request đều < 0,5 s", "Case 3: 3 thread ghi song song trên file SQLite: 0 'database is locked'"],
-    "dor": {"scope": "rõ", "owner": "Backend Lead", "env": "pytest file-backed SQLite + demo server"},
-    "dod": {"code": true, "test": "tests/test_portal_replay_transaction.py", "docs": "PORTAL_PAYMENTS.md mục idempotency", "evidence": "pytest + log demo không còn traceback audit"}
+    "components": [
+      "Backend",
+      "Database"
+    ],
+    "related_files": [
+      "backend/expansion/portal_router.py:38-43",
+      "backend/expansion/portal_service.py:96-102,114-119,141-149,160-167,222-234,388-396,409-414,428-434",
+      "backend/middleware/audit.py:98-129",
+      "backend/services/payment_service.py:31-33"
+    ],
+    "estimate_days": 1,
+    "dependencies": [],
+    "test_cases": [
+      "Case 1: scratch test_replay_holds_sqlite_writer_lock.py chuyển vào tests/ -> pass",
+      "Case 2: replay vehicle-request, link-request, refund-request đều < 0,5 s",
+      "Case 3: 3 thread ghi song song trên file SQLite: 0 'database is locked'"
+    ],
+    "dor": {
+      "scope": "rõ",
+      "owner": "Backend Lead",
+      "env": "pytest file-backed SQLite + demo server"
+    },
+    "dod": {
+      "code": true,
+      "test": "tests/test_portal_replay_transaction.py",
+      "docs": "PORTAL_PAYMENTS.md mục idempotency",
+      "evidence": "pytest + log demo không còn traceback audit"
+    },
+    "reviewed_against": "caaef39042ea15fc93f01938af46a7ac64890258",
+    "implementation_status": "VERIFIED_BASELINE",
+    "release_evidence": "CI 34215316423 success; CD 34216909674 attempt 2 success; public API release_id caaef39042ea15fc93f01938af46a7ac64890258. See REVIEW_ROUND2_RESOLUTION_2026-09-08.md.",
+    "online_acceptance_status": "PENDING_AUTHENTICATED_ROUND3_UAT"
   },
   {
-    "key": "PARK-103", "type": "Bug", "priority": "P0", "epic": "PARK-E1", "finding": "F-003",
+    "key": "PARK-103",
+    "type": "Bug",
+    "priority": "P0",
+    "epic": "PARK-E1",
+    "finding": "F-003",
     "summary": "Burst upload ảnh làm cạn pool (5+10) và treo/chết server demo; audit middleware chiếm connection thứ hai và commit đồng bộ trên event loop",
     "description": "Symptom: 24-30 thread upload ảnh trong 60 s -> 37 lỗi 'QueuePool limit ... timeout 30.00', /ready không trả lời, listener biến mất, tiến trình chết (quan sát trên 2 server riêng). Impact: một client chụp ảnh dồn dập hạ toàn bộ API demo (mọi bãi) không tự hồi phục; production (1 worker, pool 10) có cùng lỗi kiến trúc commit đồng bộ trên event loop. Expected: rate limit chặn trước khi lấy connection; inference không giữ session DB; pool cạn -> 503 nhanh; /ready luôn trả lời.",
-    "acceptance_criteria": ["[ ] Rate limit per-camera kiểm tra in-memory/trước Depends(get_db)", "[ ] upload_observation đọc/validate rồi chạy inference không giữ session; mở session ngắn để INSERT", "[ ] Audit ghi qua run_in_threadpool, tái dùng session request (request.state.db)", "[ ] SQLite: pool_timeout=5, busy timeout 5 s; Postgres giữ 5+5", "[ ] Load test 30 thread/60 s: /ready < 1 s toàn bộ, 0 'QueuePool limit', worker bảo trì vẫn chạy"],
+    "acceptance_criteria": [
+      "[ ] Rate limit per-camera kiểm tra in-memory/trước Depends(get_db)",
+      "[ ] upload_observation đọc/validate rồi chạy inference không giữ session; mở session ngắn để INSERT",
+      "[ ] Audit ghi qua run_in_threadpool, tái dùng session request (request.state.db)",
+      "[ ] SQLite: pool_timeout=5, busy timeout 5 s; Postgres giữ 5+5",
+      "[ ] Load test 30 thread/60 s: /ready < 1 s toàn bộ, 0 'QueuePool limit', worker bảo trì vẫn chạy"
+    ],
     "root_cause": "upload giữ pooled connection suốt multipart+decode+inference; audit middleware mở SessionLocal() thứ hai khi session request còn mở và db.commit() đồng bộ trên event loop; rate limit nằm trong ingest_observation sau khi đã lấy connection.",
-    "components": ["Backend", "AI", "Database"], "related_files": ["backend/expansion/vision_router.py:106-145", "backend/expansion/vision_service.py:200-264", "backend/middleware/audit.py:66-124", "backend/database.py:37-54"],
-    "estimate_days": 2, "dependencies": ["PARK-102"],
-    "test_cases": ["Case 1: engine QueuePool(1,1) + AuditLogMiddleware, 3 POST mutating đồng thời -> 3x2xx (hôm nay TimeoutError)", "Case 2: burst 30x60s trên demo server file SQLite: /ready poll 0,5 s luôn < 1 s", "Case 3: 4 upload đồng thời cùng camera -> 1x201 + 3x429 trước khi chạm DB"],
-    "dor": {"scope": "rõ", "owner": "Backend Lead", "env": "demo server riêng + script burst.py"},
-    "dod": {"code": true, "test": "tests/test_vision_upload_pool.py + tests/browser hoặc script load trong scripts/", "docs": "VISION_FORECAST.md mục giới hạn tài nguyên", "evidence": "log burst + pytest"}
+    "components": [
+      "Backend",
+      "AI",
+      "Database"
+    ],
+    "related_files": [
+      "backend/expansion/vision_router.py:106-145",
+      "backend/expansion/vision_service.py:200-264",
+      "backend/middleware/audit.py:66-124",
+      "backend/database.py:37-54"
+    ],
+    "estimate_days": 2,
+    "dependencies": [
+      "PARK-102"
+    ],
+    "test_cases": [
+      "Case 1: engine QueuePool(1,1) + AuditLogMiddleware, 3 POST mutating đồng thời -> 3x2xx (hôm nay TimeoutError)",
+      "Case 2: burst 30x60s trên demo server file SQLite: /ready poll 0,5 s luôn < 1 s",
+      "Case 3: 4 upload đồng thời cùng camera -> 1x201 + 3x429 trước khi chạm DB"
+    ],
+    "dor": {
+      "scope": "rõ",
+      "owner": "Backend Lead",
+      "env": "demo server riêng + script burst.py"
+    },
+    "dod": {
+      "code": true,
+      "test": "tests/test_vision_upload_pool.py + tests/browser hoặc script load trong scripts/",
+      "docs": "VISION_FORECAST.md mục giới hạn tài nguyên",
+      "evidence": "log burst + pytest"
+    },
+    "reviewed_against": "caaef39042ea15fc93f01938af46a7ac64890258",
+    "implementation_status": "VERIFIED_BASELINE",
+    "release_evidence": "CI 34215316423 success; CD 34216909674 attempt 2 success; public API release_id caaef39042ea15fc93f01938af46a7ac64890258. See REVIEW_ROUND2_RESOLUTION_2026-09-08.md.",
+    "online_acceptance_status": "PENDING_AUTHENTICATED_ROUND3_UAT"
   },
   {
-    "key": "PARK-104", "type": "Bug", "priority": "P0", "epic": "PARK-E1", "finding": "F-008",
+    "key": "PARK-104",
+    "type": "Bug",
+    "priority": "P0",
+    "epic": "PARK-E1",
+    "finding": "F-008",
     "summary": "Demo server: route SPA '/dashboard' che mất API GET /dashboard -> dashboard admin nhận HTML",
     "description": "Symptom: GET /dashboard (Bearer admin, Accept: application/json) trên 127.0.0.1:8765/8793 -> 200 text/html; các sub-path JSON bình thường. Impact: trang đầu tiên của admin_demo trong demo có thẻ tổng quan rỗng/undefined. Expected: API client nhận DashboardSummary JSON; trình duyệt deep-link vẫn nhận index.html. Production không bị (backend không phục vụ SPA).",
-    "acceptance_criteria": ["[ ] Bỏ '/dashboard' khỏi danh sách route SPA; thêm middleware trả index.html khi Accept có text/html", "[ ] test_demo_server: GET /dashboard Accept json -> application/json với khóa DashboardSummary; Accept html -> index.html"],
+    "acceptance_criteria": [
+      "[ ] Bỏ '/dashboard' khỏi danh sách route SPA; thêm middleware trả index.html khi Accept có text/html",
+      "[ ] test_demo_server: GET /dashboard Accept json -> application/json với khóa DashboardSummary; Accept html -> index.html"
+    ],
     "root_cause": "demo_server đăng ký route SPA exact '/dashboard' trên app ngoài trước khi mount api_app tại '/', Starlette match theo thứ tự.",
-    "components": ["DevOps", "Backend"], "related_files": ["scripts/demo_server.py:88-92,102", "backend/routers/dashboard.py:14-20", "frontend/src/pages/Dashboard/services/dashboardService.js:6"],
-    "estimate_days": 0.5, "dependencies": [],
-    "test_cases": ["Case 1: TestClient(build_demo_app()) + login admin: GET /dashboard json -> keys total_slots/occupied...", "Case 2: cùng route Accept: text/html -> <!doctype html>", "Case 3: customer GET /dashboard json -> 403 từ API (không phải HTML 200)"],
-    "dor": {"scope": "rõ", "owner": "Backend Lead", "env": "frontend/dist đã build"},
-    "dod": {"code": true, "test": "tests/test_demo_server.py", "docs": "DEMO_GUIDE mục lỗi thường gặp", "evidence": "pytest + ảnh dashboard demo"}
+    "components": [
+      "DevOps",
+      "Backend"
+    ],
+    "related_files": [
+      "scripts/demo_server.py:88-92,102",
+      "backend/routers/dashboard.py:14-20",
+      "frontend/src/pages/Dashboard/services/dashboardService.js:6"
+    ],
+    "estimate_days": 0.5,
+    "dependencies": [],
+    "test_cases": [
+      "Case 1: TestClient(build_demo_app()) + login admin: GET /dashboard json -> keys total_slots/occupied...",
+      "Case 2: cùng route Accept: text/html -> <!doctype html>",
+      "Case 3: customer GET /dashboard json -> 403 từ API (không phải HTML 200)"
+    ],
+    "dor": {
+      "scope": "rõ",
+      "owner": "Backend Lead",
+      "env": "frontend/dist đã build"
+    },
+    "dod": {
+      "code": true,
+      "test": "tests/test_demo_server.py",
+      "docs": "DEMO_GUIDE mục lỗi thường gặp",
+      "evidence": "pytest + ảnh dashboard demo"
+    },
+    "reviewed_against": "caaef39042ea15fc93f01938af46a7ac64890258",
+    "implementation_status": "VERIFIED_BASELINE",
+    "release_evidence": "CI 34215316423 success; CD 34216909674 attempt 2 success; public API release_id caaef39042ea15fc93f01938af46a7ac64890258. See REVIEW_ROUND2_RESOLUTION_2026-09-08.md.",
+    "online_acceptance_status": "PENDING_AUTHENTICATED_ROUND3_UAT"
   },
   {
-    "key": "PARK-105", "type": "Story", "priority": "P1", "epic": "PARK-E2", "finding": "F-004",
+    "key": "PARK-105",
+    "type": "Story",
+    "priority": "P1",
+    "epic": "PARK-E2",
+    "finding": "F-004",
     "summary": "Chạy worker bảo trì portal/vision trong production (lifespan + PORTAL_MAINTENANCE_INTERVAL_SECONDS) và ghi runbook",
     "description": "Symptom: fly.toml processes=['app'], main.py không có lifespan/worker; chỉ scripts/demo_server.py lập lịch. Impact: đơn 'Thu tiền tại bãi' quá 15 phút kẹt pending (collect 409, khách không tạo đơn mới, UI không có nút hủy), nhắc vé 7/1 ngày không bao giờ tạo trên production; runbook không nhắc worker. Expected: production chạy cùng bảo trì như demo hoặc API tự suy ra expired; runbook có lệnh dự phòng.",
-    "acceptance_criteria": ["[ ] main.py lifespan khởi động thread bảo trì khi PORTAL_MAINTENANCE_INTERVAL_SECONDS > 0 (mặc định 0 cho test)", "[ ] fly.toml [env] đặt 30; demo_server dùng chung đường mã", "[ ] serialize_order/create_order coi pending quá expires_at (không có event received) là expired", "[ ] PRODUCTION_DEPLOYMENT.md mô tả biến và `python -m expansion.portal_worker --once` qua flyctl ssh", "[ ] UI khách có nút hủy đơn manual pending; ẩn form đơn khi demo_payments_enabled=false"],
+    "acceptance_criteria": [
+      "[ ] main.py lifespan khởi động thread bảo trì khi PORTAL_MAINTENANCE_INTERVAL_SECONDS > 0 (mặc định 0 cho test)",
+      "[ ] fly.toml [env] đặt 30; demo_server dùng chung đường mã",
+      "[ ] serialize_order/create_order coi pending quá expires_at (không có event received) là expired",
+      "[ ] PRODUCTION_DEPLOYMENT.md mô tả biến và `python -m expansion.portal_worker --once` qua flyctl ssh",
+      "[ ] UI khách có nút hủy đơn manual pending; ẩn form đơn khi demo_payments_enabled=false"
+    ],
     "root_cause": "Vòng bảo trì được cài như thread riêng của demo wrapper; fly.toml/runbook không cập nhật khi phần mở rộng lên production.",
-    "components": ["Backend", "DevOps", "Frontend"], "related_files": ["backend/main.py:36-40,114-127", "backend/fly.toml:12-27", "backend/expansion/portal_worker.py:36-70", "backend/expansion/portal_service.py:236-243,263-272,397", "scripts/demo_server.py:48-77", "docs/PRODUCTION_DEPLOYMENT.md"],
-    "estimate_days": 1.5, "dependencies": [],
-    "test_cases": ["Case 1: TestClient(app) với interval 0.2 s, đơn manual expires_at quá khứ -> GET /me/orders 'expired' trong 2 s không gọi tay worker", "Case 2: static test fly.toml có [env] và main.py có lifespan", "Case 3: reminders: vé hết hạn ngày mai -> có notification pass:<id>:expires:1"],
-    "dor": {"scope": "rõ", "owner": "DevOps + Backend", "env": "pytest + Fly staging/dispatch"},
-    "dod": {"code": true, "test": "tests/test_production_maintenance.py", "docs": "PRODUCTION_DEPLOYMENT.md §2/§7", "evidence": "log Fly có dòng maintenance"}
+    "components": [
+      "Backend",
+      "DevOps",
+      "Frontend"
+    ],
+    "related_files": [
+      "backend/main.py:36-40,114-127",
+      "backend/fly.toml:12-27",
+      "backend/expansion/portal_worker.py:36-70",
+      "backend/expansion/portal_service.py:236-243,263-272,397",
+      "scripts/demo_server.py:48-77",
+      "docs/PRODUCTION_DEPLOYMENT.md"
+    ],
+    "estimate_days": 1.5,
+    "dependencies": [],
+    "test_cases": [
+      "Case 1: TestClient(app) với interval 0.2 s, đơn manual expires_at quá khứ -> GET /me/orders 'expired' trong 2 s không gọi tay worker",
+      "Case 2: static test fly.toml có [env] và main.py có lifespan",
+      "Case 3: reminders: vé hết hạn ngày mai -> có notification pass:<id>:expires:1"
+    ],
+    "dor": {
+      "scope": "rõ",
+      "owner": "DevOps + Backend",
+      "env": "pytest + Fly staging/dispatch"
+    },
+    "dod": {
+      "code": true,
+      "test": "tests/test_production_maintenance.py",
+      "docs": "PRODUCTION_DEPLOYMENT.md §2/§7",
+      "evidence": "log Fly có dòng maintenance"
+    },
+    "reviewed_against": "caaef39042ea15fc93f01938af46a7ac64890258",
+    "implementation_status": "VERIFIED_BASELINE",
+    "release_evidence": "CI 34215316423 success; CD 34216909674 attempt 2 success; public API release_id caaef39042ea15fc93f01938af46a7ac64890258. See REVIEW_ROUND2_RESOLUTION_2026-09-08.md.",
+    "online_acceptance_status": "PENDING_AUTHENTICATED_ROUND3_UAT"
   },
   {
-    "key": "PARK-106", "type": "Bug", "priority": "P1", "epic": "PARK-E3", "finding": "F-005",
+    "key": "PARK-106",
+    "type": "Bug",
+    "priority": "P1",
+    "epic": "PARK-E3",
+    "finding": "F-005",
     "summary": "Đặt chỗ xa vô hạn (2027/2031) khóa chỗ vãng lai ngay hôm nay; lỗi 409 nói sai 'vừa bị xe khác dùng'",
     "description": "Symptom: khách đặt 8 chỗ ô tô site B cho 2027-03-01 -> available_now 16 -> 8; walk-in hôm nay 409 'Vị trí đỗ vừa được xe khác sử dụng'; form nhận xe không còn chỗ. Impact: một khách đã xác minh có thể chặn cả khu loại xe miễn phí, hủy/tạo lại tức thì. Expected: giới hạn horizon (30 ngày, cấu hình) và số đặt chỗ hiệu lực/khách; thông báo đúng nguyên nhân.",
-    "acceptance_criteria": ["[ ] _check_window từ chối start_at > now + MAX_BOOKING_HORIZON (chỉ cho đặt chỗ khách; allocation/waitlist có giới hạn riêng)", "[ ] MAX_ACTIVE_RESERVATIONS_PER_CUSTOMER", "[ ] parking_service nhánh chọn chỗ tường minh: nếu admission_allowed False -> 409 'Vị trí đang có đặt chỗ/bảo đảm chỗ...'", "[ ] SITES_RESERVATIONS.md ghi horizon/giới hạn"],
+    "acceptance_criteria": [
+      "[ ] _check_window từ chối start_at > now + MAX_BOOKING_HORIZON (chỉ cho đặt chỗ khách; allocation/waitlist có giới hạn riêng)",
+      "[ ] MAX_ACTIVE_RESERVATIONS_PER_CUSTOMER",
+      "[ ] parking_service nhánh chọn chỗ tường minh: nếu admission_allowed False -> 409 'Vị trí đang có đặt chỗ/bảo đảm chỗ...'",
+      "[ ] SITES_RESERVATIONS.md ghi horizon/giới hạn"
+    ],
     "root_cause": "_check_window chỉ chặn start<now; admission_allowed với walk-in (end=None) chặn mọi cam kết tương lai bất kể xa gần; claim_parking_slot False bị hiểu là race.",
-    "components": ["Backend"], "related_files": ["backend/expansion/reservations.py:60-89,125-129", "backend/expansion/site_schemas.py:39-45", "backend/crud/parking_session.py:67-69", "backend/services/parking_service.py:322-339", "backend/routers/parking_session.py:131"],
-    "estimate_days": 1.5, "dependencies": [],
-    "test_cases": ["Case 1: đặt 300 ngày -> 422", "Case 2: đặt ngày mai -> 201 và reserved=True; walk-in hôm nay vào chỗ đó -> 409 với thông báo 'đã có đặt chỗ'", "Case 3: khách thứ N+1 đặt chỗ -> 409 giới hạn", "Case 4: auto-allocation legacy vẫn thử chỗ kế tiếp"],
-    "dor": {"scope": "cần chốt số 30 ngày/N", "owner": "Backend Lead + PO", "env": "pytest"},
-    "dod": {"code": true, "test": "tests/test_booking_horizon.py", "docs": "SITES_RESERVATIONS.md", "evidence": "pytest"}
+    "components": [
+      "Backend"
+    ],
+    "related_files": [
+      "backend/expansion/reservations.py:60-89,125-129",
+      "backend/expansion/site_schemas.py:39-45",
+      "backend/crud/parking_session.py:67-69",
+      "backend/services/parking_service.py:322-339",
+      "backend/routers/parking_session.py:131"
+    ],
+    "estimate_days": 1.5,
+    "dependencies": [],
+    "test_cases": [
+      "Case 1: đặt 300 ngày -> 422",
+      "Case 2: đặt ngày mai -> 201 và reserved=True; walk-in hôm nay vào chỗ đó -> 409 với thông báo 'đã có đặt chỗ'",
+      "Case 3: khách thứ N+1 đặt chỗ -> 409 giới hạn",
+      "Case 4: auto-allocation legacy vẫn thử chỗ kế tiếp"
+    ],
+    "dor": {
+      "scope": "cần chốt số 30 ngày/N",
+      "owner": "Backend Lead + PO",
+      "env": "pytest"
+    },
+    "dod": {
+      "code": true,
+      "test": "tests/test_booking_horizon.py",
+      "docs": "SITES_RESERVATIONS.md",
+      "evidence": "pytest"
+    },
+    "reviewed_against": "caaef39042ea15fc93f01938af46a7ac64890258",
+    "implementation_status": "VERIFIED_BASELINE",
+    "release_evidence": "CI 34215316423 success; CD 34216909674 attempt 2 success; public API release_id caaef39042ea15fc93f01938af46a7ac64890258. See REVIEW_ROUND2_RESOLUTION_2026-09-08.md.",
+    "online_acceptance_status": "PENDING_AUTHENTICATED_ROUND3_UAT"
   },
   {
-    "key": "PARK-107", "type": "Bug", "priority": "P1", "epic": "PARK-E3", "finding": "F-006",
+    "key": "PARK-107",
+    "type": "Bug",
+    "priority": "P1",
+    "epic": "PARK-E3",
+    "finding": "F-006",
     "summary": "PUT /api/v1/zones is_active=false bỏ rơi đặt chỗ đã xác nhận (arrive 404, thành no-show)",
     "description": "Symptom: ngừng khu qua API cũ -> 200 dù có đặt chỗ confirmed; chỗ biến mất khỏi availability; đặt chỗ vẫn 'confirmed'; 'Xe đã đến' -> 404 bảo trì; sau đó expired. Impact: bảo trì khu vô tình hủy ngầm đặt chỗ khách, không ai được báo. Expected: 409 như slot (trg_slot_commitment_guard) khi còn commitment.",
-    "acceptance_criteria": ["[ ] routers/zone.py update_zone kiểm tra reservation confirmed/arrived + allocation active (end_at > server_now) -> 409", "[ ] Trigger trg_zone_commitment_guard SQLite + Postgres (đặt ngoặc đúng 2 EXISTS), alembic revision mới, postgres_readiness REQUIRED_TRIGGERS", "[ ] Test: PUT 409 khi còn đặt chỗ, 200 sau khi hủy; commit ORM trực tiếp -> IntegrityError"],
+    "acceptance_criteria": [
+      "[ ] routers/zone.py update_zone kiểm tra reservation confirmed/arrived + allocation active (end_at > server_now) -> 409",
+      "[ ] Trigger trg_zone_commitment_guard SQLite + Postgres (đặt ngoặc đúng 2 EXISTS), alembic revision mới, postgres_readiness REQUIRED_TRIGGERS",
+      "[ ] Test: PUT 409 khi còn đặt chỗ, 200 sau khi hủy; commit ORM trực tiếp -> IntegrityError"
+    ],
     "root_cause": "Guard khu chỉ xét is_occupied/phiên active (viết trước khi có đặt chỗ); guard cam kết chỉ có ở parking_slots.",
-    "components": ["Backend", "Database"], "related_files": ["backend/routers/zone.py:62-69", "backend/crud/parking_slot.py:57-76", "backend/database.py:812-821", "backend/expansion/site_models.py:158-165,210-221", "backend/db_rollout.py:257", "backend/postgres_readiness.py:~364"],
-    "estimate_days": 1.5, "dependencies": [],
-    "test_cases": ["Case 1: đặt chỗ A-01 [now+1h,+3h); PUT zone inactive -> 409", "Case 2: hủy đặt chỗ -> PUT 200", "Case 3: allocation active -> 409", "Case 4: đổi tên khu có allocation -> 200 (trigger không bắn nhầm)"],
-    "dor": {"scope": "rõ", "owner": "Backend Lead", "env": "pytest SQLite + CI Postgres"},
-    "dod": {"code": true, "test": "tests/test_zone_commitment_guard.py + test_postgres_integration", "docs": "SITES_RESERVATIONS.md mục bảo trì khu", "evidence": "pytest + CI Postgres xanh"}
+    "components": [
+      "Backend",
+      "Database"
+    ],
+    "related_files": [
+      "backend/routers/zone.py:62-69",
+      "backend/crud/parking_slot.py:57-76",
+      "backend/database.py:812-821",
+      "backend/expansion/site_models.py:158-165,210-221",
+      "backend/db_rollout.py:257",
+      "backend/postgres_readiness.py:~364"
+    ],
+    "estimate_days": 1.5,
+    "dependencies": [],
+    "test_cases": [
+      "Case 1: đặt chỗ A-01 [now+1h,+3h); PUT zone inactive -> 409",
+      "Case 2: hủy đặt chỗ -> PUT 200",
+      "Case 3: allocation active -> 409",
+      "Case 4: đổi tên khu có allocation -> 200 (trigger không bắn nhầm)"
+    ],
+    "dor": {
+      "scope": "rõ",
+      "owner": "Backend Lead",
+      "env": "pytest SQLite + CI Postgres"
+    },
+    "dod": {
+      "code": true,
+      "test": "tests/test_zone_commitment_guard.py + test_postgres_integration",
+      "docs": "SITES_RESERVATIONS.md mục bảo trì khu",
+      "evidence": "pytest + CI Postgres xanh"
+    },
+    "reviewed_against": "caaef39042ea15fc93f01938af46a7ac64890258",
+    "implementation_status": "VERIFIED_BASELINE",
+    "release_evidence": "CI 34215316423 success; CD 34216909674 attempt 2 success; public API release_id caaef39042ea15fc93f01938af46a7ac64890258. See REVIEW_ROUND2_RESOLUTION_2026-09-08.md.",
+    "online_acceptance_status": "PENDING_AUTHENTICATED_ROUND3_UAT"
   },
   {
-    "key": "PARK-108", "type": "Bug", "priority": "P1", "epic": "PARK-E4", "finding": "F-007",
+    "key": "PARK-108",
+    "type": "Bug",
+    "priority": "P1",
+    "epic": "PARK-E4",
+    "finding": "F-007",
     "summary": "Manager tự duyệt yêu cầu liên kết hồ sơ/xe của chính mình; khách thật bị khóa khỏi hồ sơ (409) không có API gỡ",
     "description": "Symptom: manager POST /me/link-requests (SĐT khách legacy) rồi tự POST /portal/admin/link-requests/{id}/resolve -> approved; tự duyệt vehicle-request -> sở hữu xe; sau đó admin duyệt khách thật -> 409. Impact: phá tách bạch nhiệm vụ của bước xác minh duy nhất; nhận vé/biên lai tiền mặt dưới danh tính người khác; khóa hồ sơ khách thật. Expected: người duyệt ≠ người yêu cầu; có đường gỡ liên kết cho admin.",
-    "acceptance_criteria": ["[ ] resolve_link: item.user_id == actor.id -> 403", "[ ] resolve_vehicle: actor có PortalAccountLink tới item.customer_id -> 403", "[ ] Admin có endpoint gỡ liên kết (unlink) ghi audit", "[ ] PortalAdminPage hiện vai trò người yêu cầu"],
+    "acceptance_criteria": [
+      "[ ] resolve_link: item.user_id == actor.id -> 403",
+      "[ ] resolve_vehicle: actor có PortalAccountLink tới item.customer_id -> 403",
+      "[ ] Admin có endpoint gỡ liên kết (unlink) ghi audit",
+      "[ ] PortalAdminPage hiện vai trò người yêu cầu"
+    ],
     "root_cause": "resolve_* chỉ check_permission(actor,'manager'); /me/* mở cho mọi role; không so sánh actor với requester.",
-    "components": ["Backend", "Frontend"], "related_files": ["backend/expansion/portal_service.py:95-137,140-190", "backend/expansion/portal_router.py:56-63,80-85,239-262", "frontend/src/pages/Expansion/PortalAdminPage.jsx"],
-    "estimate_days": 1, "dependencies": [],
-    "test_cases": ["Case 1: manager tự duyệt link -> 403, không có PortalAccountLink(user_id=manager)", "Case 2: manager đã liên kết tự duyệt xe -> 403, Vehicle.customer_id không đổi", "Case 3: admin khác duyệt -> 200 (không hồi quy)", "Case 4: unlink -> khách thật liên kết được"],
-    "dor": {"scope": "rõ (unlink cần chốt UX)", "owner": "Backend Lead", "env": "pytest portal fixture"},
-    "dod": {"code": true, "test": "tests/test_portal_self_approval.py", "docs": "PORTAL_PAYMENTS.md mục xác minh", "evidence": "pytest"}
+    "components": [
+      "Backend",
+      "Frontend"
+    ],
+    "related_files": [
+      "backend/expansion/portal_service.py:95-137,140-190",
+      "backend/expansion/portal_router.py:56-63,80-85,239-262",
+      "frontend/src/pages/Expansion/PortalAdminPage.jsx"
+    ],
+    "estimate_days": 1,
+    "dependencies": [],
+    "test_cases": [
+      "Case 1: manager tự duyệt link -> 403, không có PortalAccountLink(user_id=manager)",
+      "Case 2: manager đã liên kết tự duyệt xe -> 403, Vehicle.customer_id không đổi",
+      "Case 3: admin khác duyệt -> 200 (không hồi quy)",
+      "Case 4: unlink -> khách thật liên kết được"
+    ],
+    "dor": {
+      "scope": "rõ (unlink cần chốt UX)",
+      "owner": "Backend Lead",
+      "env": "pytest portal fixture"
+    },
+    "dod": {
+      "code": true,
+      "test": "tests/test_portal_self_approval.py",
+      "docs": "PORTAL_PAYMENTS.md mục xác minh",
+      "evidence": "pytest"
+    },
+    "reviewed_against": "caaef39042ea15fc93f01938af46a7ac64890258",
+    "implementation_status": "VERIFIED_BASELINE",
+    "release_evidence": "CI 34215316423 success; CD 34216909674 attempt 2 success; public API release_id caaef39042ea15fc93f01938af46a7ac64890258. See REVIEW_ROUND2_RESOLUTION_2026-09-08.md.",
+    "online_acceptance_status": "PENDING_AUTHENTICATED_ROUND3_UAT"
   },
   {
-    "key": "PARK-109", "type": "Bug", "priority": "P1", "epic": "PARK-E5", "finding": "F-009",
+    "key": "PARK-109",
+    "type": "Bug",
+    "priority": "P1",
+    "epic": "PARK-E5",
+    "finding": "F-009",
     "summary": "Chunk lazy tải hỏng (deploy đổi hash/mất mạng) rơi vào ErrorBoundary mà 'Thử lại' không bao giờ hồi phục",
     "description": "Symptom: server dừng khi click route chưa mở -> 'Đã xảy ra lỗi hiển thị'; server chạy lại, asset 200, bấm 'Thử lại' 2 lần vẫn lỗi, không có request chunk mới. Impact: mỗi lần deploy Cloudflare Pages (hash mới) tab cũ chết ở route chưa mở; demo Wi-Fi chập chờn thấy trang lỗi với nút retry vô dụng. Expected: retry import hoặc reload 1 lần; 'Thử lại' hoạt động.",
-    "acceptance_criteria": ["[ ] main.jsx lắng nghe vite:preloadError -> reload", "[ ] lazyRetry bọc 27 lazy import (retry 1 lần sau 800 ms)", "[ ] ErrorBoundary.handleRetry reload khi lỗi thuộc nhóm import động", "[ ] Unit test lazyRetry; E2E abort chunk 1 lần rồi click -> không còn boundary"],
+    "acceptance_criteria": [
+      "[ ] main.jsx lắng nghe vite:preloadError -> reload",
+      "[ ] lazyRetry bọc 27 lazy import (retry 1 lần sau 800 ms)",
+      "[ ] ErrorBoundary.handleRetry reload khi lỗi thuộc nhóm import động",
+      "[ ] Unit test lazyRetry; E2E abort chunk 1 lần rồi click -> không còn boundary"
+    ],
     "root_cause": "React.lazy cache kết quả reject; handleRetry chỉ setState; không có listener vite:preloadError.",
-    "components": ["Frontend"], "related_files": ["frontend/src/routes/AppRoutes.jsx:12-40", "frontend/src/components/common/ErrorBoundary.jsx:29-31", "frontend/src/main.jsx"],
-    "estimate_days": 1, "dependencies": [],
-    "test_cases": ["Case 1: factory reject rồi resolve -> component resolve", "Case 2: reject 2 lần -> reject lỗi gốc", "Case 3: playwright route.abort('**/assets/AccountPage-*.js') once -> trang render sau retry"],
-    "dor": {"scope": "rõ", "owner": "Frontend Lead", "env": "node test + dev-playwright"},
-    "dod": {"code": true, "test": "frontend/tests/lazyRetry.test.js + e2e", "docs": "-", "evidence": "npm test + video/ảnh e2e"}
+    "components": [
+      "Frontend"
+    ],
+    "related_files": [
+      "frontend/src/routes/AppRoutes.jsx:12-40",
+      "frontend/src/components/common/ErrorBoundary.jsx:29-31",
+      "frontend/src/main.jsx"
+    ],
+    "estimate_days": 1,
+    "dependencies": [],
+    "test_cases": [
+      "Case 1: factory reject rồi resolve -> component resolve",
+      "Case 2: reject 2 lần -> reject lỗi gốc",
+      "Case 3: playwright route.abort('**/assets/AccountPage-*.js') once -> trang render sau retry"
+    ],
+    "dor": {
+      "scope": "rõ",
+      "owner": "Frontend Lead",
+      "env": "node test + dev-playwright"
+    },
+    "dod": {
+      "code": true,
+      "test": "frontend/tests/lazyRetry.test.js + e2e",
+      "docs": "-",
+      "evidence": "npm test + video/ảnh e2e"
+    },
+    "reviewed_against": "caaef39042ea15fc93f01938af46a7ac64890258",
+    "implementation_status": "VERIFIED_BASELINE",
+    "release_evidence": "CI 34215316423 success; CD 34216909674 attempt 2 success; public API release_id caaef39042ea15fc93f01938af46a7ac64890258. See REVIEW_ROUND2_RESOLUTION_2026-09-08.md.",
+    "online_acceptance_status": "PENDING_AUTHENTICATED_ROUND3_UAT"
   },
   {
-    "key": "PARK-110", "type": "Task", "priority": "P1", "epic": "PARK-E5", "finding": "F-024,F-025,F-026,F-027",
+    "key": "PARK-110",
+    "type": "Task",
+    "priority": "P1",
+    "epic": "PARK-E5",
+    "finding": "F-024,F-025,F-026,F-027",
     "summary": "Frontend: interceptor 401 với /auth/login, 5xx khi tải profile, khóa idempotency sau lỗi, sidebar highlight đôi",
     "description": "Symptom: (a) đang đăng nhập mà nhập sai mật khẩu ở /login -> 401 làm interceptor xóa token, không báo lỗi; (b) app-load profile fetch lỗi 502 -> xóa JWT hợp lệ, bắt đăng nhập lại; (c) form đơn giữ nguyên idempotency_key sau lỗi mà không có nút 'Yêu cầu mới'; (d) /portal-admin highlight 2 mục sidebar. Impact: trải nghiệm sai/đăng xuất oan; khó gửi lại đơn khác sau lỗi mạng. Expected: bỏ qua interceptor cho /auth/login; chỉ xóa token khi 401; nút xoay khóa; so khớp path chính xác.",
-    "acceptance_criteria": ["[ ] api.js: request login không gắn Authorization; 401 từ /auth/login không logout", "[ ] authSessionBoundary: non-401 giữ token, hiển thị lỗi tải", "[ ] CustomerPortal: nút 'Yêu cầu mới' xoay idempotency_key; giữ khóa khi retry cùng nội dung", "[ ] MainLayout isSelected dùng segment matching"],
+    "acceptance_criteria": [
+      "[ ] api.js: request login không gắn Authorization; 401 từ /auth/login không logout",
+      "[ ] authSessionBoundary: non-401 giữ token, hiển thị lỗi tải",
+      "[ ] CustomerPortal: nút 'Yêu cầu mới' xoay idempotency_key; giữ khóa khi retry cùng nội dung",
+      "[ ] MainLayout isSelected dùng segment matching"
+    ],
     "root_cause": "Interceptor áp cho mọi request; catch tải profile không phân biệt mã lỗi; khóa chỉ xoay onSuccess; startsWith thô.",
-    "components": ["Frontend"], "related_files": ["frontend/src/services/api.js:23-67", "frontend/src/services/authSessionBoundary.js:177-189", "frontend/src/pages/Expansion/CustomerPortal.jsx:36,130", "frontend/src/layouts/MainLayout.jsx:166"],
-    "estimate_days": 1, "dependencies": [],
-    "test_cases": ["Case 1: token hợp lệ + login sai -> vẫn đăng nhập, thấy 'Sai tên đăng nhập'", "Case 2: mock /me 502 -> token còn, alert tải lại", "Case 3: gửi đơn lỗi mạng -> bấm 'Yêu cầu mới' -> key khác", "Case 4: /portal-admin chỉ 1 mục selected"],
-    "dor": {"scope": "rõ", "owner": "Frontend Lead", "env": "node test + browser"},
-    "dod": {"code": true, "test": "frontend/tests/authFlow.test.js, portalState.test.js", "docs": "-", "evidence": "npm test + UAT"}
+    "components": [
+      "Frontend"
+    ],
+    "related_files": [
+      "frontend/src/services/api.js:23-67",
+      "frontend/src/services/authSessionBoundary.js:177-189",
+      "frontend/src/pages/Expansion/CustomerPortal.jsx:36,130",
+      "frontend/src/layouts/MainLayout.jsx:166"
+    ],
+    "estimate_days": 1,
+    "dependencies": [],
+    "test_cases": [
+      "Case 1: token hợp lệ + login sai -> vẫn đăng nhập, thấy 'Sai tên đăng nhập'",
+      "Case 2: mock /me 502 -> token còn, alert tải lại",
+      "Case 3: gửi đơn lỗi mạng -> bấm 'Yêu cầu mới' -> key khác",
+      "Case 4: /portal-admin chỉ 1 mục selected"
+    ],
+    "dor": {
+      "scope": "rõ",
+      "owner": "Frontend Lead",
+      "env": "node test + browser"
+    },
+    "dod": {
+      "code": true,
+      "test": "frontend/tests/authFlow.test.js, portalState.test.js",
+      "docs": "-",
+      "evidence": "npm test + UAT"
+    },
+    "reviewed_against": "caaef39042ea15fc93f01938af46a7ac64890258",
+    "implementation_status": "VERIFIED_BASELINE",
+    "release_evidence": "CI 34215316423 success; CD 34216909674 attempt 2 success; public API release_id caaef39042ea15fc93f01938af46a7ac64890258. See REVIEW_ROUND2_RESOLUTION_2026-09-08.md.",
+    "online_acceptance_status": "PENDING_AUTHENTICATED_ROUND3_UAT"
   },
   {
-    "key": "PARK-111", "type": "Task", "priority": "P1", "epic": "PARK-E2", "finding": "F-010",
+    "key": "PARK-111",
+    "type": "Task",
+    "priority": "P1",
+    "epic": "PARK-E2",
+    "finding": "F-010",
     "summary": "Chỉ tin Fly-Client-IP khi TRUSTED_EDGE_PROXY=fly; Caddy gỡ header; test peer untrusted",
     "description": "Symptom: 11 login sai với header Fly-Client-IP 203.0.113.79 -> 429; đổi header .80 -> 401 (reset limit); audit ghi IP tự đặt. Impact: trên mọi ingress không phải Fly Proxy (Caddy blue-green, demo -Lan, uvicorn trần) rate limit và IP audit vô nghĩa; production Fly khả năng an toàn nhưng chưa được test bảo vệ. Expected: header edge chỉ được tin khi cấu hình khai báo; cổng release gate kiểm tra biến.",
-    "acceptance_criteria": ["[ ] core.config Settings.TRUSTED_EDGE_PROXY; client_ip chỉ đọc header khi = 'fly'", "[ ] fly.toml [env] TRUSTED_EDGE_PROXY=fly; production_release_gate assert", "[ ] deploy/Caddyfile.* header_up -Fly-Client-IP; bỏ --forwarded-allow-ips=* khỏi Dockerfile CMD (dùng env FORWARDED_ALLOW_IPS)", "[ ] Test: không có biến -> header bị bỏ qua, audit ip = peer; có biến -> 3 test cũ vẫn pass", "[ ] Runbook: Fly Proxy phải là ingress duy nhất (không bật Cloudflare proxy cho api.parkingai.am)"],
+    "acceptance_criteria": [
+      "[ ] core.config Settings.TRUSTED_EDGE_PROXY; client_ip chỉ đọc header khi = 'fly'",
+      "[ ] fly.toml [env] TRUSTED_EDGE_PROXY=fly; production_release_gate assert",
+      "[ ] deploy/Caddyfile.* header_up -Fly-Client-IP; bỏ --forwarded-allow-ips=* khỏi Dockerfile CMD (dùng env FORWARDED_ALLOW_IPS)",
+      "[ ] Test: không có biến -> header bị bỏ qua, audit ip = peer; có biến -> 3 test cũ vẫn pass",
+      "[ ] Runbook: Fly Proxy phải là ingress duy nhất (không bật Cloudflare proxy cho api.parkingai.am)"
+    ],
     "root_cause": "get_client_ip hard-code tin header Fly; deploy/ và demo tái dùng cùng mã không có công tắc trusted proxy.",
-    "components": ["Backend", "DevOps"], "related_files": ["backend/core/client_ip.py:4-9", "backend/core/auth_rate_limit.py:33-62", "backend/middleware/audit.py:114", "backend/fly.toml", "backend/Dockerfile:27", "deploy/Caddyfile.blue", "deploy/Caddyfile.green", "backend/production_release_gate.py"],
-    "estimate_days": 1, "dependencies": [],
-    "test_cases": ["Case 1: MAX_FAILURES=2, 2 sai không header, lần 3 có header -> 429; audit ip 'testclient'", "Case 2: setenv fly -> header được dùng", "Case 3: release gate fail khi thiếu biến"],
-    "dor": {"scope": "rõ", "owner": "DevOps", "env": "pytest + Fly staging"},
-    "dod": {"code": true, "test": "tests/test_auth.py (mở rộng)", "docs": "PRODUCTION_DEPLOYMENT.md, deploy/.env.production.example", "evidence": "pytest + curl staging"}
+    "components": [
+      "Backend",
+      "DevOps"
+    ],
+    "related_files": [
+      "backend/core/client_ip.py:4-9",
+      "backend/core/auth_rate_limit.py:33-62",
+      "backend/middleware/audit.py:114",
+      "backend/fly.toml",
+      "backend/Dockerfile:27",
+      "deploy/Caddyfile.blue",
+      "deploy/Caddyfile.green",
+      "backend/production_release_gate.py"
+    ],
+    "estimate_days": 1,
+    "dependencies": [],
+    "test_cases": [
+      "Case 1: MAX_FAILURES=2, 2 sai không header, lần 3 có header -> 429; audit ip 'testclient'",
+      "Case 2: setenv fly -> header được dùng",
+      "Case 3: release gate fail khi thiếu biến"
+    ],
+    "dor": {
+      "scope": "rõ",
+      "owner": "DevOps",
+      "env": "pytest + Fly staging"
+    },
+    "dod": {
+      "code": true,
+      "test": "tests/test_auth.py (mở rộng)",
+      "docs": "PRODUCTION_DEPLOYMENT.md, deploy/.env.production.example",
+      "evidence": "pytest + curl staging"
+    },
+    "reviewed_against": "caaef39042ea15fc93f01938af46a7ac64890258",
+    "implementation_status": "VERIFIED_BASELINE",
+    "release_evidence": "CI 34215316423 success; CD 34216909674 attempt 2 success; public API release_id caaef39042ea15fc93f01938af46a7ac64890258. See REVIEW_ROUND2_RESOLUTION_2026-09-08.md.",
+    "online_acceptance_status": "PENDING_AUTHENTICATED_ROUND3_UAT"
   },
   {
-    "key": "PARK-112", "type": "Task", "priority": "P1", "epic": "PARK-E4", "finding": "F-015,F-016,F-017,F-018",
+    "key": "PARK-112",
+    "type": "Task",
+    "priority": "P1",
+    "epic": "PARK-E4",
+    "finding": "F-015,F-016,F-017,F-018",
     "summary": "Vệ sinh API: kiểm tra quyền bãi trước tra cứu xe; no-store cho /dashboard,/reports; response_model v2; 422 không echo mật khẩu",
     "description": "Symptom: (a) customer/staff bãi khác gọi POST /sites/{B}/reservations với vehicle_id lạ -> 404 'Không tìm thấy xe' trước 403 -> oracle tồn tại xe; (b) /dashboard, /reports JSON có Cache-Control mặc định; (c) booking.serialize dump mọi cột (hash xác nhận, URL ảnh, cột nội bộ); (d) 422 register/change-password trả 'input' chứa mật khẩu. Impact: rò rỉ thông tin mức thấp, không hợp chuẩn bảo mật. Expected: authz trước lookup; header no-store; DTO tường minh; ẩn input nhạy cảm.",
-    "acceptance_criteria": ["[ ] _vehicle(): require_site_access trước db.get(Vehicle)", "[ ] security_headers prefix thêm /dashboard, /reports, /parking", "[ ] Pydantic response_model cho reservations/allocations/waitlist/sessions v2", "[ ] Handler RequestValidationError xóa 'input' cho field password*"],
+    "acceptance_criteria": [
+      "[ ] _vehicle(): require_site_access trước db.get(Vehicle)",
+      "[ ] security_headers prefix thêm /dashboard, /reports, /parking",
+      "[ ] Pydantic response_model cho reservations/allocations/waitlist/sessions v2",
+      "[ ] Handler RequestValidationError xóa 'input' cho field password*"
+    ],
     "root_cause": "Thứ tự kiểm tra; danh sách prefix thiếu; serialize generic; handler validation mặc định.",
-    "components": ["Backend"], "related_files": ["backend/expansion/reservations.py:110-121", "backend/middleware/security_headers.py:39", "backend/expansion/reservations.py:21-28", "backend/expansion/site_service.py:87", "backend/schemas/auth.py:13,70-71", "backend/main.py"],
-    "estimate_days": 1.5, "dependencies": [],
-    "test_cases": ["Case 1: staff bãi A POST /sites/2/reservations vehicle 999 -> 403 (không 404)", "Case 2: GET /dashboard admin -> Cache-Control: no-store", "Case 3: /sites/1/sessions không có quote_hash/confirmation columns", "Case 4: POST /api/auth/register password 'abc' -> 422 body không chứa 'abc'"],
-    "dor": {"scope": "rõ", "owner": "Backend Lead", "env": "pytest"},
-    "dod": {"code": true, "test": "tests/test_api_hygiene.py", "docs": "SITES_RESERVATIONS.md bảng response", "evidence": "pytest"}
+    "components": [
+      "Backend"
+    ],
+    "related_files": [
+      "backend/expansion/reservations.py:110-121",
+      "backend/middleware/security_headers.py:39",
+      "backend/expansion/reservations.py:21-28",
+      "backend/expansion/site_service.py:87",
+      "backend/schemas/auth.py:13,70-71",
+      "backend/main.py"
+    ],
+    "estimate_days": 1.5,
+    "dependencies": [],
+    "test_cases": [
+      "Case 1: staff bãi A POST /sites/2/reservations vehicle 999 -> 403 (không 404)",
+      "Case 2: GET /dashboard admin -> Cache-Control: no-store",
+      "Case 3: /sites/1/sessions không có quote_hash/confirmation columns",
+      "Case 4: POST /api/auth/register password 'abc' -> 422 body không chứa 'abc'"
+    ],
+    "dor": {
+      "scope": "rõ",
+      "owner": "Backend Lead",
+      "env": "pytest"
+    },
+    "dod": {
+      "code": true,
+      "test": "tests/test_api_hygiene.py",
+      "docs": "SITES_RESERVATIONS.md bảng response",
+      "evidence": "pytest"
+    },
+    "reviewed_against": "caaef39042ea15fc93f01938af46a7ac64890258",
+    "implementation_status": "VERIFIED_BASELINE",
+    "release_evidence": "CI 34215316423 success; CD 34216909674 attempt 2 success; public API release_id caaef39042ea15fc93f01938af46a7ac64890258. See REVIEW_ROUND2_RESOLUTION_2026-09-08.md.",
+    "online_acceptance_status": "PENDING_AUTHENTICATED_ROUND3_UAT"
   },
   {
-    "key": "PARK-113", "type": "Task", "priority": "P1", "epic": "PARK-E3", "finding": "F-019,F-020,F-021",
+    "key": "PARK-113",
+    "type": "Task",
+    "priority": "P1",
+    "epic": "PARK-E3",
+    "finding": "F-019,F-020,F-021",
     "summary": "Đặt chỗ: gắn đặt chỗ khi xe vào chỗ khác; replay request_id sau hủy/hết hạn; một xe giữ 2 chỗ (allocation + reservation)",
     "description": "Symptom: (a) xe có đặt chỗ A-01 được nhận vào A-02 -> đặt chỗ vẫn confirmed rồi thành no-show; (b) POST cùng request_id sau khi đặt chỗ đã cancelled/expired -> 201 trả dòng chết; (c) allocation slot X và reservation slot Y cùng xe cùng giờ đều được nhận. Impact: dữ liệu đặt chỗ sai, no-show oan, chiếm 2 chỗ. Expected: record_admission gắn/hủy đặt chỗ cùng xe cùng khung; replay dòng terminal -> 409 hoặc tạo mới rõ ràng; kiểm tra chồng lấn xét cả allocation.",
-    "acceptance_criteria": ["[ ] record_admission tìm đặt chỗ confirmed cùng xe trong khung, gắn session và đánh dấu arrived (hoặc cancelled 'admitted_elsewhere')", "[ ] _existing bỏ qua dòng cancelled/expired (tạo mới) và test", "[ ] reserve() kiểm tra GuaranteedAllocation cùng xe chồng khung"],
+    "acceptance_criteria": [
+      "[ ] record_admission tìm đặt chỗ confirmed cùng xe trong khung, gắn session và đánh dấu arrived (hoặc cancelled 'admitted_elsewhere')",
+      "[ ] _existing bỏ qua dòng cancelled/expired (tạo mới) và test",
+      "[ ] reserve() kiểm tra GuaranteedAllocation cùng xe chồng khung"
+    ],
     "root_cause": "record_admission lọc slot_id == session.parking_slot_id; _existing không lọc status; overlap query chỉ ParkingReservation.",
-    "components": ["Backend"], "related_files": ["backend/expansion/reservations.py:92-107,138-142,194-201"],
-    "estimate_days": 1, "dependencies": ["PARK-106"],
-    "test_cases": ["Case 1: đặt A-01, nhận vào A-02 -> reservation.status != confirmed, session_id gắn", "Case 2: cancel rồi replay request_id -> 409/201 mới (theo quyết định) có test", "Case 3: allocation X + reservation Y cùng xe cùng giờ -> 409"],
-    "dor": {"scope": "cần chốt hành vi replay", "owner": "Backend Lead + PO", "env": "pytest"},
-    "dod": {"code": true, "test": "tests/test_booking_edge_cases.py", "docs": "SITES_RESERVATIONS.md", "evidence": "pytest"}
+    "components": [
+      "Backend"
+    ],
+    "related_files": [
+      "backend/expansion/reservations.py:92-107,138-142,194-201"
+    ],
+    "estimate_days": 1,
+    "dependencies": [
+      "PARK-106"
+    ],
+    "test_cases": [
+      "Case 1: đặt A-01, nhận vào A-02 -> reservation.status != confirmed, session_id gắn",
+      "Case 2: cancel rồi replay request_id -> 409/201 mới (theo quyết định) có test",
+      "Case 3: allocation X + reservation Y cùng xe cùng giờ -> 409"
+    ],
+    "dor": {
+      "scope": "cần chốt hành vi replay",
+      "owner": "Backend Lead + PO",
+      "env": "pytest"
+    },
+    "dod": {
+      "code": true,
+      "test": "tests/test_booking_edge_cases.py",
+      "docs": "SITES_RESERVATIONS.md",
+      "evidence": "pytest"
+    },
+    "reviewed_against": "caaef39042ea15fc93f01938af46a7ac64890258",
+    "implementation_status": "VERIFIED_BASELINE",
+    "release_evidence": "CI 34215316423 success; CD 34216909674 attempt 2 success; public API release_id caaef39042ea15fc93f01938af46a7ac64890258. See REVIEW_ROUND2_RESOLUTION_2026-09-08.md.",
+    "online_acceptance_status": "PENDING_AUTHENTICATED_ROUND3_UAT"
   },
   {
-    "key": "PARK-114", "type": "Task", "priority": "P2", "epic": "PARK-E6", "finding": "F-012,F-028",
+    "key": "PARK-114",
+    "type": "Task",
+    "priority": "P2",
+    "epic": "PARK-E6",
+    "finding": "F-012,F-028",
     "summary": "Vision: loại ảnh đã duyệt cũ nhất khi đủ 500; giảm retention áp dụng ảnh đang lưu; log lỗi engine",
     "description": "Symptom: 500 ảnh đều đã duyệt -> ảnh 501 vẫn 409, purge-expired 0, UI không có nút xóa; PATCH retention_hours=1 không đổi expires_at cũ; lỗi engine bị nuốt, /vision/status vẫn available. Impact: bãi >500 lượt chụp/24 h tự khóa camera-assist; không chẩn đoán được lỗi model. Expected: eviction ảnh terminal (rejected trước accepted, không đụng pending); retention mới cập nhật; logger.exception.",
-    "acceptance_criteria": ["[ ] ingest: khi >= cap, xóa ảnh review_status != pending cũ nhất; nếu toàn pending -> 409 thông báo mới", "[ ] PATCH camera retention giảm expires_at ảnh hiện có (min)", "[ ] recognize_image log exception; status có last_error", "[ ] Sửa text 409 và thêm nút purge-reviewed cho manager"],
+    "acceptance_criteria": [
+      "[ ] ingest: khi >= cap, xóa ảnh review_status != pending cũ nhất; nếu toàn pending -> 409 thông báo mới",
+      "[ ] PATCH camera retention giảm expires_at ảnh hiện có (min)",
+      "[ ] recognize_image log exception; status có last_error",
+      "[ ] Sửa text 409 và thêm nút purge-reviewed cho manager"
+    ],
     "root_cause": "Cap đếm mọi dòng; expires_at stamp một lần; except Exception im lặng.",
-    "components": ["AI", "Backend", "Frontend"], "related_files": ["backend/expansion/vision_service.py:27,184-197,246-252", "backend/expansion/vision_router.py:221-234", "frontend/src/pages/Expansion/VisionPage.jsx"],
-    "estimate_days": 1.5, "dependencies": ["PARK-103"],
-    "test_cases": ["Case 1: 500 ảnh đã duyệt -> ảnh 501 201, ảnh bị loại là rejected cũ nhất", "Case 2: 500 pending -> 409", "Case 3: PATCH retention 1h -> expires_at <= now+1h", "Case 4: engine raise -> caplog có traceback"],
-    "dor": {"scope": "rõ", "owner": "AI/Backend", "env": "pytest vision fixture"},
-    "dod": {"code": true, "test": "tests/test_vision_cap_eviction.py", "docs": "VISION_FORECAST.md", "evidence": "pytest"}
+    "components": [
+      "AI",
+      "Backend",
+      "Frontend"
+    ],
+    "related_files": [
+      "backend/expansion/vision_service.py:27,184-197,246-252",
+      "backend/expansion/vision_router.py:221-234",
+      "frontend/src/pages/Expansion/VisionPage.jsx"
+    ],
+    "estimate_days": 1.5,
+    "dependencies": [
+      "PARK-103"
+    ],
+    "test_cases": [
+      "Case 1: 500 ảnh đã duyệt -> ảnh 501 201, ảnh bị loại là rejected cũ nhất",
+      "Case 2: 500 pending -> 409",
+      "Case 3: PATCH retention 1h -> expires_at <= now+1h",
+      "Case 4: engine raise -> caplog có traceback"
+    ],
+    "dor": {
+      "scope": "rõ",
+      "owner": "AI/Backend",
+      "env": "pytest vision fixture"
+    },
+    "dod": {
+      "code": true,
+      "test": "tests/test_vision_cap_eviction.py",
+      "docs": "VISION_FORECAST.md",
+      "evidence": "pytest"
+    },
+    "reviewed_against": "caaef39042ea15fc93f01938af46a7ac64890258",
+    "implementation_status": "VERIFIED_BASELINE",
+    "release_evidence": "CI 34215316423 success; CD 34216909674 attempt 2 success; public API release_id caaef39042ea15fc93f01938af46a7ac64890258. See REVIEW_ROUND2_RESOLUTION_2026-09-08.md.",
+    "online_acceptance_status": "PENDING_AUTHENTICATED_ROUND3_UAT"
   },
   {
-    "key": "PARK-115", "type": "Task", "priority": "P2", "epic": "PARK-E2", "finding": "F-011,F-029,F-030",
+    "key": "PARK-115",
+    "type": "Task",
+    "priority": "P2",
+    "epic": "PARK-E2",
+    "finding": "F-011,F-029,F-030",
     "summary": "Cổng phát hành: điểm khôi phục trước migration (Required reviewers + PITR/backup check), pin flyctl/base image, tài liệu release frontend",
     "description": "Symptom: delivery.yml chạy flyctl deploy (release_command alembic upgrade head) ngay sau setup, không kiểm tra backup/PITR; environment 'production' chưa chắc bật reviewers; flyctl action @master; base image tag động; Pages build tự động không mô tả rollback. Impact: migration lỗi ở tương lai không có điểm khôi phục (RPO 24 h/Pro, không có/Free). Expected: fail-closed nếu thiếu bằng chứng backup; phê duyệt bắt buộc; supply chain pin.",
-    "acceptance_criteria": ["[ ] Bật Required reviewers cho environment production (repo public -> miễn phí) và ghi vào runbook", "[ ] Bước kiểm tra Supabase backup/PITR mới hơn N giờ (Management API) trước flyctl deploy, fail-closed; KHÔNG upload pg_dump lên artifact repo public", "[ ] flyctl-actions pin theo tag/sha; base image pin digest", "[ ] test_postgres_contract: bước backup-check đứng trước 'flyctl deploy'", "[ ] PRODUCTION_DEPLOYMENT §3/§7: backup trước MỌI migration; mục rollback frontend Pages"],
+    "acceptance_criteria": [
+      "[ ] Bật Required reviewers cho environment production (repo public -> miễn phí) và ghi vào runbook",
+      "[ ] Bước kiểm tra Supabase backup/PITR mới hơn N giờ (Management API) trước flyctl deploy, fail-closed; KHÔNG upload pg_dump lên artifact repo public",
+      "[ ] flyctl-actions pin theo tag/sha; base image pin digest",
+      "[ ] test_postgres_contract: bước backup-check đứng trước 'flyctl deploy'",
+      "[ ] PRODUCTION_DEPLOYMENT §3/§7: backup trước MỌI migration; mục rollback frontend Pages"
+    ],
     "root_cause": "An toàn phát hành chỉ có gate hậu migration; supply chain chưa pin; runbook thiếu.",
-    "components": ["DevOps"], "related_files": [".github/workflows/delivery.yml:108-138", "backend/fly.toml:12", "backend/alembic/versions/20260907_02_expansion_demo.py:541-555", "docs/PRODUCTION_DEPLOYMENT.md:56-57,146-149", "backend/Dockerfile"],
-    "estimate_days": 1.5, "dependencies": [],
-    "test_cases": ["Case 1: parse delivery.yml: step backup-check trước deploy", "Case 2: dispatch thử với secret sai -> job fail trước deploy", "Case 3: reviewers bắt buộc: run chờ approval"],
-    "dor": {"scope": "cần quyền owner GitHub/Supabase", "owner": "DevOps + Owner", "env": "GitHub + Supabase dashboard"},
-    "dod": {"code": true, "test": "tests/test_postgres_contract.py", "docs": "PRODUCTION_DEPLOYMENT.md", "evidence": "ảnh cấu hình environment + run log"}
+    "components": [
+      "DevOps"
+    ],
+    "related_files": [
+      ".github/workflows/delivery.yml:108-138",
+      "backend/fly.toml:12",
+      "backend/alembic/versions/20260907_02_expansion_demo.py:541-555",
+      "docs/PRODUCTION_DEPLOYMENT.md:56-57,146-149",
+      "backend/Dockerfile"
+    ],
+    "estimate_days": 1.5,
+    "dependencies": [],
+    "test_cases": [
+      "Case 1: parse delivery.yml: step backup-check trước deploy",
+      "Case 2: dispatch thử với secret sai -> job fail trước deploy",
+      "Case 3: reviewers bắt buộc: run chờ approval"
+    ],
+    "dor": {
+      "scope": "cần quyền owner GitHub/Supabase",
+      "owner": "DevOps + Owner",
+      "env": "GitHub + Supabase dashboard"
+    },
+    "dod": {
+      "code": true,
+      "test": "tests/test_postgres_contract.py",
+      "docs": "PRODUCTION_DEPLOYMENT.md",
+      "evidence": "ảnh cấu hình environment + run log"
+    },
+    "reviewed_against": "caaef39042ea15fc93f01938af46a7ac64890258",
+    "implementation_status": "GATE_AND_RESTORE_VERIFIED",
+    "release_evidence": "CI 34215316423 success; CD 34216909674 attempt 2 success; public API release_id caaef39042ea15fc93f01938af46a7ac64890258. See REVIEW_ROUND2_RESOLUTION_2026-09-08.md.",
+    "online_acceptance_status": "PENDING_AUTHENTICATED_ROUND3_UAT",
+    "verification_note": "Native recovery gate passed at baseline; public-schema PG17 dump restored to isolated PG17, 36 table counts match. Environment reviewer policy was not independently verified; do not infer it from CI success."
   },
   {
-    "key": "PARK-116", "type": "Task", "priority": "P2", "epic": "PARK-E7", "finding": "F-022,F-023",
+    "key": "PARK-116",
+    "type": "Task",
+    "priority": "P2",
+    "epic": "PARK-E7",
+    "finding": "F-022,F-023",
     "summary": "PostgreSQL: thống nhất thứ tự khóa vehicle/slot; thêm integration test đường ghi mở rộng (reserve/arrive/checkout/order) trên CI Postgres",
     "description": "Symptom: reserve()/offer_waitlist khóa vehicle rồi slot; check_in()/arrive khóa slot rồi vehicle -> nguy cơ deadlock trên Postgres (SQLite serialize nên không thấy); test_postgres_integration chỉ có 1 ca mở rộng và chạy readiness ở connection riêng. Impact: deadlock/timeout tiềm tàng trên production dưới tải; hồi quy Postgres không bị CI bắt. Expected: một thứ tự khóa; CI Postgres chạy đường ghi thật.",
-    "acceptance_criteria": ["[ ] Tài liệu hóa và áp dụng thứ tự khóa (vehicle -> slot) ở reserve/check-in/offer", "[ ] test_postgres_integration: reserve+arrive+checkout, order create+simulate+refund, waitlist offer đồng thời 2 connection", "[ ] CI vẫn < 15 phút job verify"],
+    "acceptance_criteria": [
+      "[ ] Tài liệu hóa và áp dụng thứ tự khóa (vehicle -> slot) ở reserve/check-in/offer",
+      "[ ] test_postgres_integration: reserve+arrive+checkout, order create+simulate+refund, waitlist offer đồng thời 2 connection",
+      "[ ] CI vẫn < 15 phút job verify"
+    ],
     "root_cause": "Hai đường mã viết độc lập; test PG tập trung readiness/backstop.",
-    "components": ["Backend", "Database", "DevOps"], "related_files": ["backend/expansion/reservations.py:185-187,246-268", "backend/services/parking_service.py", "tests/test_postgres_integration.py:615-678"],
-    "estimate_days": 2, "dependencies": [],
-    "test_cases": ["Case 1: 2 connection PG: reserve vs check_in cùng slot/xe -> không deadlock, 1 thành công", "Case 2: order simulate trên PG -> pass + receipt", "Case 3: alembic upgrade head + downgrade policy test"],
-    "dor": {"scope": "rõ", "owner": "QA + Backend", "env": "CI Postgres 16 service"},
-    "dod": {"code": true, "test": "tests/test_postgres_integration.py", "docs": "EXPANSION_MIGRATION.md", "evidence": "CI log"}
+    "components": [
+      "Backend",
+      "Database",
+      "DevOps"
+    ],
+    "related_files": [
+      "backend/expansion/reservations.py:185-187,246-268",
+      "backend/services/parking_service.py",
+      "tests/test_postgres_integration.py:615-678"
+    ],
+    "estimate_days": 2,
+    "dependencies": [],
+    "test_cases": [
+      "Case 1: 2 connection PG: reserve vs check_in cùng slot/xe -> không deadlock, 1 thành công",
+      "Case 2: order simulate trên PG -> pass + receipt",
+      "Case 3: alembic upgrade head + downgrade policy test"
+    ],
+    "dor": {
+      "scope": "rõ",
+      "owner": "QA + Backend",
+      "env": "CI Postgres 16 service"
+    },
+    "dod": {
+      "code": true,
+      "test": "tests/test_postgres_integration.py",
+      "docs": "EXPANSION_MIGRATION.md",
+      "evidence": "CI log"
+    },
+    "reviewed_against": "caaef39042ea15fc93f01938af46a7ac64890258",
+    "implementation_status": "VERIFIED_BASELINE",
+    "release_evidence": "CI 34215316423 success; CD 34216909674 attempt 2 success; public API release_id caaef39042ea15fc93f01938af46a7ac64890258. See REVIEW_ROUND2_RESOLUTION_2026-09-08.md.",
+    "online_acceptance_status": "PENDING_AUTHENTICATED_ROUND3_UAT",
+    "verification_note": "Actual local PG16: 16 integration/contention tests pass in 55.10s; revised schema verified on restored PG17 clone. Round3 CI pending."
   },
   {
-    "key": "PARK-117", "type": "Bug", "priority": "P2", "epic": "PARK-E7", "finding": "F-013,F-014",
+    "key": "PARK-117",
+    "type": "Bug",
+    "priority": "P2",
+    "epic": "PARK-E7",
+    "finding": "F-013,F-014",
     "summary": "serialize() gắn +07:00 cho cột server_default=func.now() (UTC) -> lệch 7 giờ; cấp chỗ từ danh sách chờ không tạo thông báo",
     "description": "Symptom: created_at/updated_at của sessions/zones trong response v2 bị gắn +07:00 dù DB ghi UTC -> lệch 7 h; offer_waitlist tạo đặt chỗ hạn 15 phút nhưng không _notify. Impact: hiển thị sai thời gian tạo; khách không biết đã được cấp chỗ (lỡ hạn). Expected: chỉ gắn tz cho cột business-local; thông báo khi cấp chỗ.",
-    "acceptance_criteria": ["[ ] serialize() nhận danh sách cột UTC hoặc model đổi default sang business now", "[ ] offer_waitlist gọi _notify với hạn đến", "[ ] Test timestamp và notification"],
+    "acceptance_criteria": [
+      "[ ] serialize() nhận danh sách cột UTC hoặc model đổi default sang business now",
+      "[ ] offer_waitlist gọi _notify với hạn đến",
+      "[ ] Test timestamp và notification"
+    ],
     "root_cause": "serialize replace(tzinfo=BUSINESS_TZ) cho mọi datetime naive; offer_waitlist thiếu _notify.",
-    "components": ["Backend"], "related_files": ["backend/expansion/reservations.py:21-29,291-315", "backend/models/parking_session.py", "backend/expansion/portal_service.py (_notify)"],
-    "estimate_days": 0.5, "dependencies": [],
-    "test_cases": ["Case 1: session created_at UTC -> response giờ VN đúng", "Case 2: offer -> có notification 'waitlist:<id>:offered'"],
-    "dor": {"scope": "rõ", "owner": "Backend", "env": "pytest"},
-    "dod": {"code": true, "test": "tests/test_serialize_tz.py", "docs": "-", "evidence": "pytest"}
+    "components": [
+      "Backend"
+    ],
+    "related_files": [
+      "backend/expansion/reservations.py:21-29,291-315",
+      "backend/models/parking_session.py",
+      "backend/expansion/portal_service.py (_notify)"
+    ],
+    "estimate_days": 0.5,
+    "dependencies": [],
+    "test_cases": [
+      "Case 1: session created_at UTC -> response giờ VN đúng",
+      "Case 2: offer -> có notification 'waitlist:<id>:offered'"
+    ],
+    "dor": {
+      "scope": "rõ",
+      "owner": "Backend",
+      "env": "pytest"
+    },
+    "dod": {
+      "code": true,
+      "test": "tests/test_serialize_tz.py",
+      "docs": "-",
+      "evidence": "pytest"
+    },
+    "reviewed_against": "caaef39042ea15fc93f01938af46a7ac64890258",
+    "implementation_status": "VERIFIED_BASELINE",
+    "release_evidence": "CI 34215316423 success; CD 34216909674 attempt 2 success; public API release_id caaef39042ea15fc93f01938af46a7ac64890258. See REVIEW_ROUND2_RESOLUTION_2026-09-08.md.",
+    "online_acceptance_status": "PENDING_AUTHENTICATED_ROUND3_UAT"
   }
 ]

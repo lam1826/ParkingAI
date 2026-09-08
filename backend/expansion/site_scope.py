@@ -34,6 +34,8 @@ def require_site_access(db, user, site_id, minimum_role="staff"):
         return site
     if not user.is_active or not user.role or user.role.name not in {"staff", "manager"}:
         raise HTTPException(403, "Bạn không có quyền vận hành bãi này.")
+    if minimum_role == "manager" and user.role.name != "manager":
+        raise HTTPException(403, "Tài khoản không còn quyền quản lý. Hãy liên hệ quản trị viên.")
     membership = db.scalar(select(SiteMembership).where(
         SiteMembership.site_id == site_id, SiteMembership.user_id == user.id,
     ))
@@ -47,4 +49,3 @@ def require_public_site(db, site_id):
     if site is None or not site.is_active:
         raise HTTPException(404, "Không tìm thấy bãi đang hoạt động.")
     return site
-

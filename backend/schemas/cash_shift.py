@@ -19,6 +19,7 @@ class CashShiftClose(BaseModel):
 class CashShiftResponse(BaseModel):
     id: str
     staff_id: int
+    site_id: int | None = None
     staff_name: str
     opened_at: datetime
     closed_at: datetime | None

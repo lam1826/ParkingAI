@@ -38,6 +38,12 @@ from services.parking_service import ParkingService
 def env(db_session, test_user, vehicle_type, parking_slot, vehicle, customer, price_config,
         business_reference_now, monkeypatch):
     now = business_reference_now.replace(microsecond=0)
+    # This fixture exercises manager operations; the generic test_user fixture
+    # is staff. Both account role and site membership must grant management.
+    manager_role = db_session.scalar(select(Role).where(Role.name == "manager"))
+    if manager_role is None:
+        manager_role = Role(name="manager"); db_session.add(manager_role); db_session.flush()
+    test_user.role = manager_role
     clock = {"now": now}
     monkeypatch.setattr(session_crud, "server_now", lambda: clock["now"])
     a, b = ParkingSite(name="Bãi A"), ParkingSite(name="Bãi B")

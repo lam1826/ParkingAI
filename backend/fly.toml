@@ -9,12 +9,21 @@ primary_region = 'sin'
 [build]
   dockerfile = 'Dockerfile'
 
+[build.args]
+  INSTALL_VISION = "1"
+
 [deploy]
   release_command = "sh -c 'alembic -c alembic.ini upgrade head && python production_release_gate.py'"
 
 [env]
   PORTAL_MAINTENANCE_INTERVAL_SECONDS = "30"
   TRUSTED_EDGE_PROXY = "true"
+  PARKINGAI_SHOWCASE_MODE = "true"
+  AI_ENABLED = "false"
+  DEMO_PAYMENTS_ENABLED = "true"
+  PARKING_VISION_ENGINE = "yolo_rapidocr"
+  PARKING_VISION_MODEL = "/opt/parkingai-models/license-plate-yolov8n.onnx"
+  PARKING_VISION_MODEL_SHA256 = "85d236280a1301ad98907947d284951dd2b20c23a6786ff50f7e6a8ec515bd50"
 
 [http_service]
   internal_port = 8000

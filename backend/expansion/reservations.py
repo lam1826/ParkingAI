@@ -9,6 +9,7 @@ from crud import parking_session as session_crud
 from expansion.site_models import GuaranteedAllocation, ParkingReservation, SiteWaitlist
 from expansion.site_scope import require_public_site, require_site_access
 from models.parking_session import ParkingSession
+from models.customer import Customer
 from models.parking_slot import ParkingSlot
 from models.vehicle import Vehicle
 from models.zone import Zone
@@ -222,11 +223,24 @@ def reserve(db, actor, data, *, customer=False, allocation=False, _now=None):
     now = session_crud.server_now() if _now is None else _now
     start, end = local_time(data.start_at), local_time(data.end_at)
     model = GuaranteedAllocation if allocation else ParkingReservation
+    locked_customer_id = vehicle.customer_id
+    # The portal limit belongs to a customer, so different vehicles must compete
+    # for the same lock before reading that customer's active reservation count.
+    if customer:
+        if db.get_bind().dialect.name == "sqlite":
+            db.execute(update(Customer).where(Customer.id == vehicle.customer_id).values(id=Customer.id))
+        db.scalar(select(Customer.id).where(Customer.id == vehicle.customer_id).with_for_update(key_share=True))
     # Serialize overlapping requests for the same vehicle across different slots/sites.
     # NO KEY UPDATE on PostgreSQL remains compatible with session FK reads.
     if db.get_bind().dialect.name == "sqlite":
         db.execute(update(Vehicle).where(Vehicle.id == vehicle.id).values(id=Vehicle.id))
     db.scalar(select(Vehicle.id).where(Vehicle.id == vehicle.id).with_for_update(key_share=True))
+    db.refresh(vehicle)
+    if customer:
+        if vehicle.customer_id != locked_customer_id:
+            raise HTTPException(409, "Chủ sở hữu xe vừa thay đổi. Hãy tải lại hồ sơ trước khi đặt chỗ.")
+        # Ownership may have changed while the request waited for either lock.
+        vehicle = _vehicle(db, actor, data.vehicle_id, data.site_id, customer=True)
     old = _existing(db, model, data, actor, start, end)
     if old is not None:
         return old

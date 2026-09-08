@@ -24,6 +24,7 @@ from expansion import site_models  # noqa: F401 - register optional site/booking
 from expansion import portal_models  # noqa: F401 - register verified portal authority
 from expansion import vision_models  # noqa: F401 - register private camera observations
 import expansion_demo_guards  # noqa: F401 - same demo boundary on fresh databases
+import site_finance_guards  # noqa: F401 - site attribution on fresh databases
 from finance_rollout import MONTHLY_CARD_SQLITE_TRIGGERS
 
 for _card_trigger_sql in MONTHLY_CARD_SQLITE_TRIGGERS:
