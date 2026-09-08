@@ -56,5 +56,8 @@ class CustomerUpdate(BaseModel):
 # Schema trả về
 class CustomerResponse(CustomerBase):
     id: int
+    # Rows may predate the current EmailStr write contract. Reading stored
+    # data must not make an entire list endpoint fail after a successful write.
+    email: Optional[str] = Field(default=None, max_length=100)
 
     model_config = ConfigDict(from_attributes=True)

@@ -69,7 +69,7 @@ def _seed_rows(db, password, now):
             db.add(SubscriptionPlan(name=f"DEMO {prefix} - {vehicle_type.name} 30 ngày", site_id=site.id,
                 vehicle_type_id=vehicle_type.id, duration_days=30, price=amount, is_active=True))
 
-    customer = Customer(full_name="Khách hàng DEMO", phone_number="0900000001", email="customer@example.invalid")
+    customer = Customer(full_name="Khách hàng DEMO", phone_number="0900000001", email="customer@example.com")
     db.add(customer); db.flush()
     db.add(PortalAccountLink(user_id=users["customer"].id, customer_id=customer.id,
         verified_by_id=users["admin"].id, verification="demo_seed", created_at=now - timedelta(days=57)))

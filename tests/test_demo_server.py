@@ -40,3 +40,20 @@ def test_demo_ui_uses_same_origin_and_static_route_cannot_select_another_file(tm
     assert "location.origin" in client.get("/config.js").text
     assert client.get("/portal").text == "<html>Demo application</html>"
     assert client.get("/brand-mark.svg?filename=private.txt").text == "<svg>logo</svg>"
+
+
+def test_demo_dashboard_routes_browser_navigation_to_spa_and_json_to_api(tmp_path, monkeypatch):
+    dist = tmp_path / "frontend" / "dist"
+    (dist / "assets").mkdir(parents=True)
+    (dist / "index.html").write_text("<html>Demo dashboard</html>")
+    monkeypatch.setattr(demo, "ROOT", tmp_path)
+    monkeypatch.setattr("db_rollout.check_database_readiness", lambda *_args, **_kwargs: None)
+
+    client = TestClient(demo.build_demo_app())
+    browser = client.get("/dashboard", headers={"Accept": "text/html"})
+    api = client.get("/dashboard", headers={"Accept": "application/json"})
+
+    assert browser.status_code == 200
+    assert browser.text == "<html>Demo dashboard</html>"
+    assert api.status_code == 401
+    assert api.headers["content-type"].startswith("application/json")

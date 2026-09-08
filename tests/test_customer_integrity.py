@@ -65,6 +65,40 @@ def test_customer_create_accepts_blank_optional_email_from_crud_form(
     assert response.json()["email"] is None
 
 
+def test_legacy_customer_email_does_not_break_customer_or_vehicle_reads(
+    client: TestClient,
+    db_session: Session,
+    test_user,
+    vehicle_type,
+):
+    """Stored legacy text is readable even when it is not valid new input."""
+    legacy_customer = Customer(
+        full_name="Khách dữ liệu cũ",
+        phone_number="0912999000",
+        email="customer@example.invalid",
+    )
+    db_session.add(legacy_customer)
+    db_session.flush()
+    legacy_vehicle = Vehicle(
+        license_plate="30A-111.22",
+        vehicle_type_id=vehicle_type.id,
+        customer_id=legacy_customer.id,
+    )
+    db_session.add(legacy_vehicle)
+    db_session.commit()
+    headers = _headers(test_user)
+
+    responses = [
+        client.get("/api/v1/customers", headers=headers),
+        client.get(f"/api/v1/customers/{legacy_customer.id}", headers=headers),
+        client.get("/api/v1/vehicles", headers=headers),
+        client.get(f"/api/v1/vehicles/{legacy_vehicle.id}", headers=headers),
+    ]
+
+    assert [response.status_code for response in responses] == [200, 200, 200, 200]
+    assert all("customer@example.invalid" in response.text for response in responses)
+
+
 @pytest.mark.parametrize("method", ["post", "put"])
 def test_customer_write_rejects_extra_fields(
     client: TestClient,

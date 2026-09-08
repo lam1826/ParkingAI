@@ -39,7 +39,7 @@ def configure_demo(database: Path, *, vision=True):
 
 
 def build_demo_app():
-    from fastapi import FastAPI
+    from fastapi import FastAPI, Request
     from fastapi.responses import FileResponse, Response
     from fastapi.staticfiles import StaticFiles
     from main import app as api_app
@@ -78,6 +78,12 @@ def build_demo_app():
 
     app = FastAPI(title="ParkingAI Academic Demo", docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
 
+    @app.middleware("http")
+    async def dashboard_content_negotiation(request: Request, call_next):
+        if request.url.path == "/dashboard" and "text/html" in request.headers.get("accept", "").lower():
+            return frontend()
+        return await call_next(request)
+
     @app.get("/config.js", include_in_schema=False)
     def config():
         return Response("globalThis.__PARKINGAI_CONFIG__ = {API_URL: globalThis.location.origin, DEMO: true};", media_type="application/javascript", headers={"Cache-Control": "no-store"})
@@ -86,7 +92,7 @@ def build_demo_app():
         return FileResponse(dist / "index.html", headers={"Cache-Control": "no-store"})
 
     for route in ("/", "/login", "/register", "/portal", "/portal-admin", "/reservations", "/sites", "/vision", "/insights",
-                  "/account", "/profile", "/settings", "/dashboard", "/sessions", "/parking-sessions", "/customers", "/vehicles",
+                  "/account", "/profile", "/settings", "/sessions", "/parking-sessions", "/customers", "/vehicles",
                   "/monthly-passes", "/users", "/zones", "/parking-slots", "/vehicle-types", "/price-configs", "/reports",
                   "/finance", "/audit-logs", "/ai", "/roles", "/home"):
         app.add_api_route(route, frontend, methods=["GET"], include_in_schema=False)

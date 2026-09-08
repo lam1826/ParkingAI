@@ -40,6 +40,13 @@ Migration SQLite chạy trên candidate và chỉ thay sau preflight/readiness; 
 Không cần tài khoản thanh toán hoặc camera thật cho phạm vi đồ án. Model có metadata giấy phép khác model card; tài liệu phải ghi nguồn và giới hạn đúng thực tế.
 
 ## Status
+### Review/debug vòng 2 ngày 08/09/2026
+- Nguồn yêu cầu: `docs/REVIEW_ROUND2_2026-09-08.md`, backlog `docs/tickets/epics.json` và `docs/tickets/tickets.json`.
+- P0 PARK-101–104: đã tái hiện bằng test đỏ và sửa bốn lỗi chặn demo: dữ liệu email legacy làm v1 serialize 500; replay portal giữ khóa SQLite và làm mất audit; upload ảnh giữ connection/cạn pool và audit chặn event loop; SPA demo che API `/dashboard`.
+- Kiểm chứng P0 theo module: 94 test đạt. Pipeline camera hiện giảm tải trước DB, không giữ transaction lúc decode/OCR; pool PostgreSQL timeout mặc định 5 giây; audit SQL chạy ngoài event loop.
+- Tiếp theo: P1 theo cụm vận hành/bất biến đặt chỗ (PARK-105–108, 113), frontend bền (PARK-109–110), bảo mật API/proxy (PARK-111–112), rồi P2 release/PG/vision/thời gian (PARK-114–117).
+- Rollback cụm P0: revert commit P0; không có migration và không đổi dữ liệu. Các file hồ sơ báo cáo cục bộ vẫn ngoài Git theo `.gitignore`.
+
 ### Nghiệm thu độc lập theo yêu cầu được gửi lại ngày 07/09/2026
 - Hoàn thành đối chiếu mã tracked/untracked, giữ bốn nâng cấp A–D đã có; sửa tám nhóm lỗi được tái hiện: quyền bảo đảm chỗ sau đổi chủ, khoảng lọc không hợp lệ, ảnh bãi đóng, lỗi nguồn phụ làm ẩn portal/vô hiệu nhận xe/mất lịch đặt chỗ, fleet thiếu retry và crash đơn khi danh sách tải lỗi.
 - Giữ kiểm thử RED/GREEN; thêm 27 ca backend và một ca frontend. Hai kết nối SQLite kiểm tra chuyển chủ giữa lần đọc/lần ghi: guard rollback 409, không xác nhận lỗi mới.

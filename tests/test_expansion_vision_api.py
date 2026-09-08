@@ -1,22 +1,27 @@
 """Private phone images and manual approval, using isolated fixture DB only."""
 import io
+from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
+from threading import Event, Lock
+from time import monotonic
 from uuid import uuid4
 
 import pytest
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 from PIL import Image
-from sqlalchemy import select, update
+from sqlalchemy import create_engine, select, update
+from sqlalchemy.orm import sessionmaker
 
 from core.clock import business_now
 from database import get_db
 from expansion.site_models import ParkingSite, SiteMembership
 from expansion.vision_models import Camera, VisionObservation
 from expansion.vision_router import router
+from expansion.vision_schemas import ObservationUpload
 from expansion.vision_service import decode_image
 from models.parking_session import ParkingSession
-from services.auth_service import get_current_user
+from services.auth_service import AuthService, get_current_user
 
 
 def picture(fmt="JPEG"):
@@ -60,6 +65,125 @@ def vision(db_session, test_user, zone, monkeypatch):
 def upload(client, camera_id, content=None, mime="image/jpeg", event_id=None):
     return client.post("/api/v2/vision/observations", data={"camera_id": camera_id, "event_id": event_id or str(uuid4())},
                        files={"file": ("phone.jpg", picture() if content is None else content, mime)})
+
+
+def test_concurrent_upload_is_rejected_before_entering_processing(vision, monkeypatch):
+    import expansion.vision_router as vision_router_module
+
+    client, _, camera, _, _ = vision
+    first_entered = Event()
+    release_first = Event()
+    counter_lock = Lock()
+    calls = 0
+
+    async def controlled_upload(_request):
+        nonlocal calls
+        with counter_lock:
+            calls += 1
+            current = calls
+        if current == 1:
+            first_entered.set()
+            await vision_router_module.run_in_threadpool(release_first.wait, 5)
+        return (
+            ObservationUpload(camera_id=camera.id, event_id=str(uuid4())),
+            picture(),
+            "image/jpeg",
+        )
+
+    monkeypatch.setattr(vision_router_module, "_read_upload", controlled_upload)
+    try:
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            first = pool.submit(client.post, "/api/v2/vision/observations")
+            assert first_entered.wait(timeout=2)
+            started = monotonic()
+            overloaded = client.post("/api/v2/vision/observations")
+            elapsed = monotonic() - started
+            release_first.set()
+            accepted = first.result(timeout=5)
+        assert accepted.status_code == 201
+        assert overloaded.status_code == 429
+        assert elapsed < 0.5
+        assert calls == 1
+    finally:
+        release_first.set()
+
+
+def test_inference_does_not_hold_the_only_database_connection(vision, tmp_path, monkeypatch):
+    client, source_db, camera, _, user = vision
+    del client
+    database_path = tmp_path / "vision-pool.sqlite"
+    engine = create_engine(
+        "sqlite:///" + database_path.as_posix(),
+        connect_args={"timeout": 0.2, "check_same_thread": False},
+        pool_size=1,
+        max_overflow=0,
+        pool_timeout=0.2,
+    )
+    source = source_db.get_bind().raw_connection()
+    target = engine.raw_connection()
+    try:
+        source.driver_connection.backup(target.driver_connection)
+    finally:
+        source.close()
+        target.close()
+    factory = sessionmaker(bind=engine, expire_on_commit=False)
+
+    def request_db():
+        with factory() as db:
+            yield db
+
+    inference_started = Event()
+    release_inference = Event()
+
+    def slow_recognition(_image):
+        inference_started.set()
+        release_inference.wait(timeout=5)
+        return {
+            "ocr_status": "unavailable",
+            "engine": "disabled",
+            "detections": [],
+            "suggested_plate": None,
+            "confidence": None,
+        }
+
+    monkeypatch.setattr("expansion.vision_service.recognize_image", slow_recognition)
+    app = FastAPI()
+    app.include_router(router)
+    app.dependency_overrides[get_db] = request_db
+
+    @app.get("/ready")
+    def ready(db=Depends(get_db)):
+        db.scalar(select(1))
+        return {"status": "ready"}
+
+    token = AuthService().create_access_token(
+        user_id=user.id,
+        username=user.username,
+        role=user.role.name,
+    )
+    headers = {"Authorization": f"Bearer {token}"}
+    try:
+        with TestClient(app, raise_server_exceptions=False) as isolated, ThreadPoolExecutor(max_workers=1) as pool:
+            upload_future = pool.submit(
+                isolated.post,
+                "/api/v2/vision/observations",
+                headers=headers,
+                data={"camera_id": camera.id, "event_id": str(uuid4())},
+                files={"file": ("phone.jpg", picture(), "image/jpeg")},
+            )
+            assert inference_started.wait(timeout=2)
+            started = monotonic()
+            readiness = isolated.get("/ready")
+            elapsed = monotonic() - started
+            release_inference.set()
+            uploaded = upload_future.result(timeout=5)
+        assert readiness.status_code == 200
+        assert readiness.json() == {"status": "ready"}
+        assert elapsed < 0.2
+        assert uploaded.status_code == 201
+    finally:
+        release_inference.set()
+        engine.dispose()
 
 
 def test_phone_upload_disabled_model_is_honest_and_review_never_moves_a_vehicle(vision):

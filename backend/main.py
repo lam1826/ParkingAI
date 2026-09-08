@@ -5,6 +5,7 @@ from time import monotonic
 
 import uvicorn
 from fastapi import Depends, FastAPI, Request
+from fastapi.exceptions import ResponseValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import DBAPIError, IntegrityError
@@ -60,6 +61,24 @@ async def exact_vnd_range_error_handler(
     return JSONResponse(
         status_code=500,
         content={"detail": str(exc)},
+    )
+
+
+@app.exception_handler(ResponseValidationError)
+async def response_validation_error_handler(
+    request: Request,
+    exc: ResponseValidationError,
+):
+    """Keep unexpected stored-data serialization failures JSON and private."""
+    logger.error(
+        "Response validation failed on %s %s",
+        request.method,
+        request.url.path,
+        exc_info=(type(exc), exc, exc.__traceback__),
+    )
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Dữ liệu phản hồi không hợp lệ do lỗi hệ thống."},
     )
 
 

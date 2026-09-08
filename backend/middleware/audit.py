@@ -6,6 +6,7 @@ import jwt
 from jwt.exceptions import InvalidTokenError
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
+from starlette.concurrency import run_in_threadpool
 
 from core.config import settings
 from core.client_ip import get_client_ip
@@ -16,6 +17,34 @@ from models.audit_log import AuditLog
 MUTATING_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 AUTH_PATHS = {"/api/auth/login", "/auth/login", "/api/auth/register"}
 logger = logging.getLogger(__name__)
+
+
+def _persist_audit(app, values: dict, method: str, path: str) -> None:
+    """Run synchronous SQLAlchemy work outside the ASGI event loop."""
+    override = app.dependency_overrides.get(get_db)
+    generator: Generator | None = None
+    db = None
+    try:
+        if override is not None:
+            generator = override()
+            db = next(generator)
+        else:
+            db = SessionLocal()
+        db.add(AuditLog(**values))
+        db.commit()
+    except Exception:
+        if db is not None:
+            db.rollback()
+        logger.exception(
+            "Unable to persist audit metadata for %s %s",
+            method,
+            path,
+        )
+    finally:
+        if generator is not None:
+            generator.close()
+        elif db is not None:
+            db.close()
 
 
 def _classify_action(method: str, path: str) -> str:
@@ -92,39 +121,22 @@ class AuditLogMiddleware(BaseHTTPMiddleware):
             return response
 
         resource, resource_id = _extract_resource(request.url.path)
-        override = request.app.dependency_overrides.get(get_db)
-        generator: Generator | None = None
-        db = None
-        try:
-            if override is not None:
-                generator = override()
-                db = next(generator)
-            else:
-                db = SessionLocal()
-            db.add(AuditLog(
-                user_id=user_id,
-                username=username[:50],
-                action=_classify_action(request.method, request.url.path),
-                resource=resource[:80],
-                resource_id=resource_id,
-                method=request.method,
-                path=request.url.path[:255],
-                status_code=response.status_code,
-                success=200 <= response.status_code < 400,
-                ip_address=get_client_ip(request),
-            ))
-            db.commit()
-        except Exception:
-            if db is not None:
-                db.rollback()
-            logger.exception(
-                "Unable to persist audit metadata for %s %s",
-                request.method,
-                request.url.path,
-            )
-        finally:
-            if generator is not None:
-                generator.close()
-            elif db is not None:
-                db.close()
+        await run_in_threadpool(
+            _persist_audit,
+            request.app,
+            {
+                "user_id": user_id,
+                "username": username[:50],
+                "action": _classify_action(request.method, request.url.path),
+                "resource": resource[:80],
+                "resource_id": resource_id,
+                "method": request.method,
+                "path": request.url.path[:255],
+                "status_code": response.status_code,
+                "success": 200 <= response.status_code < 400,
+                "ip_address": get_client_ip(request),
+            },
+            request.method,
+            request.url.path,
+        )
         return response

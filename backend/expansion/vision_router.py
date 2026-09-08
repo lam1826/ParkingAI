@@ -2,7 +2,9 @@
 import hashlib
 import hmac
 import secrets
+import threading
 import uuid
+from types import SimpleNamespace
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import ValidationError
@@ -17,12 +19,30 @@ from database import get_db
 from expansion.site_scope import require_site_access
 from expansion.vision_models import Camera, VisionObservation
 from expansion.vision_schemas import CameraCreate, CameraUpdate, ObservationReview, ObservationUpload
-from expansion.vision_service import MAX_IMAGE_BYTES, ingest_observation, model_status, purge_expired, serialize_observation
+from expansion.vision_service import (
+    MAX_IMAGE_BYTES,
+    ingest_observation,
+    model_status,
+    prepare_observation,
+    purge_expired,
+    serialize_observation,
+)
 from models.user import User
 from models.zone import Zone
 from services.auth_service import RoleChecker, get_current_user
 
 router = APIRouter(prefix="/api/v2", tags=["Camera nhận diện thử nghiệm"])
+_upload_gate = threading.BoundedSemaphore(value=1)
+
+
+async def _admit_upload():
+    """Shed concurrent camera work before authentication opens a DB session."""
+    if not _upload_gate.acquire(blocking=False):
+        raise HTTPException(429, "Hệ thống đang xử lý một ảnh khác. Vui lòng thử lại sau vài giây.")
+    try:
+        yield
+    finally:
+        _upload_gate.release()
 
 
 def _camera(db, user, camera_id, minimum_role="staff"):
@@ -136,16 +156,31 @@ async def _read_upload(request):
         await form.close()
 
 
-@router.post("/vision/observations", status_code=201, dependencies=[Depends(RoleChecker("staff"))])
+@router.post(
+    "/vision/observations",
+    status_code=201,
+    dependencies=[Depends(_admit_upload), Depends(RoleChecker("staff"))],
+)
 async def upload_observation(request: Request, response: Response, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    actor = SimpleNamespace(
+        id=user.id,
+        is_active=user.is_active,
+        role=SimpleNamespace(name=user.role.name),
+    )
+    # Authentication is read-only. Release its transaction before receiving
+    # the body or running CPU-heavy image work.
+    db.rollback()
     metadata, content, mime = await _read_upload(request)
-    camera = _camera(db, user, metadata.camera_id)
-    observation = await run_in_threadpool(ingest_observation, db, camera, metadata, content, mime)
+    _camera(db, actor, metadata.camera_id)
+    db.rollback()
+    prepared = await run_in_threadpool(prepare_observation, metadata, content, mime)
+    camera = _camera(db, actor, metadata.camera_id)
+    observation = await run_in_threadpool(ingest_observation, db, camera, metadata, prepared)
     response.headers["Cache-Control"] = "no-store"
     return serialize_observation(observation, camera)
 
 
-@router.post("/vision/edge-events", status_code=201)
+@router.post("/vision/edge-events", status_code=201, dependencies=[Depends(_admit_upload)])
 async def edge_observation(request: Request, response: Response, db: Session = Depends(get_db)):
     token = request.headers.get("x-camera-token", "")
     if not 32 <= len(token) <= 128:
@@ -155,7 +190,12 @@ async def edge_observation(request: Request, response: Response, db: Session = D
     digest = hashlib.sha256(token.encode()).hexdigest()
     if camera is None or not camera.is_active or not camera.edge_token_hash or not hmac.compare_digest(camera.edge_token_hash, digest):
         raise HTTPException(401, "Khóa camera không hợp lệ.")
-    observation = await run_in_threadpool(ingest_observation, db, camera, metadata, content, mime, digest)
+    db.rollback()
+    prepared = await run_in_threadpool(prepare_observation, metadata, content, mime)
+    camera = db.get(Camera, metadata.camera_id)
+    if camera is None:
+        raise HTTPException(401, "Khóa camera không hợp lệ.")
+    observation = await run_in_threadpool(ingest_observation, db, camera, metadata, prepared, digest)
     response.headers["Cache-Control"] = "no-store"
     # A capture token can write only to its camera, never read image/plate data.
     return {"id": observation.id, "event_id": observation.event_id, "received": True}

@@ -9,7 +9,8 @@ import os
 import re
 import threading
 import warnings
-from datetime import timedelta
+from dataclasses import dataclass
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from fastapi import HTTPException
@@ -29,6 +30,16 @@ _engine_lock = threading.Lock()
 _inference_lock = threading.Lock()
 _engine = None
 _engine_path = None
+
+
+@dataclass(frozen=True)
+class PreparedObservation:
+    image_hash: str
+    image_bytes: bytes
+    image_width: int
+    image_height: int
+    captured_at: datetime
+    recognition: dict
 
 
 def decode_image(content: bytes, mime: str):
@@ -197,31 +208,43 @@ def purge_expired(db, site_id=None):
     return db.execute(statement).rowcount
 
 
-def ingest_observation(db, camera, metadata, content, mime, edge_token_hash=None):
+def prepare_observation(metadata, content, mime):
+    """Decode and run CPU inference without holding a database transaction."""
+    now = business_now()
+    captured = metadata.captured_at.astimezone(BUSINESS_TZ).replace(tzinfo=None) if metadata.captured_at else now
+    if captured > now + timedelta(minutes=5) or captured < now - timedelta(hours=24):
+        raise HTTPException(422, "Thời điểm chụp phải trong 24 giờ qua và không vượt quá 5 phút tương lai.")
+    image, encoded = decode_image(content, mime)
+    return PreparedObservation(
+        image_hash=hashlib.sha256(content).hexdigest(),
+        image_bytes=encoded,
+        image_width=image.width,
+        image_height=image.height,
+        captured_at=captured,
+        recognition=recognize_image(image),
+    )
+
+
+def ingest_observation(db, camera, metadata, prepared, edge_token_hash=None):
     now = business_now()
     require_public_site(db, camera.site_id)
     if not camera.is_active:
         raise HTTPException(409, "Camera đang ngừng hoạt động.")
-    digest = hashlib.sha256(content).hexdigest()
     existing = db.scalar(select(VisionObservation).where(VisionObservation.camera_id == camera.id,
                           VisionObservation.event_id == str(metadata.event_id)))
     if existing:
-        if existing.image_hash != digest:
+        if existing.image_hash != prepared.image_hash:
             raise HTTPException(409, "Mã ảnh đã được dùng cho nội dung khác.")
         if existing.expires_at <= now:
             raise HTTPException(410, "Ảnh đã hết thời hạn lưu.")
         return existing
-    captured = metadata.captured_at.astimezone(BUSINESS_TZ).replace(tzinfo=None) if metadata.captured_at else now
-    if captured > now + timedelta(minutes=5) or captured < now - timedelta(hours=24):
-        raise HTTPException(422, "Thời điểm chụp phải trong 24 giờ qua và không vượt quá 5 phút tương lai.")
     count = db.scalar(select(func.count()).select_from(VisionObservation).where(
         VisionObservation.camera_id == camera.id, VisionObservation.observed_at > now - timedelta(minutes=1)))
     if count >= 30:
         raise HTTPException(429, "Camera đạt giới hạn 30 ảnh/phút. Vui lòng đợi.")
-    image, encoded = decode_image(content, mime)
-    result = recognize_image(image)
     # A no-op non-key UPDATE locks this site's quota on both SQLite and
-    # PostgreSQL. Site then camera is the common order; OCR holds neither lock.
+    # PostgreSQL. Site then camera is the common order; decode/OCR completed
+    # before this transaction began.
     claimed = db.execute(update(ParkingSite).where(ParkingSite.id == camera.site_id,
         ParkingSite.is_active.is_(True)).values(name=ParkingSite.name))
     if claimed.rowcount != 1:
@@ -236,7 +259,7 @@ def ingest_observation(db, camera, metadata, content, mime, edge_token_hash=None
     existing = db.scalar(select(VisionObservation).where(VisionObservation.camera_id == camera.id,
                          VisionObservation.event_id == str(metadata.event_id)))
     if existing:
-        if existing.image_hash != digest:
+        if existing.image_hash != prepared.image_hash:
             raise HTTPException(409, "Mã ảnh đã được dùng cho nội dung khác.")
         return existing
     count = db.scalar(select(func.count()).select_from(VisionObservation).where(
@@ -248,8 +271,10 @@ def ingest_observation(db, camera, metadata, content, mime, edge_token_hash=None
     if count >= MAX_SITE_OBSERVATIONS:
         raise HTTPException(409, "Bãi đã lưu tối đa 500 ảnh. Xóa ảnh cũ trước khi tiếp tục.")
     observation = VisionObservation(camera_id=camera.id, site_id=camera.site_id, event_id=str(metadata.event_id),
-        image_hash=digest, image_bytes=encoded, image_width=image.width, image_height=image.height,
-        observed_at=now, captured_at=captured, expires_at=now + timedelta(hours=camera.retention_hours), **result)
+        image_hash=prepared.image_hash, image_bytes=prepared.image_bytes,
+        image_width=prepared.image_width, image_height=prepared.image_height,
+        observed_at=now, captured_at=prepared.captured_at,
+        expires_at=now + timedelta(hours=camera.retention_hours), **prepared.recognition)
     db.add(observation)
     try:
         db.commit()
@@ -257,7 +282,7 @@ def ingest_observation(db, camera, metadata, content, mime, edge_token_hash=None
         db.rollback()
         winner = db.scalar(select(VisionObservation).where(VisionObservation.camera_id == camera.id,
                            VisionObservation.event_id == str(metadata.event_id)))
-        if winner is None or winner.image_hash != digest:
+        if winner is None or winner.image_hash != prepared.image_hash:
             raise HTTPException(409, "Ảnh vừa được ghi hoặc cấu hình đã thay đổi. Hãy tải lại.")
         return winner
     db.refresh(observation)

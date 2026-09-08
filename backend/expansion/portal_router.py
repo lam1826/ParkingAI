@@ -37,7 +37,12 @@ def fields(row, *names):
 
 def write(db, operation):
     try:
-        return operation()
+        result = operation()
+        # Several idempotent service branches return an existing row after a
+        # SQLite no-op lock. End that transaction before middleware/audit or
+        # another writer needs the database.
+        db.commit()
+        return result
     except Exception:
         db.rollback()
         raise

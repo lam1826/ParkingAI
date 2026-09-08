@@ -43,7 +43,7 @@ def test_partial_unique_indexes_have_postgres_predicates():
 
 def test_engine_factory_does_not_leak_sqlite_connect_args_to_postgres(monkeypatch):
     captured = {}
-    for name in ("DB_POOL_SIZE", "DB_MAX_OVERFLOW", "DB_POOL_RECYCLE_SECONDS"):
+    for name in ("DB_POOL_SIZE", "DB_MAX_OVERFLOW", "DB_POOL_RECYCLE_SECONDS", "DB_POOL_TIMEOUT_SECONDS"):
         monkeypatch.delenv(name, raising=False)
 
     def fake_create_engine(url, **options):
@@ -58,6 +58,7 @@ def test_engine_factory_does_not_leak_sqlite_connect_args_to_postgres(monkeypatc
     assert captured["options"]["pool_size"] == 5
     assert captured["options"]["max_overflow"] == 5
     assert captured["options"]["pool_recycle"] == 1800
+    assert captured["options"]["pool_timeout"] == 5
 
 
 def test_engine_factory_normalizes_plain_postgres_url_to_psycopg3(monkeypatch):

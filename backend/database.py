@@ -42,14 +42,16 @@ def create_database_engine(database_url: str):
             pool_size = int(os.getenv("DB_POOL_SIZE", "5"))
             max_overflow = int(os.getenv("DB_MAX_OVERFLOW", "5"))
             pool_recycle = int(os.getenv("DB_POOL_RECYCLE_SECONDS", "1800"))
+            pool_timeout = int(os.getenv("DB_POOL_TIMEOUT_SECONDS", "5"))
         except ValueError as exc:
             raise RuntimeError("PostgreSQL pool settings must be integers") from exc
-        if pool_size < 1 or max_overflow < 0 or pool_recycle < 1:
+        if pool_size < 1 or max_overflow < 0 or pool_recycle < 1 or pool_timeout < 1:
             raise RuntimeError("PostgreSQL pool settings are outside safe bounds")
         options.update(
             pool_size=pool_size,
             max_overflow=max_overflow,
             pool_recycle=pool_recycle,
+            pool_timeout=pool_timeout,
         )
     return create_engine(database_url, **options)
 
