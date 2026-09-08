@@ -81,6 +81,33 @@ jobs:
         working-directory: frontend
         run: npm run build
 
+  vision-memory:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+      - name: Fetch checksum-pinned CC0 resource fixture outside Git
+        run: |
+          curl --fail --location --retry 2 --max-time 60 \
+            --user-agent 'ParkingAI-resource-check/1.0 (https://github.com/lam1826/ParkingAI)' \
+            'https://upload.wikimedia.org/wikipedia/commons/thumb/c/c5/Rolls_Royce_in_Porto_Amboim%2C_Angola.JPG/1280px-Rolls_Royce_in_Porto_Amboim%2C_Angola.JPG' \
+            --output /tmp/parkingai-cc0.jpg
+          echo '90cfa1c05f5dd21ba337f938f7b3a638fa546207253c29c5fe0d9cb7f495ae3f  /tmp/parkingai-cc0.jpg' | sha256sum --check
+      - name: Build the optional OCR release image
+        run: docker build --build-arg INSTALL_VISION=1 --tag parkingai-vision-check backend
+      - name: Verify repeated OCR within an isolated 640 MiB container
+        run: |
+          docker run --rm --network none --memory 640m --memory-swap 640m --cpus 1 \
+            --env DATABASE_URL=sqlite:////tmp/parkingai-resource-check.db \
+            --env SECRET_KEY=isolated-ci-only-never-used-for-production-auth \
+            --env AI_ENABLED=false --env PYTHONPATH=/app \
+            --env PARKING_VISION_MODEL_SHA256=85d236280a1301ad98907947d284951dd2b20c23a6786ff50f7e6a8ec515bd50 \
+            --volume /tmp/parkingai-cc0.jpg:/fixture.jpg:ro \
+            --volume "$PWD/scripts/check_vision_memory.py:/resource_check.py:ro" \
+            parkingai-vision-check python /resource_check.py \
+            --image /fixture.jpg --model /opt/parkingai-models/license-plate-yolov8n.onnx
+
   release-safety-windows:
     runs-on: windows-latest
     # Job budget = checkout + setup-python + pip install + 188 tests.

@@ -125,6 +125,14 @@ def _iou(first, second):
     return intersection / union if union > 0 else 0
 
 
+def _prepare_plate_crop(crop):
+    scale = min(max(1, 320 / crop.width), 640 / crop.width, 640 / crop.height)
+    crop = crop.resize((max(1, round(crop.width * scale)), max(1, round(crop.height * scale))))
+    # Keep both dimensions above RapidOCR's minimum without enlarging a
+    # narrow/vertical crop again after the longest-side bound.
+    return ImageOps.pad(crop, (max(32, crop.width), max(32, crop.height)), color="white")
+
+
 class YoloRapidOCR:
     """YOLOv8 raw ONNX output only. No torch pickle or model/network downloads."""
     def __init__(self, model_path):
@@ -151,7 +159,11 @@ class YoloRapidOCR:
             raise ValueError("Generic COCO weights are not license-plate weights")
         # RapidOCR 1.4.4 distributes its PaddleOCR ONNX models inside the wheel.
         # Missing package/model files raise; this adapter never downloads them.
-        self.ocr = RapidOCR(intra_op_num_threads=1, inter_op_num_threads=1)
+        # The default 'min' mode enlarges the SHORT side to 736: narrow plate
+        # crops then exhaust the 1 GB API VM. Bound the global longest side
+        # and use 'max' mode; RapidOCR 1.4.4 ignores det_limit_side_len in max.
+        self.ocr = RapidOCR(intra_op_num_threads=1, inter_op_num_threads=1,
+                            max_side_len=640, det_limit_type="max")
 
     def recognize(self, image):
         import numpy as np
@@ -181,9 +193,7 @@ class YoloRapidOCR:
         for confidence, box in sorted(boxes, key=lambda item: item[0], reverse=True):
             if any(_iou(box, item["box"]) > 0.45 for item in selected):
                 continue
-            crop = image.crop(tuple(box))
-            if crop.width < 320:
-                crop = crop.resize((320, max(16, round(crop.height * 320 / crop.width))))
+            crop = _prepare_plate_crop(image.crop(tuple(box)))
             lines, _ = self.ocr(np.asarray(crop)[:, :, ::-1].copy(), use_cls=False)
             lines = lines or []
             # Reading order supports one and two-line plates. OCR text is data.

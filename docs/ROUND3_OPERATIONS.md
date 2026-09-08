@@ -30,6 +30,10 @@ Docker mặc định có thể build API gọn; cấu hình Fly bản đồ án 
 
 Đo trực tiếp trên Fly hiện có: 1 CPU, khoảng 962 MiB RAM hệ điều hành; tiến trình benchmark đạt RSS đỉnh 693,6 MiB, khởi tạo 1,846 giây. Ảnh có vùng biển mất 1,719–3,361 giây; ảnh không phát hiện biển 0,173–0,205 giây. Chỉ hai ảnh ngoài Việt Nam, một trường hợp OCR đọc sai. Đây là benchmark tài nguyên, chưa thay phép thử API đồng thời sau phát hành hoặc đánh giá accuracy.
 
+UAT trên website ngày 08/09 phát hiện cấu hình OCR ban đầu **không đạt**: sau một lần API thành công, upload từ trình duyệt làm Fly OOM (exit 137, 13:25:43 UTC). Đã tắt OCR bằng cấu hình runtime để bảo vệ API. Nguyên nhân được tái hiện: RapidOCR 1.4.4 mặc định phóng cạnh ngắn lên 736, tạo tensor 736×2944 cho crop hẹp. Bản sửa giới hạn crop, dùng `det_limit_type=max` và `max_side_len=640`; giới hạn `det_limit_side_len` riêng không được thư viện này áp dụng trong max mode. Bản sửa được kiểm tra bằng runtime thật và bổ sung CI Docker riêng, mạng tắt, RAM 640 MiB, ngưỡng RSS 512 MiB, sáu lượt OCR có ảnh được mã hóa lại. Chỉ bật OCR trên Fly sau khi gate này đạt rồi kiểm tra API/giao diện thực tế. Không tăng tài nguyên có phí.
+
+Fixture tài nguyên: ảnh CC0 của Paulo César Santos tại trang Wikimedia đã dẫn trong `VISION_FORECAST.md`, SHA256 `90cfa1c05f5dd21ba337f938f7b3a638fa546207253c29c5fe0d9cb7f495ae3f`. CI tải ngoài Git và kiểm checksum; không dùng dữ liệu khách hàng. Kết quả cuối cùng, gồm các lần thử không đạt, ghi trong release gate.
+
 ## Backup, migration và seed
 
 Trước phát hành đã tạo dump PG17 của **public schema ParkingAI** ngay trên Fly; chuỗi kết nối chỉ dùng trong môi trường tiến trình trên server. Dump bao gồm dữ liệu, sequence, hàm và trigger; không bao gồm managed Auth/Storage/roles của Supabase. Gate recovery point của nhà cung cấp vẫn bắt buộc trong CD.
