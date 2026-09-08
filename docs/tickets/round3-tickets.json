@@ -312,7 +312,7 @@
     "classification": "SIMPLIFY",
     "summary": "Single-site school submission interface",
     "problem": "User reduced project scope to one parking lot; site selection and creation add unnecessary steps.",
-    "evidence": "Verified live demo A is site2. Local browser33 checks with real read-only API and mocked business writes; no fallback to site3.",
+    "evidence": "Site2 confirmed via live API; frontend bundle hash and public API match release76ef211. Browser33 local checks and31 online checks after deployment; see docs/ROUND3_RELEASE_GATE.md.",
     "dependencies": [
       "PARK-207"
     ],
@@ -325,9 +325,10 @@
     "test": "Frontend139 tests/lint/build; browser33 checks including admin,manager,staff,customer and a user without site2.",
     "migration": "None; frontend runtime config only",
     "rollback": "Restore previous frontend or remove SINGLE_SITE_ID from runtime config; no database restoration needed",
-    "status": "IN_PROGRESS",
-    "online_acceptance": "PENDING_RELEASE",
+    "status": "DONE",
+    "online_acceptance": "Verified on parkingai.am after CD34242469234: 31 checks, four actual UI logins, one-site config/catalogs, OCR available; no business writes or physical-device claim.",
     "spec": "User scope correction 2026-09-08; docs/PHONE_VN_ACCEPTANCE.md",
-    "owner": "ParkingAI"
+    "owner": "ParkingAI",
+    "ci_evidence": "CI34241074566 success: Linux1216pass/19skip; PG16pass; Windows190pass/1skip; frontend139pass/lint/build; isolated OCR6 samples, peak345.1MiB. CD34242469234 success including backup gate."
   }
 ]

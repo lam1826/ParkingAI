@@ -1,10 +1,12 @@
-# ParkingAI — vận hành bản trình diễn nhiều bãi
+# ParkingAI — vận hành bản trình diễn một bãi
 
-Phạm vi: một đơn vị, FastAPI/React modular monolith. Đây là bản đồ án dùng website hiện tại. QR tạo giao dịch mô phỏng, không chuyển tiền; Gemini tắt. Lịch sử do công cụ seed tạo được gắn `demo://synthetic-history/<namespace>`, phí bằng 0 và không sinh chứng từ thu.
+Phạm vi hiện tại: **một bãi để nộp đồ án**, FastAPI/React modular monolith, trình diễn trên website hiện tại. Giao diện dùng sẵn bãi DEMO A (ID2), ẩn đổi/tạo bãi và chỉ hiển thị gói vé của bãi này. QR tạo giao dịch mô phỏng, không chuyển tiền; Gemini tắt. Lịch sử do công cụ seed tạo được gắn `demo://synthetic-history/<namespace>`, phí bằng 0 và không sinh chứng từ thu.
+
+Bốn tài khoản và kịch bản nộp bài nằm tại `backend/artifacts/phone-vn-acceptance/private/TAI_KHOAN_DO_AN_MOT_BAI.md` ngoài Git. Các lệnh seed hai bãi bên dưới là hồ sơ triển khai trước khi thu gọn phạm vi; không cần chạy lại hoặc xóa dữ liệu để trình diễn một bãi. Bộ chạy SQLite cục bộ vẫn phục vụ cấu hình demo tổng quát; cấu hình `SINGLE_SITE_ID: 2` ở đây áp dụng cho website có ID bãi đã kiểm chứng.
 
 ## Sử dụng theo vai trò
 
-- **Staff:** vào **Bãi xe**, chọn bãi được cấp quyền. Tab **Ca & chứng từ** cho mở ca, xem khoản mình thu và chốt theo số tiền thực đếm. Chỉ có một ca mở cho mỗi nhân viên; không nhận khoản của bãi khác vào ca đó. Nhận xe và xem báo phí/xác nhận xe ra tại màn hình nghiệp vụ.
+- **Staff:** đăng nhập để mở **Bãi xe** đã chọn sẵn. Tab **Ca & chứng từ** cho mở ca, xem khoản mình thu và chốt theo số tiền thực đếm. Chỉ có một ca mở cho mỗi nhân viên. Nhận xe và xem báo phí/xác nhận xe ra tại màn hình nghiệp vụ.
 - **Manager:** xem ca, chứng từ và tổng thu của bãi mình; chốt ca hoặc lập chứng từ hoàn có lý do. Tab **Cấu hình bãi** sửa khu/vị trí; các ràng buộc chỗ đang dùng hoặc có cam kết vẫn được kiểm tại server.
 - **Admin:** quản trị toàn hệ thống, xem lịch sử chưa xác định bãi và audit. API v1 toàn hệ thống vẫn chặn staff/manager khi có nhiều bãi.
 - **Customer:** cổng khách hiển thị xe đã xác minh, vị trí hiện tại, lịch sử được cấp quyền, vé và đơn. Trong **Đăng ký & QR**, chọn xe/gói rồi giả lập kết quả. Hoàn QR đi qua yêu cầu của khách và người duyệt, không dùng đường hoàn tiền quầy.
@@ -13,9 +15,9 @@ Tổng thu theo ngày thu/hoàn, trừ khoản hoàn và loại `method=demo`. K
 
 ## Camera điện thoại và dự báo
 
-Mở website HTTPS trên điện thoại, vào **Camera**, chọn bãi/camera, chụp hoặc tải JPEG/PNG. Sau OCR, xem ảnh toàn cảnh, crop và các ứng viên; sửa biển số rồi xác nhận để chuyển tới màn hình xử lý xe. OCR chỉ lưu nhận xét, không tự nhận/trả xe hoặc thu tiền. Điểm detector/OCR là điểm nội bộ, không phải accuracy đã kiểm chứng. Tối đa một ảnh đang xử lý; nếu nhận 429, chờ theo `Retry-After` rồi thử lại.
+Mở website HTTPS trên điện thoại, vào **Camera**, chọn camera/làn trong bãi đã chọn sẵn, chụp hoặc tải JPEG/PNG. Sau OCR, xem ảnh toàn cảnh, crop và các ứng viên; sửa biển số rồi xác nhận để chuyển tới màn hình xử lý xe. OCR chỉ lưu nhận xét, không tự nhận/trả xe hoặc thu tiền. Điểm detector/OCR là điểm nội bộ, không phải accuracy đã kiểm chứng. Tối đa một ảnh đang xử lý; nếu nhận 429, chờ theo `Retry-After` rồi thử lại.
 
-Đã thử viewport 390×844 trên Chrome. Chụp bằng điện thoại vật lý, biển Việt Nam và các điều kiện mưa/tối chưa được nghiệm thu. Không thay kết quả đó bằng screenshot hoặc ảnh biển nước ngoài.
+Đã thử viewport 390×844 trên Chrome và đo OCR cục bộ trên500 crop biển Việt Nam cùng pilot20 ảnh toàn xe; kết quả và giới hạn ghi tại [PHONE_VN_ACCEPTANCE.md](PHONE_VN_ACCEPTANCE.md). Chụp bằng iQOO Neo9/iPhone vật lý và các điều kiện mưa/tối chưa được nghiệm thu. Screenshot không thay cho kết quả thiết bị thật.
 
 Dự báo giữ mô hình hiện tại. Bảng so sánh naive, seasonal naive và trung bình cùng thứ/giờ dùng cùng cửa sổ rolling-origin; sai số và độ phủ khoảng chỉ tính từ quá khứ. Lịch sử tổng hợp phù hợp minh họa giao diện, không dùng để công bố hiệu quả dự báo thực tế.
 

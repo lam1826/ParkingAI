@@ -1,5 +1,8 @@
 # Intent — vòng nâng cấp 3
 
+## Phạm vi hiện tại sau điều chỉnh của người dùng
+Ngày08/09/2026, người dùng thu gọn mục tiêu còn **một bãi để nộp đồ án**. Website chọn sẵn bãi demo A với bốn vai trò; không tiếp tục mở rộng nhiều bãi. Giữ quyền server và dữ liệu hiện có, không reset database để đổi giao diện. Nghiệm thu điện thoại vật lý còn chờ kết quả iQOO Neo9/iPhone; số đo OCR Việt Nam có giới hạn được ghi trong docs/PHONE_VN_ACCEPTANCE.md. Những mục dưới đây là intent lịch sử của vòng3 trước điều chỉnh này.
+
 ## Problem / Opportunity
 Release caaef39 đã lên website nhưng thiếu dữ liệu/tài khoản trình diễn, QR và OCR chưa bật. Vận hành nhiều bãi còn thiếu chốt ca theo bãi; audit v2 phân loại chung và chưa có request ID.
 

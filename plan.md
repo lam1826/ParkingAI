@@ -5,7 +5,7 @@
 Điều chỉnh phạm vi trong lúc thực hiện: người dùng chỉ cần **một bãi để nộp đồ án**. Giao diện website chọn bãi demo A (ID 2 đã đối chiếu API), ẩn đổi/tạo bãi và chỉ công bố gói vé của bãi này. Cấu hình giao diện không thay quyền server, schema hoặc dữ liệu lịch sử. Dùng bốn vai trò admin/manager_a/staff_a/customer_a cho kịch bản nộp bài. Không triển khai thêm năng lực nhiều bãi.
 
 - [x] Thu gọn giao diện một bãi qua `frontend/public/config.js`, bộ lọc catalog, bộ chọn bãi và trang vào mặc định; kiểm tra config sai/không có quyền không tự chọn sang bãi khác.
-- [ ] Frontend test/lint/build, kiểm tra trình duyệt cùng API giả lập hai bãi để phát hiện chọn nhầm, ghi trạng thái phát hành rõ ràng.
+- [x] Frontend139 test/lint/build; trình duyệt cục bộ33 kiểm tra với API thật chỉ đọc và ghi nghiệp vụ giả lập, gồm người không có quyền bãi2; website31 kiểm tra sau CD, đăng nhập bốn vai trò/OCR available, không ghi nghiệp vụ. CI34241074566/CD34242469234 thành công; API và bundle khớp bản76ef211, backup gate đạt.
 
 Yêu cầu tiếp theo của người dùng: hoàn tất phần đo OCR Việt Nam và thử trên iQOO Neo 9/Chrome, iPhone/Safari. Không thay model hoặc cấu hình production trước khi có bằng chứng; đo cục bộ cùng mã và model đã phát hành. Ảnh, nhãn biển số, kết quả từng ảnh và thông tin thiết bị nằm trong `backend/artifacts/phone-vn-acceptance/` ngoài Git.
 
@@ -13,7 +13,8 @@ Yêu cầu tiếp theo của người dùng: hoàn tất phần đo OCR Việt N
 - [x] Thêm `edge/evaluate_plates.py` để đo detection ở IoU 0.5, đọc đúng toàn biển, CER, tỷ lệ gợi ý cần sửa và thời gian; tách ảnh crop/ảnh toàn xe, dữ liệu công khai/ảnh điện thoại. Không loại ảnh khó hoặc lỗi khỏi mẫu số.
 - [x] Kiểm thử bộ tính điểm bằng kết quả biết trước, dữ liệu rỗng/sai, khớp một-một và ảnh trùng; chạy YOLO/RapidOCR thật, lưu kết quả tái lập.
 - [x] Chuẩn bị `docs/PHONE_VN_ACCEPTANCE.md` và biểu mẫu riêng cho hai điện thoại; nghiệm thu thao tác vật lý chỉ từ kết quả người dùng thực hiện, không thay bằng viewport mô phỏng.
-- [ ] Cập nhật PARK-209 và release gate theo kết quả thực đo; nêu rõ giới hạn mẫu, nguồn dữ liệu training chưa công bố và các tình huống chưa thử.
+- [ ] Nhận kết quả thao tác trên iQOO Neo9/Chrome và iPhone/Safari, đối chiếu bằng chứng từng ca; kiểm tra nhãn pilot độc lập bởi con người. Chưa có kết quả thiết bị thật.
+- [x] Cập nhật PARK-209 và release gate theo kết quả thực đo; nêu rõ giới hạn mẫu, nguồn dữ liệu training chưa công bố và các tình huống chưa thử. PARK-209 còn IN_PROGRESS vì chưa có thiết bị thật/nhãn pilot được người kiểm độc lập; PARK-213 DONE cho giao diện một bãi đã phát hành.
 
 Tiêu chí: báo cáo các tỷ lệ cùng số đếm, không lấy confidence làm accuracy. Ảnh crop chỉ kiểm tra nhận diện trên crop, không chứng minh detection ngoài bãi. Mẫu độc lập với việc tinh chỉnh trong đợt này; không thể xác nhận không trùng tập training của publisher. Không thay đổi DB/schema, không benchmark tải trên Fly, không gọi Gemini. Rollback: bỏ công cụ/tài liệu nghiệm thu; runtime và dữ liệu website giữ nguyên. Câu hỏi còn mở: mẫu/version iPhone, kết quả thao tác hai điện thoại và ảnh/nhãn có quyền sử dụng do người dùng cung cấp.
 

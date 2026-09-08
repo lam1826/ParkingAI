@@ -1,24 +1,30 @@
 # ParkingAI — release gate vòng 3, 08/09/2026
 
-**Overall: READY cho trình diễn đồ án online trong phạm vi dưới đây.** Chốt bằng chứng lúc 21:00 ngày 08/09/2026 (UTC+7).
+**Overall: READY cho trình diễn đồ án online trong phạm vi dưới đây.** Bản một bãi được đối chiếu lúc22:08 ngày08/09/2026 (UTC+7); bằng chứng lịch sử vòng3 được giữ riêng bên dưới. Nghiệm thu điện thoại vật lý vẫn chưa hoàn tất.
 
-Phạm vi đánh giá: trình diễn đồ án tại website hiện tại, một đơn vị quản lý nhiều bãi, QR mô phỏng, Gemini tắt, nhân viên duyệt biển số. Đây không phải nghiệm thu vận hành bãi thật.
+Phạm vi nộp bài hiện tại: **một bãi**, QR mô phỏng, Gemini tắt, nhân viên duyệt biển số, dùng website hiện tại. Khả năng nhiều bãi đã được kiểm tra ở vòng3 là bằng chứng lịch sử, không phải yêu cầu mở rộng tiếp. Đây không phải nghiệm thu vận hành bãi thật.
 
 
 ## Bổ sung theo yêu cầu một bãi và nghiệm thu camera
 
-Phạm vi nộp bài đã thu gọn còn một bãi (demo A, ID2); các bằng chứng nhiều bãi bên dưới là lịch sử release trước. Candidate frontend đã qua139 test/lint/build và33 kiểm tra trình duyệt cục bộ; đang chờ xác minh bản online. API/schema/model không đổi trong candidate này.
+Phạm vi nộp bài đã thu gọn còn một bãi (demo A, ID2). Ứng dụng `76ef211821c52c3e5fae11bb5c980dcd8cabd35c` đã qua139 test/lint/build,33 kiểm tra trình duyệt cục bộ và31 kiểm tra trên website sau CD, gồm đăng nhập bốn vai trò và OCR status available. Lượt online không ghi nghiệp vụ hoặc upload ảnh, không có lỗi JavaScript; có bốn cảnh báo beacon Cloudflare bị CSP chặn đã được người dùng hoãn xử lý. Trước khi API triển khai có30 kiểm tra online; không cộng hai lượt thành61 ca độc lập. Mô phỏng viewport không tính là điện thoại thật. API/schema/model không đổi trong bản này.
 
-Đã có đo OCR trên500 crop thật có nhãn: OCR trực tiếp456/500 (91,2%), cả YOLO/OCR trên crop64/500 (12,8%). Pilot20 ảnh toàn xe:20 đúng toàn biển nhưng9 vùng thừa; nhãn agent chưa được người kiểm tra độc lập. Các số này không phải cam kết accuracy Việt Nam. iQOO Neo9/Chrome và iPhone/Safari vẫn PENDING vì chưa có kết quả thao tác vật lý. Chi tiết: [PHONE_VN_ACCEPTANCE.md](PHONE_VN_ACCEPTANCE.md). PARK-209 còn IN_PROGRESS; PARK-213 là giao diện một bãi, chờ xác minh phát hành.
+Bundle online `/assets/index-DxpqSu6n.js` khớp SHA256 build `fee3926842a2a531fa7b0e1836f29e071c66ed14391b4c5c1ff4772cdff1f5d6`; `/config.js` đặt `SINGLE_SITE_ID: 2`. Snapshot HTML/config/bundle trước thay đổi được giữ tại `backend/artifacts/phone-vn-acceptance/pre-release/`. Việc thu gọn giao diện không cần migration hoặc sửa dữ liệu.
 
-## Mã phát hành và bằng chứng
+CI của đúng commit: [34241074566](https://github.com/lam1826/ParkingAI/actions/runs/34241074566) thành công. Linux1216 passed/19 skipped; PostgreSQL16 passed; Windows rollout190 passed/1 skipped; frontend139 passed, lint/build đạt. Container OCR một CPU/640MiB/network none xử lý6 ảnh, đỉnh345,1MiB. Bộ chấm điểm mới có21 ca đạt (nằm trong tổng Linux), không dùng kết quả mock làm accuracy model.
+
+CD [34242469234](https://github.com/lam1826/ParkingAI/actions/runs/34242469234) thành công, gồm Supabase recovery gate. API công khai trả đúng SHA `76ef211821c52c3e5fae11bb5c980dcd8cabd35c`, `/ready` trả ready và CORS cho `https://parkingai.am` đạt. Lần cập nhật này không chạy restore DB mới; bằng chứng restore PG17 của vòng3 vẫn ghi bên dưới. Commit ghi biên bản sau bản này chỉ thay tài liệu, không phải release ứng dụng tiếp theo.
+
+Đã có đo OCR trên500 crop thật có nhãn: OCR trực tiếp456/500 (91,2%), cả YOLO/OCR trên crop64/500 (12,8%). Pilot20 ảnh toàn xe:20 đúng toàn biển nhưng9 vùng thừa; nhãn agent chưa được người kiểm tra độc lập. Các số này không phải cam kết accuracy Việt Nam. iQOO Neo9/Chrome và iPhone/Safari vẫn PENDING vì chưa có kết quả thao tác vật lý. Chi tiết: [PHONE_VN_ACCEPTANCE.md](PHONE_VN_ACCEPTANCE.md). PARK-209 còn IN_PROGRESS; PARK-213 DONE trong phạm vi giao diện một bãi trên website.
+
+## Lịch sử phát hành vòng3 trước giao diện một bãi
 
 - Backend `3c6fdf2dac6e9627ef85e07d5672b08938e4c04a` vượt CI [34228923155](https://github.com/lam1826/ParkingAI/actions/runs/34228923155) và CD [34230062434](https://github.com/lam1826/ParkingAI/actions/runs/34230062434). API mới sẵn sàng lúc 13:12:24 UTC, trước khi push frontend `a99bfac`.
 - Frontend `a99bfacdcbec4ea7109d2699be5b2732f4f691f1` vượt CI [34230768316](https://github.com/lam1826/ParkingAI/actions/runs/34230768316). Bundle `/assets/index-B-63aXU6.js` trên website khớp SHA256 của build. CD [34232996611](https://github.com/lam1826/ParkingAI/actions/runs/34232996611) triển khai API SHA này; không suy SHA release từ `head_sha` của workflow_run.
-- Bản ứng dụng cuối **`adc749f0fe9185c208ea964b6e9bd6bce8577c3e`**: CI [34232954119](https://github.com/lam1826/ParkingAI/actions/runs/34232954119) và CD [34234708346](https://github.com/lam1826/ParkingAI/actions/runs/34234708346) thành công, gồm backup gate. API công khai trả đúng SHA, `/ready` 200; bundle frontend khớp build. Những commit ghi biên bản sau đó chỉ thay tài liệu, không phải SHA ứng dụng mới.
+- Bản sửa OOM **`adc749f0fe9185c208ea964b6e9bd6bce8577c3e`**: CI [34232954119](https://github.com/lam1826/ParkingAI/actions/runs/34232954119) và CD [34234708346](https://github.com/lam1826/ParkingAI/actions/runs/34234708346) thành công, gồm backup gate. API công khai trả đúng SHA, `/ready` 200 tại thời điểm nghiệm thu; bundle frontend khớp build. Commit `970e828` ghi biên bản chỉ thay tài liệu, không phải SHA ứng dụng mới.
 - Artifact thô nằm tại `backend/artifacts/round3/` ignored. Credentials, dump và manifest ID trong `private/`; không đính kèm vào GitHub, log công khai hoặc ticket.
 
-## Các gate đã kiểm tra
+## Các gate vòng3 đã kiểm tra tại bản adc749f
 
 | Gate | Bằng chứng | Trạng thái |
 | --- | --- | --- |
@@ -48,16 +54,16 @@ Sau khi CI/CD của bản sửa đạt, đã bật lại engine và thử API: c
 ## Giới hạn và công việc tiếp theo
 
 - Cloudflare beacon còn bị CSP chặn; người dùng đã yêu cầu để sau. Giữ nguyên CSP. PARK-210: `DEFERRED_BY_USER`.
-- Chưa có bộ biển Việt Nam được gắn nhãn và quyền sử dụng phù hợp; chưa đo detection/đúng toàn biển/tỷ lệ sửa. Chưa thử chụp trên điện thoại vật lý; viewport Chrome không thay cho thiết bị thật. PARK-209.
+- Đã đo500 crop Việt Nam có nhãn publisher và pilot20 ảnh toàn xe; giới hạn nguồn/nhãn, kết quả detection/đúng toàn biển/tỷ lệ sửa ghi trong PHONE_VN_ACCEPTANCE.md. Chưa thử chụp trên điện thoại vật lý và chưa có bộ đánh giá đại diện cho bãi thực; viewport Chrome không thay cho thiết bị thật. PARK-209 còn IN_PROGRESS.
 - QR không chuyển tiền; Gemini tắt; OCR không điều khiển barie, tự nhận/trả xe hay thu tiền.
 - Không có kết quả tải lớn, video liên tục, độ bền dài hạn, SLA hay đối soát cổng ngân hàng. PARK-211 và các mục FUTURE.
 
-Không còn gate bắt buộc thất bại trong phạm vi trình diễn đã chốt. Backlog có13 ticket vòng3:9 DONE,1 FUTURE còn mở,2 IN_PROGRESS (PARK-209/213),1 Cloudflare hoãn theo người dùng. Các phần chưa có bằng chứng ở trên được giữ riêng, không gọi là đã hoàn thành cho bãi thật.
+Không còn gate bắt buộc thất bại trong phạm vi trình diễn đã chốt. Backlog có13 ticket vòng3:10 DONE,1 FUTURE còn mở,1 IN_PROGRESS (PARK-209),1 Cloudflare hoãn theo người dùng. Các phần chưa có bằng chứng ở trên được giữ riêng, không gọi là đã hoàn thành cho bãi thật.
 
 **Vận hành bãi thật: NOT READY.** Cần nghiệm thu các phần trên với dữ liệu, thiết bị, chính sách nghiệp vụ và phương án vận hành thực tế. Kết luận này độc lập với việc trình diễn đồ án.
 
 ## Bàn giao và rollback
 
-Website: [parkingai.am](https://parkingai.am). Hướng dẫn vai trò, camera, seed và rollback: [ROUND3_OPERATIONS.md](ROUND3_OPERATIONS.md). Tài khoản và kịch bản riêng: `backend/artifacts/round3/private/TAI_KHOAN_VA_KICH_BAN_DEMO.md` trên máy người dùng. Danh sách nhập Jira/Trello: [JSON](tickets/round3-tickets.json) và [CSV](tickets/round3-tickets.csv); chưa tạo ticket trên dịch vụ ngoài.
+Website: [parkingai.am](https://parkingai.am). Hướng dẫn vai trò, camera, seed và rollback: [ROUND3_OPERATIONS.md](ROUND3_OPERATIONS.md). Bốn tài khoản và kịch bản một bãi: `backend/artifacts/phone-vn-acceptance/private/TAI_KHOAN_DO_AN_MOT_BAI.md` trên máy người dùng. Bản bàn giao bảy tài khoản trước đây vẫn giữ riêng ngoài Git. Danh sách nhập Jira/Trello: [JSON](tickets/round3-tickets.json) và [CSV](tickets/round3-tickets.csv); chưa tạo ticket trên dịch vụ ngoài.
 
 Nếu OCR lỗi, tắt engine trước, giữ nhập biển số thủ công. Nếu ứng dụng lỗi, quay về image/SHA trước tương thích schema, giữ các bản ghi mới. Chỉ phục hồi DB theo runbook đã thử trên đích riêng và đối chiếu chứng từ phát sinh; không reset DB, xóa ca/chứng từ hoặc downgrade schema tài chính. Backup public schema không bao gồm Supabase managed Auth/Storage/roles; recovery point nhà cung cấp vẫn được kiểm riêng trong CD.

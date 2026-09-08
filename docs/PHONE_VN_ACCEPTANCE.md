@@ -9,7 +9,7 @@ Theo điều chỉnh ngày 08/09/2026, bản trình diễn chỉ dùng **một b
 ## 1. Cách thử nhanh trên điện thoại
 
 1. iQOO Neo 9 dùng Chrome; iPhone dùng Safari. Mở `https://parkingai.am/vision`.
-2. Đăng nhập nhân viên demo bãi A. Mật khẩu chỉ nằm trong `backend/artifacts/round3/private/TAI_KHOAN_VA_KICH_BAN_DEMO.md`, không đưa vào tài liệu Git.
+2. Đăng nhập nhân viên demo bãi A. Mật khẩu nằm trong `backend/artifacts/phone-vn-acceptance/private/TAI_KHOAN_DO_AN_MOT_BAI.md`, không đưa vào tài liệu Git.
 3. Chọn camera/làn **Xe vào**. Giao diện một bãi đã chọn sẵn bãi đỗ; nếu đang dùng bản cũ, chọn bãi DEMO A.
 4. Bấm **Chụp bằng điện thoại**, chụp xe của mình hoặc xe được phép dùng làm mẫu. Giữ được phần xe xung quanh biển, đủ sáng, tránh chói; không chỉ đưa ảnh đã cắt sát vùng biển cho YOLO.
 5. Chọn **Dùng ảnh/OK**, đợi kết quả. Ghi biển thật trước khi đối chiếu gợi ý. Kiểm tra ảnh gốc, khung và ảnh cắt. Nếu sai hoặc không có gợi ý, nhập biển đúng tại **Biển số đã kiểm tra**.
