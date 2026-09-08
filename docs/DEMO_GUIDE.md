@@ -116,6 +116,7 @@ Nhập thời gian xử lý mỗi xe, mức sử dụng năng lực và số nh�
 | Máy chủ từ chối DB | Dùng DB do seeder tạo và giữ `.demo.json`; không gắn marker vào DB thật |
 | Hết phiên sau khởi động lại | Đăng nhập lại; khóa phiên demo được tạo mới khi chạy server |
 | Điện thoại không vào được | Kiểm tra cùng Wi-Fi, địa chỉ IPv4 đúng, tham số `-Lan`, mạng riêng và firewall |
+| PowerShell báo `The string is missing the terminator` khi chạy `start_demo.ps1` | Script phải giữ BOM UTF-8 (Windows PowerShell 5.1 đọc file không BOM theo bảng mã ANSI). Không lưu lại script bằng trình soạn thảo bỏ BOM; `tests/test_demo_server.py` kiểm tra điều này |
 | Cổng 8765 đang được dùng | Dừng phiên demo cũ nếu đang mở trong terminal, hoặc chạy `./scripts/start_demo.ps1 -Lan -Port 8766` và truy cập cổng mới |
 | Không còn chỗ nhận xe | Xem xe đang đỗ, đặt chỗ/bảo đảm chỗ và loại xe; không giải phóng chỗ đang có xe bằng tay |
 | Chưa thấy nhắc vé | Nhắc khi còn 7 hoặc 1 ngày hiệu lực; worker chạy mỗi 30 giây, không gửi email/SMS |

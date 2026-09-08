@@ -10,6 +10,16 @@ demo = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(demo)
 
 
+def test_powershell_scripts_with_vietnamese_text_carry_a_utf8_bom():
+    # Windows PowerShell 5.1 reads a BOM-less .ps1 as ANSI, so Vietnamese string
+    # literals break the parser and `./scripts/start_demo.ps1` fails before starting.
+    for script in sorted((ROOT / "scripts").glob("*.ps1")):
+        raw = script.read_bytes()
+        if any(byte > 0x7F for byte in raw):
+            assert raw.startswith(b"\xef\xbb\xbf"), f"{script.name} needs a UTF-8 BOM for Windows PowerShell 5.1"
+            raw[3:].decode("utf-8")
+
+
 def test_demo_server_refuses_an_unmarked_database(tmp_path):
     source = tmp_path / "real.db"
     source.write_bytes(b"do not change")

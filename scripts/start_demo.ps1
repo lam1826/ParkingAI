@@ -1,4 +1,4 @@
-param(
+﻿param(
     [switch]$Lan,
     [switch]$NoVision,
     [int]$Port = 8765,
