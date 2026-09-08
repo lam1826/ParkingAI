@@ -8,6 +8,7 @@ import PermissionRoute from "./PermissionRoute";
 import { AuthContext } from "../context/AuthContext";
 import { ExpansionProvider, useExpansion } from "../context/ExpansionContext";
 import { lazyWithRecovery } from "../utils/chunkRecovery";
+import { singleSiteId } from "../utils/singleSiteMode";
 
 const lazy = lazyWithRecovery;
 
@@ -46,7 +47,7 @@ function HomePage() {
   const { user } = useContext(AuthContext);
   const capabilities = useExpansion();
   if (user?.role === "customer") return <Navigate to="/portal" replace />;
-  if (!capabilities.legacy_workspace_allowed) return <Navigate to="/sites" replace />;
+  if (singleSiteId() !== null || !capabilities.legacy_workspace_allowed) return <Navigate to="/sites" replace />;
   return <PermissionRoute minimumRole="staff"><Dashboard /></PermissionRoute>;
 }
 

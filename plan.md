@@ -1,5 +1,22 @@
 # Plan
 
+## PARK-209 — nghiệm thu điện thoại thật và biển Việt Nam (08/09/2026)
+
+Điều chỉnh phạm vi trong lúc thực hiện: người dùng chỉ cần **một bãi để nộp đồ án**. Giao diện website chọn bãi demo A (ID 2 đã đối chiếu API), ẩn đổi/tạo bãi và chỉ công bố gói vé của bãi này. Cấu hình giao diện không thay quyền server, schema hoặc dữ liệu lịch sử. Dùng bốn vai trò admin/manager_a/staff_a/customer_a cho kịch bản nộp bài. Không triển khai thêm năng lực nhiều bãi.
+
+- [x] Thu gọn giao diện một bãi qua `frontend/public/config.js`, bộ lọc catalog, bộ chọn bãi và trang vào mặc định; kiểm tra config sai/không có quyền không tự chọn sang bãi khác.
+- [ ] Frontend test/lint/build, kiểm tra trình duyệt cùng API giả lập hai bãi để phát hiện chọn nhầm, ghi trạng thái phát hành rõ ràng.
+
+Yêu cầu tiếp theo của người dùng: hoàn tất phần đo OCR Việt Nam và thử trên iQOO Neo 9/Chrome, iPhone/Safari. Không thay model hoặc cấu hình production trước khi có bằng chứng; đo cục bộ cùng mã và model đã phát hành. Ảnh, nhãn biển số, kết quả từng ảnh và thông tin thiết bị nằm trong `backend/artifacts/phone-vn-acceptance/` ngoài Git.
+
+- [x] Chốt nguồn dữ liệu, điều kiện sử dụng, revision/checksum, nhãn gốc và cách chọn mẫu trước khi chạy nhận diện.
+- [x] Thêm `edge/evaluate_plates.py` để đo detection ở IoU 0.5, đọc đúng toàn biển, CER, tỷ lệ gợi ý cần sửa và thời gian; tách ảnh crop/ảnh toàn xe, dữ liệu công khai/ảnh điện thoại. Không loại ảnh khó hoặc lỗi khỏi mẫu số.
+- [x] Kiểm thử bộ tính điểm bằng kết quả biết trước, dữ liệu rỗng/sai, khớp một-một và ảnh trùng; chạy YOLO/RapidOCR thật, lưu kết quả tái lập.
+- [x] Chuẩn bị `docs/PHONE_VN_ACCEPTANCE.md` và biểu mẫu riêng cho hai điện thoại; nghiệm thu thao tác vật lý chỉ từ kết quả người dùng thực hiện, không thay bằng viewport mô phỏng.
+- [ ] Cập nhật PARK-209 và release gate theo kết quả thực đo; nêu rõ giới hạn mẫu, nguồn dữ liệu training chưa công bố và các tình huống chưa thử.
+
+Tiêu chí: báo cáo các tỷ lệ cùng số đếm, không lấy confidence làm accuracy. Ảnh crop chỉ kiểm tra nhận diện trên crop, không chứng minh detection ngoài bãi. Mẫu độc lập với việc tinh chỉnh trong đợt này; không thể xác nhận không trùng tập training của publisher. Không thay đổi DB/schema, không benchmark tải trên Fly, không gọi Gemini. Rollback: bỏ công cụ/tài liệu nghiệm thu; runtime và dữ liệu website giữ nguyên. Câu hỏi còn mở: mẫu/version iPhone, kết quả thao tác hai điện thoại và ảnh/nhãn có quyền sử dụng do người dùng cung cấp.
+
 ## Vòng 3 — kế hoạch đã được người dùng duyệt 08/09/2026
 - [x] PR-01: system map, 14 mục review, research, benchmark và backlog cập nhật.
 - [x] PR-02: kiểm chứng correctness/security, nhất là cap đặt chỗ nhiều xe cùng khách.
@@ -17,7 +34,7 @@ Quyết định: website hiện tại là nơi trình diễn; YOLO chạy trên 
 Kiểm tra từng batch trước khi chuyển tiếp: focused tests, regression liên quan, SQLite/PostgreSQL, frontend test/lint/build, Docker, CI, backup/recovery, release SHA và UAT. Rollback code nếu schema tương thích; không tự downgrade hoặc xóa chứng từ phát sinh. Mọi trạng thái bên dưới là lịch sử trước vòng 3.
 
 ## Objective
-Hoàn thiện bản đồ án ParkingAI với cổng khách hàng, QR thanh toán mô phỏng, đặt chỗ, quản lý nhiều bãi thuộc cùng đơn vị và camera điện thoại dùng YOLO/OCR.
+Hoàn thiện bản đồ án ParkingAI cho **một bãi đỗ xe**, với cổng khách hàng, QR thanh toán mô phỏng, đặt chỗ và camera điện thoại dùng YOLO/OCR. Năng lực nhiều bãi đã có là phần mở rộng trong mã, không thuộc kịch bản nộp bài hiện tại.
 
 ## Context / Existing Behavior
 Ứng dụng FastAPI, SQLAlchemy và React/MUI đã có nghiệp vụ vào/ra, báo phí có chữ ký, xác nhận thu tiền, vé tháng, sổ thu và chốt ca. Các module mở rộng đã có phần lớn backend nhưng chưa ghép đủ giao diện, migration và hướng dẫn demo. Mốc gốc: f9e80a6f99555ce9ed219f576df0517804be7462.
@@ -30,7 +47,7 @@ Hoàn thiện bản đồ án ParkingAI với cổng khách hàng, QR thanh toá
 - Nâng cấp schema an toàn, dữ liệu và bộ chạy demo riêng, kiểm thử, tài liệu sử dụng.
 
 ## Out of Scope
-Thanh toán ngân hàng thật, barie tự động, cam kết độ chính xác biển số Việt Nam khi chưa có bộ đánh giá, SaaS đa doanh nghiệp. Không đưa dữ liệu giả vào cơ sở dữ liệu vận hành.
+Thanh toán ngân hàng thật, barie tự động, cam kết độ chính xác ngoài bãi khi chưa có bộ đánh giá đại diện, SaaS đa doanh nghiệp. Không đưa dữ liệu giả vào cơ sở dữ liệu vận hành.
 
 ## Files / Components Affected
 backend/expansion, backend/models, backend/main.py, backend/database.py, backend/db_rollout.py, backend/postgres_readiness.py, backend/alembic/versions, frontend/src/pages/Expansion, routes/layout/context, tests, docs và scripts demo.

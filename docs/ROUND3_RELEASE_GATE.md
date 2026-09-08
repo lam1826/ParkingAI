@@ -4,6 +4,13 @@
 
 Phạm vi đánh giá: trình diễn đồ án tại website hiện tại, một đơn vị quản lý nhiều bãi, QR mô phỏng, Gemini tắt, nhân viên duyệt biển số. Đây không phải nghiệm thu vận hành bãi thật.
 
+
+## Bổ sung theo yêu cầu một bãi và nghiệm thu camera
+
+Phạm vi nộp bài đã thu gọn còn một bãi (demo A, ID2); các bằng chứng nhiều bãi bên dưới là lịch sử release trước. Candidate frontend đã qua139 test/lint/build và33 kiểm tra trình duyệt cục bộ; đang chờ xác minh bản online. API/schema/model không đổi trong candidate này.
+
+Đã có đo OCR trên500 crop thật có nhãn: OCR trực tiếp456/500 (91,2%), cả YOLO/OCR trên crop64/500 (12,8%). Pilot20 ảnh toàn xe:20 đúng toàn biển nhưng9 vùng thừa; nhãn agent chưa được người kiểm tra độc lập. Các số này không phải cam kết accuracy Việt Nam. iQOO Neo9/Chrome và iPhone/Safari vẫn PENDING vì chưa có kết quả thao tác vật lý. Chi tiết: [PHONE_VN_ACCEPTANCE.md](PHONE_VN_ACCEPTANCE.md). PARK-209 còn IN_PROGRESS; PARK-213 là giao diện một bãi, chờ xác minh phát hành.
+
 ## Mã phát hành và bằng chứng
 
 - Backend `3c6fdf2dac6e9627ef85e07d5672b08938e4c04a` vượt CI [34228923155](https://github.com/lam1826/ParkingAI/actions/runs/34228923155) và CD [34230062434](https://github.com/lam1826/ParkingAI/actions/runs/34230062434). API mới sẵn sàng lúc 13:12:24 UTC, trước khi push frontend `a99bfac`.
@@ -45,7 +52,7 @@ Sau khi CI/CD của bản sửa đạt, đã bật lại engine và thử API: c
 - QR không chuyển tiền; Gemini tắt; OCR không điều khiển barie, tự nhận/trả xe hay thu tiền.
 - Không có kết quả tải lớn, video liên tục, độ bền dài hạn, SLA hay đối soát cổng ngân hàng. PARK-211 và các mục FUTURE.
 
-Không còn gate bắt buộc thất bại trong phạm vi trình diễn đã chốt. Backlog có12 ticket vòng3:9 DONE,2 FUTURE còn mở,1 Cloudflare hoãn theo người dùng. Các phần chưa có bằng chứng ở trên được giữ riêng, không gọi là đã hoàn thành cho bãi thật.
+Không còn gate bắt buộc thất bại trong phạm vi trình diễn đã chốt. Backlog có13 ticket vòng3:9 DONE,1 FUTURE còn mở,2 IN_PROGRESS (PARK-209/213),1 Cloudflare hoãn theo người dùng. Các phần chưa có bằng chứng ở trên được giữ riêng, không gọi là đã hoàn thành cho bãi thật.
 
 **Vận hành bãi thật: NOT READY.** Cần nghiệm thu các phần trên với dữ liệu, thiết bị, chính sách nghiệp vụ và phương án vận hành thực tế. Kết luận này độc lập với việc trình diễn đồ án.
 

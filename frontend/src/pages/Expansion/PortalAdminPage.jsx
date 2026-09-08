@@ -1,6 +1,7 @@
 import { useCallback, useState } from "react";
 import { Alert, Box, Button, Checkbox, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, MenuItem, Stack, Tab, Tabs, TextField, Typography } from "@mui/material";
 import api from "../../services/api";
+import { singleSiteId } from "../../utils/singleSiteMode";
 import { Workspace, Section, Records, StateChip, useRemote, useAction, read, send, items, money, dateTime, endpoint, formLayout } from "./shared";
 
 const emptyPlan = { name: "", site_id: "", vehicle_type_id: "", duration_days: "30", price: "" };
@@ -23,13 +24,15 @@ export default function PortalAdminPage() {
   const remote = useRemote(load);
   const action = useAction(remote.reload);
   const data = remote.data;
+  const singleSiteMode = singleSiteId() !== null;
+  const planSiteId = plan.site_id || (singleSiteMode ? data?.sites[0]?.id || "" : "");
   const edit = (field) => (event) => setPlan((old) => ({ ...old, [field]: event.target.value }));
   const openResolution = (kind, row, approve) => { setResolution({ kind, row, approve }); setNote(""); setConfirmed(false); setMethod("cash"); };
   const decisionButtons = (kind, row) => <Stack direction="row" spacing={1} useFlexGap><Button size="small" disabled={action.busy} onClick={() => openResolution(kind, row, true)}>Duyệt</Button><Button size="small" color="error" disabled={action.busy} onClick={() => openResolution(kind, row, false)}>Từ chối</Button></Stack>;
   const savePlan = (event) => {
     event.preventDefault();
     const body = { name: plan.name.trim(), duration_days: Number(plan.duration_days), price: Number(plan.price) };
-    void action.run(() => editingPlan ? api.patch(endpoint(`/portal/admin/plans/${editingPlan.id}`), body) : send("/portal/admin/plans", { ...body, site_id: Number(plan.site_id), vehicle_type_id: Number(plan.vehicle_type_id) }), "Đã lưu gói vé. Giá trên đơn đã tạo được giữ nguyên.", () => { setEditingPlan(null); setPlan(emptyPlan); });
+    void action.run(() => editingPlan ? api.patch(endpoint(`/portal/admin/plans/${editingPlan.id}`), body) : send("/portal/admin/plans", { ...body, site_id: Number(planSiteId), vehicle_type_id: Number(plan.vehicle_type_id) }), "Đã lưu gói vé. Giá trên đơn đã tạo được giữ nguyên.", () => { setEditingPlan(null); setPlan(emptyPlan); });
   };
   const resolve = (event) => {
     event.preventDefault();
@@ -50,11 +53,11 @@ export default function PortalAdminPage() {
     {data && tab === 1 && <>
       <Section title={editingPlan ? "Chỉnh sửa gói vé" : "Công bố gói vé mới"} description="Mỗi gói áp dụng cho một bãi và một loại xe. Vé tháng không mặc nhiên giữ một chỗ đỗ."><Box component="form" sx={formLayout} onSubmit={savePlan}>
         <TextField required label="Tên gói" value={plan.name} onChange={edit("name")} inputProps={{ maxLength: 100 }} />
-        <TextField select required disabled={Boolean(editingPlan)} label="Bãi áp dụng" value={plan.site_id} onChange={edit("site_id")}>{data.sites.map((site) => <MenuItem key={site.id} value={site.id}>{site.name}</MenuItem>)}</TextField>
+        {singleSiteMode ? <Typography color="text.secondary">Bãi áp dụng: {data.sites[0]?.name || "Chưa được cấp quyền"}</Typography> : <TextField select required disabled={Boolean(editingPlan)} label="Bãi áp dụng" value={plan.site_id} onChange={edit("site_id")}>{data.sites.map((site) => <MenuItem key={site.id} value={site.id}>{site.name}</MenuItem>)}</TextField>}
         <TextField select required disabled={Boolean(editingPlan)} label="Loại xe" value={plan.vehicle_type_id} onChange={edit("vehicle_type_id")}>{data.types.map((type) => <MenuItem key={type.id} value={type.id}>{type.name}</MenuItem>)}</TextField>
         <TextField required type="number" label="Số ngày hiệu lực" value={plan.duration_days} onChange={edit("duration_days")} inputProps={{ min: 1, max: 366, step: 1 }} />
         <TextField required type="number" label="Giá gói (đồng)" value={plan.price} onChange={edit("price")} inputProps={{ min: 1, max: Number.MAX_SAFE_INTEGER, step: 1 }} />
-        <Stack direction="row" spacing={1} useFlexGap><Button variant="contained" type="submit" disabled={action.busy}>{editingPlan ? "Lưu gói vé" : "Công bố gói"}</Button>{editingPlan && <Button onClick={() => { setEditingPlan(null); setPlan(emptyPlan); }}>Hủy sửa</Button>}</Stack>
+        <Stack direction="row" spacing={1} useFlexGap><Button variant="contained" type="submit" disabled={action.busy || !planSiteId}>{editingPlan ? "Lưu gói vé" : "Công bố gói"}</Button>{editingPlan && <Button onClick={() => { setEditingPlan(null); setPlan(emptyPlan); }}>Hủy sửa</Button>}</Stack>
       </Box></Section>
       <Section title="Danh sách gói"><Records rows={data.plans} columns={[{ key: "name", label: "Gói vé" }, { key: "site_name", label: "Bãi" }, { key: "type_name", label: "Loại xe" }, { key: "duration_days", label: "Số ngày" }, { key: "price", label: "Giá", render: (row) => money(row.price) }, { key: "is_active", label: "Công bố", render: (row) => row.is_active ? "Đang mở" : "Đã ẩn" }, { key: "action", label: "Thao tác", render: (row) => <Stack direction="row"><Button size="small" onClick={() => { setEditingPlan(row); setPlan({ ...row, site_id: row.site_id || "" }); }}>Sửa</Button><Button size="small" disabled={action.busy} onClick={() => action.run(() => api.patch(endpoint(`/portal/admin/plans/${row.id}`), { is_active: !row.is_active }), "Đã cập nhật công bố gói vé.")}>{row.is_active ? "Ẩn gói" : "Mở gói"}</Button></Stack> }]} /></Section>
     </>}

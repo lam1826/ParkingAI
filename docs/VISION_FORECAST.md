@@ -4,7 +4,7 @@
 
 Điện thoại chụp hoặc chọn ảnh JPEG/PNG/WebP; giao diện thu nhỏ, chuyển sang JPEG rồi tải lên camera đã khai báo của bãi. Backend dùng model YOLOv8n nhận diện **vùng biển số**, sau đó RapidOCR đọc chữ trong vùng đó. Nhân viên đối chiếu ảnh, sửa biển số và xác nhận. Kết quả chỉ điền sẵn vào màn hình xe vào/tra cứu xe ra; nghiệp vụ vào/ra, chỗ trống và thu phí vẫn phải được xác nhận riêng.
 
-YOLO dùng model được huấn luyện riêng cho biển số; model COCO thông thường nhận diện ô tô không thay thế được model này. Adapter chạy ONNX trên CPU, không dùng file pickle `.pt`, không tải model khi có yêu cầu API. RapidOCR 1.4.4 chứa các model OCR ONNX của PaddleOCR trong gói cài đặt. Chưa có tập kiểm thử biển Việt Nam để kết luận độ chính xác.
+YOLO dùng model được huấn luyện riêng cho biển số; model COCO thông thường nhận diện ô tô không thay thế được model này. Adapter chạy ONNX trên CPU, không dùng file pickle `.pt`, không tải model khi có yêu cầu API. RapidOCR 1.4.4 chứa các model OCR ONNX của PaddleOCR trong gói cài đặt. Đã đo cục bộ 500 ảnh vùng biển Việt Nam có nhãn và pilot20 ảnh toàn xe; kết quả và giới hạn ghi trong [PHONE_VN_ACCEPTANCE.md](PHONE_VN_ACCEPTANCE.md). Chưa kết luận accuracy cho bãi thực hoặc thiết bị điện thoại.
 
 ## 2. Cài model và chạy bằng máy tính
 

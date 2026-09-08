@@ -1,14 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Alert, Box, Button, Chip, CircularProgress, Paper, Stack, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Typography } from "@mui/material";
+import { Alert, Box, Button, Chip, CircularProgress, MenuItem, Paper, Stack, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TextField, Typography } from "@mui/material";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import api from "../../services/api";
 import { getErrorMessage } from "../../utils/errorMessage";
 import formatCurrency from "../../utils/formatCurrency";
 import { formatBusinessTimestamp } from "../../utils/formatDate";
 import { requestId } from "../../utils/requestId";
+import { scopeDemoCatalog, singleSiteId } from "../../utils/singleSiteMode";
 
 export const endpoint = (path) => `/api/v2${path}`;
-export const read = async (path, params) => (await api.get(endpoint(path), { params })).data;
+export const read = async (path, params) => scopeDemoCatalog(path, (await api.get(endpoint(path), { params })).data);
 export const send = async (path, body = {}) => (await api.post(endpoint(path), body)).data;
 export const items = (data) => Array.isArray(data) ? data : data?.items || [];
 export const money = (value) => `${formatCurrency(value ?? 0)} ₫`;
@@ -111,7 +112,13 @@ export function useSites() {
   const [choice, setChoice] = useState("");
   const sites = remote.data || [];
   const siteId = sites.some((site) => String(site.id) === String(choice)) ? choice : sites[0]?.id || "";
-  return { ...remote, sites, siteId, setSiteId: setChoice };
+  return { ...remote, sites, siteId, setSiteId: setChoice, singleSiteMode: singleSiteId() !== null };
+}
+
+export function SitePicker({ sites, label = "Bãi xe", value = sites.siteId, onChange = sites.setSiteId, disabled = false, sx }) {
+  if (sites.singleSiteMode) return <Typography sx={sx} color="text.secondary">{sites.sites[0]?.name || (sites.loading ? "Đang tải bãi đỗ…" : "Chưa có bãi được cấp quyền.")}</Typography>;
+  return <TextField select label={label} value={value} disabled={disabled || sites.loading || !sites.sites.length} sx={sx}
+    onChange={(event) => onChange(event.target.value)}>{sites.sites.map((site) => <MenuItem key={site.id} value={site.id}>{site.name}</MenuItem>)}</TextField>;
 }
 
 /** `remote` may be one useRemote result or a synthetic {reload, loading, error} that spans sections. */

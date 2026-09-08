@@ -1,7 +1,7 @@
 import { useCallback, useState } from "react";
 import { Alert, Box, Button, MenuItem, Stack, TextField, Typography } from "@mui/material";
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { Workspace, Section, Records, useSites, useRemote, useAction, read, send, dateTime, formLayout } from "./shared";
+import { Workspace, Section, Records, useSites, useRemote, useAction, read, send, dateTime, formLayout, SitePicker } from "./shared";
 
 export default function InsightsPage() {
   const sites = useSites();
@@ -22,7 +22,7 @@ export default function InsightsPage() {
   const number = (value) => typeof value === "number" ? value.toFixed(2) : "Chưa có";
   return <Workspace title="Dự báo & điều hành" description="Đọc dự báo từ lịch sử gửi xe, xem các dấu hiệu cần kiểm tra và lập phương án nhân sự với giả định rõ ràng." remote={remote} action={action}>
     {sites.error && <Alert severity="error">{sites.error}</Alert>}
-    <Box sx={formLayout}><TextField select label="Bãi xe" value={sites.siteId} onChange={(event) => sites.setSiteId(event.target.value)}>{sites.sites.map((site) => <MenuItem key={site.id} value={site.id}>{site.name}</MenuItem>)}</TextField><TextField select label="Khoảng dự báo" value={hours} onChange={(event) => setHours(event.target.value)}>{[2, 6, 12, 24].map((value) => <MenuItem key={value} value={value}>{value} giờ tới</MenuItem>)}</TextField></Box>
+    <Box sx={formLayout}><SitePicker sites={sites} /><TextField select label="Khoảng dự báo" value={hours} onChange={(event) => setHours(event.target.value)}>{[2, 6, 12, 24].map((value) => <MenuItem key={value} value={value}>{value} giờ tới</MenuItem>)}</TextField></Box>
     <Section title="Lưu lượng dự kiến" description="Khoảng dự báo là ước lượng theo dữ liệu lịch sử, không phải số chỗ đã được giữ.">
       {forecast?.status === "insufficient_data" && <Alert severity="info">Chưa đủ dữ liệu lịch sử để dự báo đáng tin cậy. Hệ thống sẽ hiển thị kết quả khi đủ thời gian quan sát; không tự tạo số liệu thay thế.</Alert>}
       {forecast?.warnings?.map((warning, index) => <Alert key={index} severity="info">{warning}</Alert>)}

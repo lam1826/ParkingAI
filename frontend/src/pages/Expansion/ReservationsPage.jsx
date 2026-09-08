@@ -3,7 +3,7 @@ import { Alert, Box, Button, MenuItem, Tab, Tabs, TextField, Typography } from "
 import { Link } from "react-router-dom";
 import FleetSection from "./FleetSection";
 import { Availability, BookingForm, BookingRecords, WaitlistRecords } from "./siteComponents";
-import { combineRemotes, items, PageControls, read, refreshAll, RemoteSection, Section, send, useAction, usePage, useRemote, useSites, Workspace } from "./shared";
+import { combineRemotes, items, PageControls, read, refreshAll, RemoteSection, Section, send, useAction, usePage, useRemote, useSites, Workspace, SitePicker } from "./shared";
 
 const RESERVATION_STATES = [["", "Tất cả"], ["confirmed", "Đã đặt"], ["arrived", "Đã đến"], ["cancelled", "Đã hủy"], ["expired", "Hết hạn"]];
 const WAITLIST_STATES = [["", "Tất cả"], ["waiting", "Đang chờ"], ["offered", "Đã có chỗ"], ["cancelled", "Đã hủy"]];
@@ -91,9 +91,7 @@ export default function ReservationsPage() {
   const organizations = useRemote(loadOrganizations);
   const selected = sites.sites.find((site) => String(site.id) === String(sites.siteId));
   return <>
-    <TextField select label="Bãi đỗ xe" value={sites.siteId} onChange={(event) => sites.setSiteId(event.target.value)} sx={{ mb: 3, minWidth: 200, maxWidth: "100%" }} disabled={sites.loading || !sites.sites.length}>
-      {sites.sites.map((site) => <MenuItem key={site.id} value={site.id}>{site.name}</MenuItem>)}
-    </TextField>
+    <SitePicker sites={sites} label="Bãi đỗ xe" sx={{ mb: 3, maxWidth: "100%" }} />
     {organizations.error && <Alert severity="error" sx={{ mb: 2 }} action={<Button color="inherit" size="small" onClick={organizations.reload}>Thử lại</Button>}>{organizations.error}</Alert>}
     {selected ? <MySiteBookings key={selected.id} site={selected} organizations={organizations.data || []} /> : <Workspace title="Đặt chỗ của tôi" description="Theo dõi quyền sử dụng chỗ đỗ và lịch đến bãi." remote={sites}><Alert severity="info">Chưa có bãi đang hoạt động.</Alert></Workspace>}
   </>;

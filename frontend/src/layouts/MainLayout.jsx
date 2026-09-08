@@ -43,6 +43,7 @@ import BrandLogo from "../components/brand/BrandLogo";
 import { useExpansion } from "../context/ExpansionContext";
 import PhotoCameraIcon from "@mui/icons-material/PhotoCamera";
 import { isMenuPathSelected } from "../utils/navigationState";
+import { singleSiteId } from "../utils/singleSiteMode";
 
 const drawerWidth = 260; // Độ rộng của Sidebar
 
@@ -50,6 +51,7 @@ export default function MainLayout() {
   const { user, logout } = useContext(AuthContext);
   const capabilities = useExpansion();
   const showcase = capabilities?.showcase_mode || globalThis.__PARKINGAI_CONFIG__?.DEMO;
+  const singleSiteMode = singleSiteId() !== null;
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -125,7 +127,7 @@ export default function MainLayout() {
           <Box sx={{ flexGrow: 1 }}>
             <BrandLogo size={34} inverse />
           </Box>
-          {showcase && <Chip label="DEMO đồ án" size="small" sx={{ bgcolor: "white", color: "primary.dark", mr: 2 }} />}
+          {showcase && <Chip label={singleSiteMode ? "Đồ án · 1 bãi" : "DEMO đồ án"} size="small" sx={{ bgcolor: "white", color: "primary.dark", mr: 2 }} />}
 
           {/* Góc phải User Profile */}
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -164,6 +166,7 @@ export default function MainLayout() {
                   // Ẩn menu nếu có yêu cầu role mà user không thỏa mãn (ví dụ giả lập)
                   if (item.role && !hasMinimumRole(user?.role, item.role)) return null;
                   if (item.role && !item.scoped && !capabilities?.legacy_workspace_allowed) return null;
+                  if (singleSiteMode && item.role && !item.scoped && !["/vehicle-types", "/price-configs", "/users", "/audit-logs"].includes(item.path)) return null;
 
                   const isSelected = isMenuPathSelected(location.pathname, item.path);
 
@@ -241,7 +244,7 @@ export default function MainLayout() {
         }}
       >
         <Toolbar /> {/* Để đẩy nội dung xuống dưới Header */}
-        {showcase && <Alert severity="info" sx={{ mb: 3 }}>ParkingAI — trình diễn đồ án. QR chỉ mô phỏng, không chuyển tiền. Dữ liệu tại các bãi DEMO dùng để thử chức năng; lịch sử mẫu không phải số liệu vận hành thật.</Alert>}
+        {showcase && <Alert severity="info" sx={{ mb: 3 }}>ParkingAI — trình diễn đồ án{singleSiteMode ? " một bãi đỗ xe" : ""}. QR chỉ mô phỏng, không chuyển tiền. Dữ liệu DEMO dùng để thử chức năng; lịch sử mẫu không phải số liệu vận hành thật.</Alert>}
 
         {/* ĐÂY LÀ NƠI CÁC TRANG (Dashboard, Users,...) SẼ ĐƯỢC RENDER VÀO.
             Bọc ErrorBoundary (key theo pathname để tự reset khi đổi trang):
@@ -250,7 +253,7 @@ export default function MainLayout() {
           <Outlet />
         </ErrorBoundary>
       </Box>
-      {capabilities?.legacy_workspace_allowed && (["staff", "manager", "admin"].includes(String(user?.role).toLowerCase())) && <AIChatbot />}
+      {!singleSiteMode && capabilities?.legacy_workspace_allowed && (["staff", "manager", "admin"].includes(String(user?.role).toLowerCase())) && <AIChatbot />}
     </Box>
   );
 }

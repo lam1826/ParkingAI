@@ -211,12 +211,12 @@
   },
   {
     "key": "PARK-209",
-    "pr": "FUTURE",
+    "pr": "FOLLOW-UP",
     "priority": "P2",
-    "classification": "FUTURE",
+    "classification": "ADD",
     "summary": "Labeled Vietnamese plates and physical-phone acceptance",
     "problem": "Two foreign CC0 photos and viewport checks cannot establish VN accuracy or phone capture.",
-    "evidence": "Independent labeled benchmark and device matrix",
+    "evidence": "2026-09-08 offline: 500 publisher-labelled real crops (250 cars/250 motorcycles), direct OCR456/500, full pipeline on crops64/500; pilot20 full-car frames with agent labels:20 exact,20 TP/9 FP. Physical iQOO Neo9/Chrome and iPhone/Safari results not yet provided. See docs/PHONE_VN_ACCEPTANCE.md.",
     "dependencies": [
       "PARK-205"
     ],
@@ -225,11 +225,11 @@
       "Report detection, whole-plate accuracy and correction rate separately",
       "Test actual iOS/Android capture under representative light"
     ],
-    "test": "Independent labeled benchmark and device matrix",
+    "test": "21 scorer/preflight tests passed; real pinned YOLO/RapidOCR on520 selected images. Device worksheet P01-P08 NOT_RUN.",
     "migration": "None",
     "rollback": "Keep human confirmation and disable automatic flows",
-    "status": "OPEN",
-    "online_acceptance": "PENDING",
+    "status": "IN_PROGRESS",
+    "online_acceptance": "PENDING_PHYSICAL_DEVICES",
     "spec": "intent.md; plan.md approved round3 section",
     "owner": "ParkingAI"
   },
@@ -304,5 +304,30 @@
     "spec": "Approved PR-05 1 GB resource acceptance",
     "owner": "ParkingAI",
     "ci_evidence": "CI 34232954119 at adc749f: Linux1195pass/19skip; PG16pass; frontend134pass/lint/build; isolated Docker OCR 6pass, peak345.4MiB."
+  },
+  {
+    "key": "PARK-213",
+    "pr": "FOLLOW-UP",
+    "priority": "P2",
+    "classification": "SIMPLIFY",
+    "summary": "Single-site school submission interface",
+    "problem": "User reduced project scope to one parking lot; site selection and creation add unnecessary steps.",
+    "evidence": "Verified live demo A is site2. Local browser33 checks with real read-only API and mocked business writes; no fallback to site3.",
+    "dependencies": [
+      "PARK-207"
+    ],
+    "acceptance_criteria": [
+      "Default operational site2 in school runtime config",
+      "Hide site switching/creation and restrict ticket catalog to chosen site",
+      "Do not change server authorization or historical data",
+      "Verify deployed UI on current website"
+    ],
+    "test": "Frontend139 tests/lint/build; browser33 checks including admin,manager,staff,customer and a user without site2.",
+    "migration": "None; frontend runtime config only",
+    "rollback": "Restore previous frontend or remove SINGLE_SITE_ID from runtime config; no database restoration needed",
+    "status": "IN_PROGRESS",
+    "online_acceptance": "PENDING_RELEASE",
+    "spec": "User scope correction 2026-09-08; docs/PHONE_VN_ACCEPTANCE.md",
+    "owner": "ParkingAI"
   }
 ]

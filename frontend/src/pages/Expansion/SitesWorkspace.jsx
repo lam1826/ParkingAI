@@ -10,7 +10,7 @@ import { useExpansion } from "../../context/ExpansionContext";
 import SiteConfiguration, { CreateSiteForm } from "./SiteConfiguration";
 import { Availability, BookingForm, BookingRecords, WaitlistRecords } from "./siteComponents";
 import { checkoutAdapters } from "./siteForms";
-import { combineRemotes, dateTime, formLayout, items, money, PageControls, read, Records, refreshAll, RemoteSection, Section, send, StateChip, useAction, usePage, useRemote, useSites, Workspace } from "./shared";
+import { combineRemotes, dateTime, formLayout, items, money, PageControls, read, Records, refreshAll, RemoteSection, Section, send, StateChip, useAction, usePage, useRemote, useSites, Workspace, SitePicker } from "./shared";
 
 const RESERVATION_STATES = [["", "Tất cả"], ["confirmed", "Đã đặt"], ["arrived", "Đã đến"], ["cancelled", "Đã hủy"], ["expired", "Hết hạn"]];
 const ALLOCATION_STATES = [["", "Tất cả"], ["active", "Đang hiệu lực"], ["cancelled", "Đã hủy"]];
@@ -203,17 +203,15 @@ export default function SitesWorkspace() {
   const onCheckoutChange = useCallback((open) => setCheckoutOpen(open), []);
   return <Stack spacing={3}>
     <Stack direction={{ xs: "column", sm: "row" }} spacing={2} useFlexGap sx={{ alignItems: { sm: "center" } }}>
-      <TextField select label="Bãi đang vận hành" value={selected?.id || ""} disabled={sites.loading || checkoutOpen || !sites.sites.length} sx={{ minWidth: 220, maxWidth: "100%" }}
-        onChange={(event) => { sites.setSiteId(event.target.value); setParams({ site: String(event.target.value) }); }}>
-        {sites.sites.map((site) => <MenuItem key={site.id} value={site.id}>{site.name}</MenuItem>)}
-      </TextField>
-      {user?.role === "admin" && <Button variant="outlined" disabled={checkoutOpen} onClick={() => setCreatingSite((old) => !old)}>{creatingSite ? "Đóng tạo bãi" : "Tạo bãi mới"}</Button>}
+      <SitePicker sites={sites} label="Bãi đang vận hành" value={selected?.id || ""} disabled={checkoutOpen} sx={{ maxWidth: "100%" }}
+        onChange={(value) => { sites.setSiteId(value); setParams({ site: String(value) }); }} />
+      {!sites.singleSiteMode && user?.role === "admin" && <Button variant="outlined" disabled={checkoutOpen} onClick={() => setCreatingSite((old) => !old)}>{creatingSite ? "Đóng tạo bãi" : "Tạo bãi mới"}</Button>}
     </Stack>
     {sites.error && <Alert severity="error" action={<Button color="inherit" size="small" onClick={sites.reload}>Thử lại</Button>}>{sites.error}</Alert>}
     {action.error && <Alert severity="error">{action.error}</Alert>}
     {action.notice && <Alert severity="success">{action.notice}</Alert>}
     {requestedSite && sites.data && !sites.sites.some((site) => String(site.id) === requestedSite) && <Alert severity="warning">Bạn không có quyền truy cập bãi được chọn hoặc bãi đã ngừng hoạt động. Hãy chọn lại bãi và kiểm tra biển số.</Alert>}
-    {creatingSite && user?.role === "admin" && <CreateSiteForm action={action} onCreated={(row) => { setParams({ site: String(row.id) }); setCreatingSite(false); }} />}
+    {!sites.singleSiteMode && creatingSite && user?.role === "admin" && <CreateSiteForm action={action} onCreated={(row) => { setParams({ site: String(row.id) }); setCreatingSite(false); }} />}
     {selected ? <SiteOperations key={`${selected.id}:${params.get("plate") || ""}:${params.get("action") || ""}`} site={selected}
       initialPlate={requestedSite === String(selected.id) ? params.get("plate") || "" : ""} initialAction={params.get("action")} onCheckoutChange={onCheckoutChange} /> : <Workspace title="Vận hành bãi đỗ" description="Mỗi nhân sự chỉ thao tác tại bãi được phân công." remote={sites}><Alert severity="info">Chưa có bãi được cấp quyền. Quản trị viên có thể tạo bãi và phân công nhân sự.</Alert></Workspace>}
   </Stack>;

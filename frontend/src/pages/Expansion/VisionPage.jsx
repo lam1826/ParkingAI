@@ -7,7 +7,7 @@ import UploadFileIcon from "@mui/icons-material/UploadFile";
 import { AuthContext } from "../../context/AuthContext";
 import { hasMinimumRole } from "../../constants/roles";
 import api from "../../services/api";
-import { Workspace, Section, Records, useSites, useRemote, useAction, read, send, items, endpoint, dateTime, requestKey, formLayout } from "./shared";
+import { Workspace, Section, Records, useSites, useRemote, useAction, read, send, items, endpoint, dateTime, requestKey, formLayout, SitePicker } from "./shared";
 
 function ObservationImage({ observation }) {
   const [image, setImage] = useState({ src: "", error: "", id: null });
@@ -81,7 +81,7 @@ export default function VisionPage() {
   };
   return <Workspace title="Camera & biển số" description="Dùng điện thoại chụp phương tiện hoặc tải ảnh lên. Kiểm tra biển số trước khi xử lý xe vào/ra." remote={remote} action={action}>
     {sites.error && <Alert severity="error">{sites.error}</Alert>}
-    <Box sx={formLayout}><TextField select label="Bãi xe" disabled={action.busy} value={sites.siteId} onChange={(event) => { sites.setSiteId(event.target.value); setSelected(null); }}>{sites.sites.map((site) => <MenuItem key={site.id} value={site.id}>{site.name}</MenuItem>)}</TextField>
+    <Box sx={formLayout}><SitePicker sites={sites} disabled={action.busy} onChange={(value) => { sites.setSiteId(value); setSelected(null); }} />
       <TextField select label="Camera / làn" disabled={action.busy || remote.loading} value={effectiveCamera} onChange={(event) => setCameraId(event.target.value)}>{data?.cameras.map((camera) => <MenuItem key={camera.id} value={camera.id}>{camera.name} · {camera.direction === "entry" ? "Xe vào" : "Xe ra"}</MenuItem>)}</TextField></Box>
     {data?.status && !data.status.available && <Alert severity="info">Nhận diện tự động chưa sẵn sàng. Bạn vẫn có thể lưu ảnh và nhập biển số để trình diễn quy trình. {data.status.reason}</Alert>}
     <Section title="Chụp và nhận diện" description="Đưa toàn bộ biển số vào ảnh, tránh chói sáng. Ảnh chỉ được xem bởi người có quyền tại bãi và được xóa theo thời hạn lưu.">
