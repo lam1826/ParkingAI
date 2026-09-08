@@ -1,19 +1,15 @@
 # Plan
 
-## Đã phát hành ba mục sửa; đang kiểm lại diễn giải của provider
+## Đã phát hành0b8c54c; còn UAT Gemini bị auto-review chặn
 
-Người dùng đã yêu cầu sửa và nghiệm thu Gemini thật, Báo cáo/AI cho quản lý–nhân viên một bãi, và lọc lịch sử theo thời gian. Yêu cầu này cho phép dùng cấu hình Gemini hiện có để kiểm thử và bật sau gate; thay thế quyết định tạm tắt ở các mốc trước.
+- [x] Báo cáo/AI theo quyền và lọc ngày một bãi đã phát hành,62 API readonly/18 UI trên bản mới đạt.
+- [x] Sau câu trả lời “cho phép”, nhân sự/kỳ rỗng retry thành công;111 API checks. Đọc kết quả phát hiện đơn vị tổng tuần bị gọi là lượt/giờ và suy luận bỏ trực từ0 xe vào.
+- [x] Sửa prompt/kiểm hợp đồng RED→GREEN,99 test AI/quyền và preflight Gemini đạt. Không sửa lịch sử kết quả sai cho thành đạt.
+- [x] Backup mới/restore37 bảng, CI34268240778/CD34269857506, đúng SHA/ready/CORS/bundle. Không đổi schema; rollback prompt về038d6c9 giữ dữ liệu.
+- [ ] Auto-review chặn lượt UAT mới, tiếp tục chặn sau khi đối chiếu nguyên văn câu hỏi/câu trả lời gốc. Đã hỏi xác nhận cụ thể cho tối đa6 kết quả mới:5 API,1 UI; chỉ thống kê demo bãi2 tới Gemini. Chưa có đầu ra mới sau bản0b8c54c.
+- [ ] Khi được duyệt: chạy online_core_uat.py, đọc nội dung, chạy online_core_browser.cjs, cập nhật provider-review rồi finalize_units_docs.py. Không chạy lại CI/deploy nếu không sửa code. PARK-217/218/219 giữ IN_PROGRESS theo phần còn lại.
 
-- [x] 14 test RED tái hiện route thiếu và lọc ngày chưa có; sau bổ sung API/guard đã GREEN.
-- [x] Thống kê server theo site, ngày/7 ngày, thu/hoàn loại demo; current_availability có thời điểm riêng. Lịch sử AI dùng bảng mới, không gán lại lịch sử cũ.
-- [x] Kiểm tra model bằng API Google; model cấu hình gemini-3.6-flash khả dụng, smoke bằng số liệu tổng hợp trả đúng 12 lượt/08:00.
-- [x] Nối lại menu/routes, màn hình báo cáo và AI, filter ngày vào từ/đến; 142 test frontend đạt. Giữ API legacy guard và feature capability để tương thích trong lúc rollout.
-- [x] Backend1064 pass/19 skip trên Windows; chạy riêng PostgreSQL17 với locale Unicode:18 pass, gồm migration và rollback giữ lịch sử AI. Kiểm tra dữ liệu chéo bãi, role bị thu hồi giữa lời gọi provider, ranh giới ngày, hoàn tiền đều đạt.
-- [x] Browser local desktop/mobile31 kiểm tra đạt, provider mock được ghi rõ. Backup public schema mới a7f60f74c79af9a8331b1c5f2eae9cdea77bddb41b790a1d19b9c4662fa7fdad; restore36 bảng PostgreSQL17, nâng20260908_03 không đổi các bản ghi cũ. Cần chuẩn bị extension btree_gist trên đích restore riêng vì dump chỉ lấy public schema.
-- [ ] Người dùng đã cho phép gửi thống kê demo và lưu kết quả. API đạt 111 kiểm tra; retry nhân sự và kỳ rỗng thành công. Đọc kết quả phát hiện Gemini gọi 40 lượt cộng dồn cùng giờ trong tuần là 40 lượt/giờ và suy thiếu người trực từ 0 lượt vào. Sửa hướng dẫn đơn vị, giới hạn suy luận xe ra/nhân sự; test prompt RED→GREEN, phát hành sau gate rồi gọi lại model thật và nút AI. Không tính kết quả HTTP201 là đạt chất lượng nội dung.
-- [x] Backup/restore, CI34253340017/CD34255366293, SHA038d6c9, bundle/ready/CORS đạt. Gemini đã bật, giữ Fly 1 GB/QR mô phỏng. API online chỉ đọc62 kiểm tra và UI ba vai trò đạt. Ba ticket217/218/219IN_PROGRESS theo phạm vi còn lại.
-
-Rollback: migration20260908_03 thêm bảng site_ai_analyses; downgrade chỉ đổi revision marker, giữ bảng/dữ liệu để app cũ dùng được. Re-upgrade xác minh bảng giữ lại. Khóa và artifact nằm ngoài Git.
+Chi tiết và bằng chứng: [CORE_AI_COMPLETION.md](docs/CORE_AI_COMPLETION.md). Ba mục chưa chốt READY vì thiếu UAT ghi kết quả mới; phát hành kỹ thuật đã thành công. Dữ liệu, khóa, ảnh và hồ sơ ngoài Git.
 
 ## Mốc đối chiếu trước đợt sửa — đề bài gốc (08/09/2026)
 

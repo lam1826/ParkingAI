@@ -1,6 +1,6 @@
 # ParkingAI — release gate vòng 3, 08/09/2026
 
-**Nghiệm thu ba mục sửa: BLOCKED**, chờ xác nhận gửi thống kê demo tới Gemini để hoàn tất nhân sự/kỳ rỗng/nút AI sau một lỗi 503. Ứng dụng `038d6c9` đã lên website; CI/CD, backup/restore, SHA/bundle/ready/CORS, Báo cáo/AI đúng quyền và lọc ngày đều được kiểm chứng. Gemini ngày/tuần/hỏi đáp đã thành công. [Biên bản chi tiết](CORE_AI_COMPLETION.md).
+**Nghiệm thu ba mục sửa: BLOCKED** ở lượt tạo kết quả Gemini tiếp theo do auto-review yêu cầu xác nhận cụ thể, dù người dùng đã trả lời “cho phép”. Bản `0b8c54c15d940face4ca30b2dfb4b6cc3509b9ad` đã phát hành, CI34268240778/CD34269857506 đạt; backup/restore37 bảng và SHA/ready/CORS/bundle đúng.62 API readonly/18 UI đạt. Đã sửa diễn giải tổng giờ của tuần, preflight model thật đạt; chưa dùng thay UAT ghi kết quả trên website. [Biên bản](CORE_AI_COMPLETION.md).
 
 Backlog 19 ticket: 13 DONE, 4 IN_PROGRESS, 1 OPEN/FUTURE, 1 DEFERRED_BY_USER. PARK-217/218/219 đang theo dõi phần còn lại; chưa kết luận đủ toàn bộ đề gốc hoặc sẵn sàng vận hành bãi thật.
 

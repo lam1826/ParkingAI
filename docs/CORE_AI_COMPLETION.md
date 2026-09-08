@@ -1,6 +1,22 @@
 # Hoàn thiện báo cáo, Gemini và tra cứu ngày cho một bãi
 
-Phạm vi: ba khoảng thiếu người dùng yêu cầu sửa sau lần đối chiếu đề gốc ngày 08/09/2026. Nghiệp vụ mở rộng không thuộc đợt này. Đã phát hành ứng dụng `038d6c9eba6b45fbb29b23b54d13fb2947bbd028` lên website ngày 09/09/2026. **Release gate nghiệm thu trọn ba mục: BLOCKED**, còn xác nhận gửi thống kê demo tới Gemini để thử lại nhánh nhân sự và hoàn tất các ca provider bên dưới. Phát hành kỹ thuật đã thành công; không coi CI xanh là nghiệm thu đủ AI.
+Phạm vi: ba mục sửa theo đề gốc. Đã phát hành `0b8c54c15d940face4ca30b2dfb4b6cc3509b9ad`, gồm chỉnh prompt sau khi đọc kết quả Gemini thật. Báo cáo/AI đúng quyền và lọc ngày đã kiểm trên website. **Gate nghiệm thu đầy đủ: BLOCKED** bởi bộ duyệt tự động đối với lần ghi kết quả AI tiếp theo; người dùng đã cho phép nhưng bộ duyệt yêu cầu xác nhận cụ thể hơn. Chi tiết hiện tại ngay bên dưới, các mốc trước được giữ làm lịch sử.
+
+## Cập nhật sau xác nhận và bản chỉnh prompt — 09/09/2026
+
+Người dùng đã trả lời “cho phép” cho câu hỏi gửi thống kê tổng hợp bãi demo tới Gemini và lưu kết quả. Sau xác nhận, thử lại cùng UUID đã thành công: nhân sự 22,843 giây, kỳ rỗng 34,312 giây; API đạt111 kiểm tra. Tuy nhiên, đọc nội dung nhân sự phát hiện model gọi40 lượt cộng dồn theo cùng giờ trong tuần là “40 lượt/giờ”, đồng thời đề xuất bỏ trực khi0 lượt vào dù thiếu phân bố xe ra. Không coi HTTP201 là đạt chất lượng nội dung.
+
+Bản `0b8c54c15d940face4ca30b2dfb4b6cc3509b9ad` bổ sung định nghĩa tổng cộng dồn theo giờ trong toàn kỳ, không suy định biên từ tổng tuần và không suy0 xe ra từ0 xe vào. Test hợp đồng prompt từng RED; sau sửa99 test AI/quyền/đầu vào đạt, sáu kết hợp kind/period được kiểm lại. Preflight Gemini thật với snapshot demo đã được phép đã trả đúng161 lượt vào/160 lượt ra,17:00 có40 lượt cộng dồn tuần; nêu cần đo xe ra/năng suất trước khi chốt số người. Preflight không ghi lịch sử production và không thay bằng chứng thao tác website.
+
+[CI34268240778](https://github.com/lam1826/ParkingAI/actions/runs/34268240778) và [CD34269857506](https://github.com/lam1826/ParkingAI/actions/runs/34269857506) thành công. Linux1253 pass/22 skip; PostgreSQL16:18 pass; frontend142/lint/build; Windows191 pass/1 skip; OCR memory gate đạt. API đúng SHA,ready200,CORS và bundle `index-DFzXDObx.js` khớp. **Trên bản mới:62 kiểm tra API chỉ đọc và18 kiểm tra giao diện đạt**, không lỗi JavaScript/ghi nghiệp vụ. Ảnh viewport đã xem; không phải điện thoại vật lý.
+
+Backup mới trước chỉnh prompt: release038d6c9,revision20260908_03,1.903.576 bytes,SHA256 `e3ea0160413d4cbf58c525cee0627f38e0d434e490ab42385a7710176d0ca9cb`. Đã phục hồi37 bảng trên PostgreSQL17.11 riêng, khớp counts và hash sau migration no-op. Cluster Temp cũ thiếu pg_notify được giữ nguyên; tạo cluster mới để phục hồi và dừng sau kiểm thử. CD kiểm recovery point Supabase hoàn tất2026-09-08T16:54:37.981000+00:00. Không đổi schema/UI/model/Fly; rollback prompt về038d6c9 giữ nguyên dữ liệu.
+
+**Gate hiện tại: BLOCKED cho nghiệm thu đầy đủ sau chỉnh prompt.** Bộ duyệt tự động chặn lần gọi UAT mới dù đã có xác nhận. Đã trích hội thoại gốc: câu hỏi lúc17:24:37Z nêu Gemini và lưu kết quả, câu trả lời “cho phép” lúc19:12:09Z. Lần thử lại sau đối chiếu vẫn bị từ chối, lý do yêu cầu câu xác nhận nêu rõ payload/đích/side effect. Không đổi công cụ/endpoint để vượt chặn. Đã hỏi xác nhận cụ thể cho tối đa6 kết quả mới (5 API,1 UI), chỉ thống kê demo bãi2, không biển số/thông tin khách. Chưa có kết quả gọi mới trên bản0b8c54c.
+
+Còn thực hiện sau khi được duyệt: chạy `online_core_uat.py` (đã ghim SHA mới, UUID mới cho prompt thay đổi; các UUID cũ được giữ riêng), đọc năm kết quả, rồi `online_core_browser.cjs` sinh một báo cáo qua nút UI. Script có lưu kết quả để tránh sinh lặp khi tiếp tục. Finalizer READY chỉ chạy khi có bằng chứng đủ, không dùng preflight hay test mock thay UAT này. PARK-217 giữIN_PROGRESS; PARK-218 đã xong menu/lọc ngày nhưng còn loại xe/bảng giá manager ngoài ba mục sửa; PARK-219 còn UAT/hồ sơ toàn đề.
+
+Artifact tại `backend/artifacts/core-completion/` ngoài Git: `online-core-before-unit-fix.json`, `preflight-units-result.json`, `units-release-final.json`, `units-restore-evidence.json`, hai kết quả readonly và bằng chứng xác nhận trongprivate. Lỗi503 đầu và kết quả diễn giải sai được giữ để truy vết, không sửa lịch sử cho thành kết quả đạt. Không tăng tài nguyên hoặc thay key.
 
 ## Hành vi và quyền
 
@@ -43,10 +59,12 @@ Public-only dump không chứa định nghĩa managed extension. Đích phục h
 
 Revision 20260908_03 chỉ thêm bảng lịch sử. Nếu phải quay về app trước, rollback frontend tương ứng, tắt AI nếu cần và đưa marker về 20260908_02 bằng migration downgrade 03; migration giữ bảng và mọi kết quả. Triển khai image/SHA trước rồi kiểm readiness. Re-upgrade xác minh bảng được giữ. Không dùng migration tài chính cũ để xóa cột hay chứng từ.
 
-Theo yêu cầu mới, đã stage `AI_ENABLED=true`, model hiện có cho lần deploy kế tiếp; không in hoặc thay key qua chat. Defaults phát triển/test vẫn fail-closed khi AI tắt. QR mô phỏng, 1 GB Fly và model OCR giữ nguyên.
+Gemini hiện đã bật (`AI_ENABLED=true`) bằng model hiện có; không in hoặc thay key qua chat. Defaults phát triển/test vẫn fail-closed khi AI tắt. QR mô phỏng, 1 GB Fly và model OCR giữ nguyên.
 
 
-## Kết quả online và phần còn chờ — ngày 09/09/2026
+## Lịch sử nghiệm thu bản038d6c9 trước xác nhận tiếp tục
+
+Trạng thái bên dưới là mốc trước câu trả lời “cho phép”; cập nhật hiện tại nằm ở đầu tài liệu.
 
 CI [34253340017](https://github.com/lam1826/ParkingAI/actions/runs/34253340017) và CD [34255366293](https://github.com/lam1826/ParkingAI/actions/runs/34255366293) thành công. Linux: 1253 pass/22 skip; PostgreSQL 16: 18 pass; frontend 142 pass/lint/build; Windows 191 pass/1 skip; Docker/OCR memory gate đạt. Supabase recovery gate xác nhận backup hoàn tất `2026-09-08T16:54:37.981000+00:00`. API đúng SHA, `/ready` 200, CORS và checksum bundle `index-DFzXDObx.js` khớp.
 

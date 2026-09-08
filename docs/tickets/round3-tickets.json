@@ -414,7 +414,7 @@
     "classification": "FIX",
     "summary": "Complete core AI analytics for the selected parking lot",
     "problem": "Core AI exists on legacy routes, but provider is disabled and site staff/manager cannot use that flow.",
-    "evidence": "Application 038d6c9eba6b45fbb29b23b54d13fb2947bbd028; docs/CORE_AI_COMPLETION.md; CI34253340017/CD34255366293",
+    "evidence": "Application 0b8c54c15d940face4ca30b2dfb4b6cc3509b9ad; docs/CORE_AI_COMPLETION.md; CI34268240778/CD34269857506; fresh37-table restore and62 API/18 UI readonly checks",
     "dependencies": [],
     "acceptance_criteria": [
       "Daily and weekly reports, grounded parking Q&A and staffing suggestions use server data for the authorized lot and period",
@@ -422,11 +422,11 @@
       "Empty/invalid inputs, injection, disabled/unavailable provider and real provider UAT are recorded separately",
       "Do not treat camera OCR or mocked provider tests as completion of core analytics AI"
     ],
-    "test": "tests/test_core_site_analytics.py (17); PostgreSQL18; frontend142; CI Linux1253/Windows191; online scoped/read-only and partial real Gemini UAT",
+    "test": "Core analytics17; AI-focused99; CI Linux1253/22skip, PostgreSQL18, frontend142, Windows191/1skip; prior API111 and latest readonly API62/UI18. Post-prompt production generation pending.",
     "migration": "20260908_03 additive site_ai_analyses; restore/rollback/re-upgrade verified, legacy data unchanged",
     "rollback": "Revert the scoped change; preserve database records and authorization. Use the release/backup gate for application deployment.",
     "status": "IN_PROGRESS",
-    "online_acceptance": "PASS real Gemini daily/weekly/Q&A. Staffing returned503; retry/empty/UI generation pending explicit data-export approval required by automatic review.",
+    "online_acceptance": "After user approval, staffing and empty succeeded; manual review found cumulative weekly counts mislabeled as arrivals/hour. Prompt corrected and real Gemini preflight passed. New production-history UAT blocked again by automatic approval review despite verified original assent; explicit detailed approval requested. No bypass.",
     "spec": "docs/ORIGINAL_REQUIREMENTS.md; intent.md; plan.md current scope",
     "owner": "ParkingAI"
   },
@@ -437,7 +437,7 @@
     "classification": "FIX",
     "summary": "Restore the original assignment journey in single-lot UI",
     "problem": "Reports/AI are hidden, site session search lacks time filters and some configuration remains admin-only.",
-    "evidence": "Application 038d6c9eba6b45fbb29b23b54d13fb2947bbd028; docs/CORE_AI_COMPLETION.md; CI34253340017/CD34255366293",
+    "evidence": "Application 0b8c54c15d940face4ca30b2dfb4b6cc3509b9ad; docs/CORE_AI_COMPLETION.md; CI34268240778/CD34269857506; fresh37-table restore and62 API/18 UI readonly checks",
     "dependencies": [
       "PARK-217"
     ],
@@ -462,7 +462,7 @@
     "classification": "FIX",
     "summary": "Verify original assignment and assemble traceable SDLC evidence",
     "problem": "Earlier demo release gates did not establish completion of all original AI and core-user journeys.",
-    "evidence": "Application 038d6c9eba6b45fbb29b23b54d13fb2947bbd028; docs/CORE_AI_COMPLETION.md; CI34253340017/CD34255366293",
+    "evidence": "Application 0b8c54c15d940face4ca30b2dfb4b6cc3509b9ad; docs/CORE_AI_COMPLETION.md; CI34268240778/CD34269857506; fresh37-table restore and62 API/18 UI readonly checks",
     "dependencies": [
       "PARK-217",
       "PARK-218"
