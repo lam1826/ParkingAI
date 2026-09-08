@@ -212,7 +212,8 @@ def test_expansion_postgres_revision_is_frozen_and_has_matching_schema(monkeypat
     assert constants["SITE_SQLITE_GUARDS"] == SITE_SQLITE_GUARDS
     assert constants["DEMO_POSTGRES_GUARD_SQL"] == DEMO_POSTGRES_GUARD_SQL
     dialect = postgresql.dialect()
-    tables = [table for table in Base.metadata.sorted_tables if table.name in EXPANSION_TABLES]
+    # This snapshot predates the independently migrated scoped AI history table.
+    tables = [table for table in Base.metadata.sorted_tables if table.name in EXPANSION_TABLES - {"site_ai_analyses"}]
     assert constants["EXPANSION_TABLE_SQL"] == tuple(str(CreateTable(table).compile(dialect=dialect)).strip() for table in tables)
     indexes = [index for table in tables for index in sorted(table.indexes, key=lambda index: index.name)]
     indexes.extend(index for index in Base.metadata.tables["zones"].indexes if index.name == "ix_zones_site_id")
@@ -230,6 +231,7 @@ def test_expansion_postgres_revision_is_frozen_and_has_matching_schema(monkeypat
     assert "INSERT INTO portal_account_links" not in sql
     assert "UPDATE parking_sessions" not in sql
     assert "DROP TABLE" not in sql
+    assert sql.count("CREATE TABLE site_ai_analyses") == 1
 
 
 def test_zone_commitment_revision_is_additive_and_offline_renderable(monkeypatch):

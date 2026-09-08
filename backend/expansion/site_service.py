@@ -3,6 +3,7 @@ from fastapi import HTTPException
 from sqlalchemy import case, func, select
 
 from core.money import require_exact_vnd
+from core.clock import day_bounds
 from crud import parking_session as session_crud
 from expansion.reservations import has_slot_commitment, serialize
 from expansion.site_models import (
@@ -72,8 +73,10 @@ def scoped_session(db, actor, site_id, session_id):
     return session
 
 
-def site_sessions(db, actor, site_id, *, limit=100, offset=0, license_plate=None, status=None):
+def site_sessions(db, actor, site_id, *, limit=100, offset=0, license_plate=None, status=None, date_from=None, date_to=None):
     require_site_access(db, actor, site_id)
+    if date_from and date_to and date_from > date_to:
+        raise HTTPException(422, "Ngày bắt đầu phải trước hoặc bằng ngày kết thúc.")
     query = select(ParkingSession, Vehicle.license_plate, ParkingSlot.slot_name).join(
         Vehicle, Vehicle.id == ParkingSession.vehicle_id,
     ).join(ParkingSlot, ParkingSlot.id == ParkingSession.parking_slot_id).join(Zone).where(
@@ -83,6 +86,13 @@ def site_sessions(db, actor, site_id, *, limit=100, offset=0, license_plate=None
         query = query.where(Vehicle.license_plate == license_plate.strip().upper())
     if status:
         query = query.where(ParkingSession.status == status)
+    try:
+        if date_from:
+            query = query.where(ParkingSession.check_in_time >= day_bounds(date_from)[0])
+        if date_to:
+            query = query.where(ParkingSession.check_in_time < day_bounds(date_to)[1])
+    except (ValueError, OverflowError) as error:
+        raise HTTPException(422, "Ngày nằm ngoài phạm vi tra cứu được hỗ trợ.") from error
     rows = db.execute(query.order_by(ParkingSession.check_in_time.desc(), ParkingSession.id).offset(offset).limit(limit)).all()
     return [{**serialize(session), "license_plate": plate, "slot_name": slot_name}
             for session, plate, slot_name in rows]

@@ -2,6 +2,7 @@ import { useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { Alert, Box, Button, MenuItem, Stack, Tab, Tabs, TextField, Typography } from "@mui/material";
 import { useSearchParams } from "react-router-dom";
 import { AuthContext } from "../../context/AuthContext";
+import { sessionSearchParams } from "../../utils/coreAnalytics";
 import api from "../../services/api";
 import CheckoutDialog from "../ParkingSession/components/CheckoutDialog";
 import FleetSection from "./FleetSection";
@@ -22,7 +23,6 @@ function StatusFilter({ value, options, onChange, disabled, label = "Trạng th�
   </TextField>;
 }
 
-const withStatus = (page) => ({ ...page.params, ...(page.filters.status ? { status: page.filters.status } : {}) });
 const loadVehicleTypes = () => read("/catalog/vehicle-types").then(items);
 
 function MetadataFeedback({ remote, label }) {
@@ -35,7 +35,7 @@ function MetadataFeedback({ remote, label }) {
 /** Each list is its own remote: one failing API keeps the other sections usable. */
 function usePagedList(path, page, extra = "") {
   const key = JSON.stringify([path, page.params.offset, page.filters, extra]);
-  const load = useCallback(() => read(path, { ...withStatus(page), ...(page.filters.license_plate ? { license_plate: page.filters.license_plate } : {}) }).then(items), [key]); // eslint-disable-line react-hooks/exhaustive-deps
+  const load = useCallback(() => read(path, sessionSearchParams(page.params, page.filters)).then(items), [key]); // eslint-disable-line react-hooks/exhaustive-deps
   return useRemote(load);
 }
 
@@ -44,6 +44,8 @@ function SiteOperations({ site, initialPlate, initialAction, onCheckoutChange })
   const [tab, setTab] = useState("operations");
   const [checkIn, setCheckIn] = useState({ license_plate: initialAction === "check_in" ? initialPlate : "", vehicle_type_id: "", parking_slot_id: "" });
   const [search, setSearch] = useState(initialAction === "checkout_lookup" ? initialPlate : "");
+  const [dateRange, setDateRange] = useState({ date_from: "", date_to: "" });
+  const invalidDateRange = !!(dateRange.date_from && dateRange.date_to && dateRange.date_from > dateRange.date_to);
   const [checkout, setCheckout] = useState(null);
   const [organizationName, setOrganizationName] = useState("");
   const canManage = ["manager", "admin"].includes(site.role);
@@ -114,12 +116,17 @@ function SiteOperations({ site, initialPlate, initialAction, onCheckoutChange })
       </RemoteSection>
       <RemoteSection remote={sessions} title="Tra cứu lượt gửi và cho xe ra" description="Mỗi trang 25 lượt; đổi biển số hoặc trạng thái sẽ về trang đầu.">
         {(rows) => <>
-          <Box component="form" onSubmit={(event) => { event.preventDefault(); sessionsPage.setFilters({ license_plate: search.trim().toUpperCase() }); }} sx={formLayout}>
+          <Box component="form" onSubmit={(event) => { event.preventDefault(); if (!invalidDateRange) sessionsPage.setFilters({ license_plate: search.trim().toUpperCase(), ...dateRange }); }} sx={formLayout}>
             <TextField label="Tìm đúng biển số" value={search} onChange={(event) => setSearch(event.target.value)} slotProps={{ htmlInput: { maxLength: 20 } }} />
             <TextField select label="Trạng thái lượt gửi" value={sessionsPage.filters.status} onChange={(event) => sessionsPage.setFilters({ status: event.target.value })}>
               <MenuItem value="active">Đang đỗ</MenuItem><MenuItem value="completed">Đã ra</MenuItem><MenuItem value="">Tất cả</MenuItem>
             </TextField>
-            <Button type="submit" variant="outlined">Tìm lượt gửi</Button>
+            {capabilities.site_analytics_enabled && <><TextField type="date" label="Ngày vào từ" value={dateRange.date_from} onChange={(event) => setDateRange((old) => ({ ...old, date_from: event.target.value }))}
+              error={invalidDateRange} slotProps={{ inputLabel: { shrink: true }, htmlInput: { max: "9998-12-31" } }} />
+            <TextField type="date" label="Ngày vào đến" value={dateRange.date_to} onChange={(event) => setDateRange((old) => ({ ...old, date_to: event.target.value }))}
+              error={invalidDateRange} helperText={invalidDateRange ? "Ngày kết thúc phải từ ngày bắt đầu trở đi." : "Tính trọn ngày theo giờ Việt Nam."} slotProps={{ inputLabel: { shrink: true }, htmlInput: { max: "9998-12-31" } }} />
+            </>}
+            <Button type="submit" variant="outlined" disabled={invalidDateRange || sessions.loading}>Tìm lượt gửi</Button>
           </Box>
           <Records rows={rows} columns={[
             { key: "license_plate", label: "Biển số" }, { key: "slot_name", label: "Vị trí" },

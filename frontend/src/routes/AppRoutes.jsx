@@ -42,6 +42,14 @@ const SitesWorkspace = lazy(() => import("../pages/Expansion/SitesWorkspace"));
 const ReservationsPage = lazy(() => import("../pages/Expansion/ReservationsPage"));
 const VisionPage = lazy(() => import("../pages/Expansion/VisionPage"));
 const InsightsPage = lazy(() => import("../pages/Expansion/InsightsPage"));
+const CoreAnalyticsPage = lazy(() => import("../pages/Expansion/CoreAnalyticsPage"));
+
+function CoreAnalyticsRoute({ mode }) {
+  const capabilities = useExpansion();
+  return capabilities?.site_analytics_enabled
+    ? <PermissionRoute minimumRole="staff" legacy={false}><CoreAnalyticsPage mode={mode} /></PermissionRoute>
+    : <PermissionRoute minimumRole="staff">{mode === "ai" ? <AIPage /> : <ReportPage />}</PermissionRoute>;
+}
 
 function HomePage() {
   const { user } = useContext(AuthContext);
@@ -134,10 +142,10 @@ const AppRoutes = () => {
         <Route path="parking-slots" element={<PermissionRoute minimumRole="staff"><ParkingSlotPage /></PermissionRoute>} />
         <Route path="vehicle-types" element={<PermissionRoute minimumRole="staff"><VehicleTypePage /></PermissionRoute>} />
         <Route path="price-configs" element={<PermissionRoute minimumRole="staff"><PriceConfigPage /></PermissionRoute>} />
-        <Route path="reports" element={<PermissionRoute minimumRole="staff"><ReportPage /></PermissionRoute>} />
+        <Route path="reports" element={<CoreAnalyticsRoute mode="reports" />} />
         <Route path="finance" element={<PermissionRoute minimumRole="staff"><FinancePage /></PermissionRoute>} />
         <Route path="audit-logs" element={<PermissionRoute minimumRole="manager"><AuditLogPage /></PermissionRoute>} />
-        <Route path="ai" element={<PermissionRoute minimumRole="staff"><AIPage /></PermissionRoute>} />
+        <Route path="ai" element={<CoreAnalyticsRoute mode="ai" />} />
         <Route path="roles" element={<PermissionRoute minimumRole="manager"><RolePage /></PermissionRoute>} />
       </Route>
 

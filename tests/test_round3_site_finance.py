@@ -61,7 +61,9 @@ def test_scoped_checkout_records_site_and_own_shift(env):
     listing = env.client.get(root + "/payments").json()
     assert listing["total"] == 1
     assert env.client.get(root + f"/payments/{receipts[0].id}/pdf").content.startswith(b"%PDF")
-    assert env.client.get(root + "/revenue").json()["total_revenue"] == receipts[0].amount
+    # The test advances checkout by an hour, which can cross Vietnamese midnight.
+    collected_day = str(receipts[0].created_at.date())
+    assert env.client.get(root + "/revenue", params={"date_from": collected_day, "date_to": collected_day}).json()["total_revenue"] == receipts[0].amount
 
 
 def test_customer_cannot_operate_finance_or_override_site(env):

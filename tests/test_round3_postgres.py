@@ -28,6 +28,37 @@ from schemas.checkout import CheckoutConfirmation
 pytestmark = pytest.mark.skipif(not POSTGRES_TEST_URL, reason="Requires isolated PostgreSQL service")
 
 
+def test_postgres_scoped_ai_history_and_migration_rollback_preserve_evidence():
+    import importlib.util
+    from pathlib import Path
+    from uuid import uuid4
+    from alembic.migration import MigrationContext
+    from alembic.operations import Operations
+    from expansion.analytics_models import SiteAiAnalysis
+    from expansion.site_analytics import summarize
+    with _isolated_checkout_postgres() as engine:
+        with Session(engine) as db:
+            role, site = Role(name="admin"), ParkingSite(name="Core reports")
+            db.add_all([role, site]); db.flush()
+            actor = User(username="core-ai-admin", role_id=role.id, full_name="Core", password_hash="unused")
+            db.add(actor); db.flush()
+            context = summarize(db, actor, site.id)
+            assert context["total_arrivals"] == 0 and context["revenue"]["total_revenue"] == 0
+            row_id = str(uuid4())
+            db.add(SiteAiAnalysis(id=row_id, site_id=site.id, generated_by_id=actor.id, request_id=str(uuid4()),
+                input_hash="a" * 64, kind="report", model="test-only", context=context, content="Không có dữ liệu trong kỳ."))
+            db.commit()
+        path = Path(__file__).resolve().parents[1] / "backend/alembic/versions/20260908_03_site_ai_analyses.py"
+        spec = importlib.util.spec_from_file_location("core_ai_migration", path)
+        migration = importlib.util.module_from_spec(spec); spec.loader.exec_module(migration)
+        with engine.begin() as connection:
+            with Operations.context(MigrationContext.configure(connection)):
+                migration.downgrade()
+                migration.upgrade()
+        with Session(engine) as db:
+            assert db.get(SiteAiAnalysis, row_id).content == "Không có dữ liệu trong kỳ."
+
+
 def test_postgres_availability_batches_future_commitments_at_same_instant(monkeypatch):
     from crud import parking_session as session_crud
     from expansion.site_schemas import AllocationCreate

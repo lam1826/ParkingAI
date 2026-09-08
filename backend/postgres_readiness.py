@@ -17,9 +17,11 @@ from expansion_demo_guards import validate_demo_ledger
 from expansion_rollout import validate_zone_site_assignment
 
 
-POSTGRES_SCHEMA_REVISION = "20260908_02"
+POSTGRES_SCHEMA_REVISION = "20260908_03"
 
 REQUIRED_COLUMN_CONTRACTS = frozenset({
+    "site_ai_analyses.site_id:integer::NO",
+    "site_ai_analyses.context:json::NO",
     "payments.site_id:integer::YES",
     "cash_shifts.site_id:integer::YES",
     "audit_logs.request_id:character varying:64:YES",
@@ -42,6 +44,7 @@ REQUIRED_TABLES = frozenset(
         "price_configs",
         "parking_sessions",
         "ai_reports",
+        "site_ai_analyses",
         "audit_logs",
         "parking_cards",
         "cash_shifts",
@@ -52,6 +55,7 @@ REQUIRED_TABLES = frozenset(
 REQUIRED_INDEXES = frozenset(
     {
         "uq_roles_name",
+        "ix_site_ai_history",
         "uq_vehicle_types_name_normalized",
         "uq_customers_phone_normalized",
         "uq_zones_name_normalized",
@@ -69,6 +73,7 @@ REQUIRED_INDEXES = frozenset(
 REQUIRED_CONSTRAINTS = frozenset(
     {
         "ck_zones_capacity_nonnegative",
+        "uq_site_ai_request",
         "ck_price_configs_ticket_type",
         "ck_price_configs_exact_vnd",
         "ck_monthly_passes_exact_vnd",

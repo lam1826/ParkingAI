@@ -1,5 +1,5 @@
 """Scoped operations. The unscoped legacy API is restricted separately at app entry."""
-from datetime import datetime
+from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy import select
@@ -28,6 +28,8 @@ from services.auth_service import get_current_user
 router = APIRouter(prefix="/api/v2", tags=["Sites and reservations"])
 from expansion.site_finance import router as finance_router
 router.include_router(finance_router)
+from expansion.site_analytics import router as analytics_router
+router.include_router(analytics_router)
 
 
 def _save(db, action):
@@ -232,9 +234,10 @@ def remove_member(site_id: int, user_id: int, db: Session = Depends(get_db), act
 @router.get("/sites/{site_id}/sessions")
 def sessions(site_id: int, limit: int = Query(100, ge=1, le=100), offset: int = Query(0, ge=0),
              license_plate: str | None = Query(None, max_length=20), status: Literal["active", "completed"] | None = None,
+             date_from: date | None = None, date_to: date | None = None,
              db: Session = Depends(get_db), actor: User = Depends(get_current_user)):
     return site_service.site_sessions(db, actor, site_id, limit=limit, offset=offset,
-                                      license_plate=license_plate, status=status)
+                                      license_plate=license_plate, status=status, date_from=date_from, date_to=date_to)
 
 
 @router.post("/sites/{site_id}/check-in", status_code=201)

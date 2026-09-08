@@ -51,6 +51,8 @@ def _persist_audit(app, values: dict, method: str, path: str) -> None:
 def _classify_action(method: str, path: str) -> str:
     normalized_path = path.rstrip("/") or "/"
     if normalized_path.startswith("/api/v2/"):
+        if "/ai/" in normalized_path:
+            return "AI_ANALYSIS"
         if normalized_path.endswith("/check-in"):
             return "CHECK_IN"
         if normalized_path.endswith("/check-out"):

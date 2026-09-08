@@ -1,5 +1,20 @@
 # Plan
 
+## Đang sửa ba khoảng thiếu theo yêu cầu mới
+
+Người dùng đã yêu cầu sửa và nghiệm thu Gemini thật, Báo cáo/AI cho quản lý–nhân viên một bãi, và lọc lịch sử theo thời gian. Yêu cầu này cho phép dùng cấu hình Gemini hiện có để kiểm thử và bật sau gate; thay thế quyết định tạm tắt ở các mốc trước.
+
+- [x] 14 test RED tái hiện route thiếu và lọc ngày chưa có; sau bổ sung API/guard đã GREEN.
+- [x] Thống kê server theo site, ngày/7 ngày, thu/hoàn loại demo; current_availability có thời điểm riêng. Lịch sử AI dùng bảng mới, không gán lại lịch sử cũ.
+- [x] Kiểm tra model bằng API Google; model cấu hình gemini-3.6-flash khả dụng, smoke bằng số liệu tổng hợp trả đúng 12 lượt/08:00.
+- [x] Nối lại menu/routes, màn hình báo cáo và AI, filter ngày vào từ/đến; 142 test frontend đạt. Giữ API legacy guard và feature capability để tương thích trong lúc rollout.
+- [x] Backend1064pass/19skip trên Windows; chạy riêng PostgreSQL17 với locale Unicode:18pass, gồm migration và rollback giữ lịch sử AI. Kiểm tra dữ liệu chéo bãi, role bị thu hồi giữa lời gọi provider, ranh giới ngày, hoàn tiền đều đạt.
+- [x] Browser local desktop/mobile31 kiểm tra đạt, provider mock được ghi rõ. Backup public schema mới a7f60f74c79af9a8331b1c5f2eae9cdea77bddb41b790a1d19b9c4662fa7fdad; restore36bảng PostgreSQL17, nâng20260908_03 không đổi các bản ghi cũ. Cần chuẩn bị extension btree_gist trên đích restore riêng vì dump chỉ lấy public schema.
+- [ ] Trình diễn live ba nhóm AI sau deploy; không dùng mock browser để công bố kết quả provider.
+- [ ] Backup/config/SHA trước thay đổi; CI/CD đúng SHA, bật AI bằng cấu hình hiện có sau gate; không tăng gói Fly. Bàn giao kết quả và cập nhật trạng thái từng ticket.
+
+Rollback: migration20260908_03 thêm bảng site_ai_analyses; downgrade chỉ đổi revision marker, giữ bảng/dữ liệu để app cũ dùng được. Re-upgrade xác minh bảng giữ lại. Khóa và artifact nằm ngoài Git.
+
 ## Ưu tiên hiện tại — bám sát đề bài gốc (08/09/2026)
 
 **Mục tiêu:** hoàn thành một bãi, nghiệp vụ quản lý và ba luồng AI phân tích theo đề; đối chiếu chi tiết tại [ORIGINAL_REQUIREMENTS.md](docs/ORIGINAL_REQUIREMENTS.md). Các nghiên cứu và tính năng mở rộng bên dưới là lịch sử, không được ưu tiên hơn mục này.
