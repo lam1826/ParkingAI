@@ -13,6 +13,7 @@ import warnings
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
+from statistics import median
 from time import perf_counter
 
 from fastapi import HTTPException
@@ -133,6 +134,32 @@ def _prepare_plate_crop(crop):
     return ImageOps.pad(crop, (max(32, crop.width), max(32, crop.height)), color="white")
 
 
+def order_plate_text_lines(lines):
+    """Group overlapping text boxes into rows, then read each row left to right.
+
+    Pixel buckets can reverse a slightly sloped row across a bucket boundary.
+    Relative vertical overlap works at different crop scales and keeps the two
+    physical rows of motorcycle plates separate. The caller's list is unchanged.
+    """
+    boxes = [(min(p[0] for p in line[0]), min(p[1] for p in line[0]),
+              max(p[1] for p in line[0]), line) for line in lines]
+    rows = []
+    for box in sorted(boxes, key=lambda item: ((item[1] + item[2]) / 2, item[0])):
+        matches = []
+        for row in rows:
+            top, bottom = median(item[1] for item in row), median(item[2] for item in row)
+            height = max(1, min(bottom - top, box[2] - box[1]))
+            overlap = max(0, min(bottom, box[2]) - max(top, box[1])) / height
+            if overlap >= 0.5:
+                matches.append((overlap, row))
+        if matches:
+            max(matches, key=lambda item: item[0])[1].append(box)
+        else:
+            rows.append([box])
+    rows.sort(key=lambda row: median((item[1] + item[2]) / 2 for item in row))
+    return [item[3] for row in rows for item in sorted(row, key=lambda item: item[0])]
+
+
 class YoloRapidOCR:
     """YOLOv8 raw ONNX output only. No torch pickle or model/network downloads."""
     def __init__(self, model_path):
@@ -195,9 +222,7 @@ class YoloRapidOCR:
                 continue
             crop = _prepare_plate_crop(image.crop(tuple(box)))
             lines, _ = self.ocr(np.asarray(crop)[:, :, ::-1].copy(), use_cls=False)
-            lines = lines or []
-            # Reading order supports one and two-line plates. OCR text is data.
-            lines.sort(key=lambda line: (round(min(point[1] for point in line[0]) / 10), min(point[0] for point in line[0])))
+            lines = order_plate_text_lines(lines or [])
             plate = normalize_candidate("".join(str(line[1]) for line in lines))
             scores = [float(line[2]) for line in lines if math.isfinite(float(line[2]))]
             text_confidence = min(scores) if scores else 0.0

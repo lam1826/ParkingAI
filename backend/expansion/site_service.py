@@ -4,7 +4,7 @@ from sqlalchemy import case, func, select
 
 from core.money import require_exact_vnd
 from crud import parking_session as session_crud
-from expansion.reservations import admission_allowed, serialize
+from expansion.reservations import has_slot_commitment, serialize
 from expansion.site_models import (
     FleetVehicle, Organization, OrganizationMembership, ParkingSite, SiteMembership,
 )
@@ -47,12 +47,12 @@ def set_member(db, actor, site_id, data):
 def availability(db, site_id):
     require_public_site(db, site_id)
     now = session_crud.server_now()
-    rows = db.execute(select(ParkingSlot, Zone.name).join(Zone).where(
+    rows = db.execute(select(ParkingSlot, Zone.name, has_slot_commitment(ParkingSlot.id, now)).join(Zone).where(
         Zone.site_id == site_id, Zone.is_active.is_(True), ParkingSlot.is_active.is_(True),
     ).order_by(ParkingSlot.id)).all()
     slots = []
-    for slot, zone_name in rows:
-        available = not slot.is_occupied and admission_allowed(db, slot.id, at=now, lock=False)
+    for slot, zone_name, committed in rows:
+        available = not slot.is_occupied and not committed
         slots.append({"id": slot.id, "slot_name": slot.slot_name, "zone_id": slot.zone_id,
                       "zone_name": zone_name, "vehicle_type_id": slot.vehicle_type_id,
                       "is_occupied": slot.is_occupied, "available_now": available,

@@ -84,7 +84,7 @@ export default function VisionPage() {
     <Box sx={formLayout}><SitePicker sites={sites} disabled={action.busy} onChange={(value) => { sites.setSiteId(value); setSelected(null); }} />
       <TextField select label="Camera / làn" disabled={action.busy || remote.loading} value={effectiveCamera} onChange={(event) => setCameraId(event.target.value)}>{data?.cameras.map((camera) => <MenuItem key={camera.id} value={camera.id}>{camera.name} · {camera.direction === "entry" ? "Xe vào" : "Xe ra"}</MenuItem>)}</TextField></Box>
     {data?.status && !data.status.available && <Alert severity="info">Nhận diện tự động chưa sẵn sàng. Bạn vẫn có thể lưu ảnh và nhập biển số để trình diễn quy trình. {data.status.reason}</Alert>}
-    <Section title="Chụp và nhận diện" description="Đưa toàn bộ biển số vào ảnh, tránh chói sáng. Ảnh chỉ được xem bởi người có quyền tại bãi và được xóa theo thời hạn lưu.">
+    <Section title="Chụp và nhận diện" description="Chụp rõ toàn bộ biển số, giữ một phần xe xung quanh và tránh chói sáng. Ảnh chỉ được xem bởi người có quyền tại bãi và được xóa theo thời hạn lưu.">
       <Stack direction={{ xs: "column", sm: "row" }} spacing={2} useFlexGap>
         <Button component="label" variant="contained" startIcon={<PhotoCameraIcon />} disabled={action.busy || remote.loading || !effectiveCamera}>Chụp bằng điện thoại<input hidden type="file" accept="image/jpeg,image/png,image/webp" capture="environment" onChange={upload} /></Button>
         <Button component="label" variant="outlined" startIcon={<UploadFileIcon />} disabled={action.busy || remote.loading || !effectiveCamera}>Chọn ảnh từ máy<input hidden type="file" accept="image/jpeg,image/png,image/webp" onChange={upload} /></Button>
@@ -93,6 +93,7 @@ export default function VisionPage() {
       {!data?.cameras.length && <Typography color="text.secondary">Chưa có camera tại bãi. Quản lý tạo một camera điện thoại bên dưới để bắt đầu.</Typography>}
     </Section>
     {current && <Section title="Kiểm tra kết quả" description={`Ảnh nhận lúc ${dateTime(current.observed_at)} · ${current.ocr_status === "recognized" ? "Đã có kết quả nhận diện" : "Cần nhập hoặc kiểm tra thủ công"}`}>
+      {current.ocr_status === "no_plate" && <Alert severity="info">Chưa tìm được biển số trong ảnh. Chụp lại rõ biển và phần xe xung quanh, hoặc nhập biển số đã kiểm tra ở dưới.</Alert>}
       <ObservationImage observation={current} />
       <Box sx={formLayout}><TextField label="Biển số đã kiểm tra" value={plate} onChange={(event) => setPlate(event.target.value.toUpperCase())} inputProps={{ maxLength: 20 }} />
         <Button variant="contained" disabled={action.busy || !plate.trim() || current.review_status !== "pending"} onClick={() => action.run(() => send(`/vision/observations/${current.id}/review`, { decision: "accept", license_plate: plate }), "Đã xác nhận biển số. Tiếp tục xử lý xe tại bãi.", (result) => { setSelected(result); navigate(`/sites?site=${current.site_id}&plate=${encodeURIComponent(plate)}&action=${result.next_action?.kind || "check_in"}`); })}>Xác nhận và xử lý xe</Button>

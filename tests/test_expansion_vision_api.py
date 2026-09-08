@@ -67,6 +67,32 @@ def upload(client, camera_id, content=None, mime="image/jpeg", event_id=None):
                        files={"file": ("phone.jpg", picture() if content is None else content, mime)})
 
 
+def test_observation_list_does_not_fetch_private_image_blobs(vision):
+    from sqlalchemy import event
+    client, db, camera, _foreign, _user = vision
+    created = upload(client, camera.id)
+    assert created.status_code == 201
+    observation_id = created.json()["id"]
+    site_id = camera.site_id
+    db.expire_all()
+    statements = []
+    def record(_connection, _cursor, sql, _parameters, _context, _many):
+        if sql.lstrip().upper().startswith("SELECT"):
+            statements.append(sql)
+    engine = db.get_bind()
+    event.listen(engine, "before_cursor_execute", record)
+    try:
+        listed = client.get("/api/v2/vision/observations", params={"site_id": site_id})
+    finally:
+        event.remove(engine, "before_cursor_execute", record)
+    assert listed.status_code == 200
+    assert listed.json()[0]["id"] == observation_id
+    assert "image_bytes" not in listed.json()[0]
+    assert not any("vision_observations.image_bytes" in sql for sql in statements), "Metadata lists must not transfer image BLOBs"
+    image_response = client.get(f"/api/v2/vision/observations/{observation_id}/image")
+    assert image_response.status_code == 200 and image_response.content
+
+
 def test_reviewed_observations_are_evicted_at_the_site_cap(vision, monkeypatch):
     from expansion import vision_service
     from expansion.vision_schemas import ObservationUpload

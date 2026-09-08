@@ -322,6 +322,88 @@ def test_no_show_boundary_releases_hold_and_expiry_is_idempotent(env):
     assert service.admission_allowed(env.db, env.slot.id, vehicle_id=env.other.id, at=env.clock["now"])
 
 
+@pytest.mark.parametrize("slot_count", [10, 100])
+def test_availability_query_budget_does_not_grow_per_slot(env, slot_count):
+    from sqlalchemy import event
+    from expansion.site_service import availability
+
+    env.slot.zone.capacity = slot_count
+    env.db.flush()
+    env.db.add_all([ParkingSlot(zone_id=env.slot.zone_id, vehicle_type_id=env.vehicle.vehicle_type_id,
+                              slot_name=f"Query budget {i}") for i in range(slot_count - 1)])
+    env.db.commit()
+    site_id = env.a.id
+    statements = []
+    def record(_connection, _cursor, sql, _parameters, _context, _many):
+        if sql.lstrip().upper().startswith("SELECT"):
+            statements.append(sql)
+    engine = env.db.get_bind()
+    event.listen(engine, "before_cursor_execute", record)
+    try:
+        result = availability(env.db, site_id)
+    finally:
+        event.remove(engine, "before_cursor_execute", record)
+    assert result["total"] == result["available_now"] == slot_count
+    assert result["occupied"] == result["reserved_slots"] == 0
+    print(f"availability slots={slot_count} SELECTs={len(statements)}")
+    assert len(statements) <= 3, "Availability must not query commitments separately for every slot"
+
+
+@pytest.mark.parametrize("kind,status,offset,expected", [
+    ("reservation", "confirmed", -3600, False),  # future commitment protects the slot
+    ("reservation", "confirmed", 0, False),
+    ("reservation", "confirmed", 900, True),  # exact arrival deadline
+    ("reservation", "arrived", 901, False),
+    ("reservation", "arrived", 7200, True),  # exclusive end
+    ("reservation", "cancelled", 0, True),
+    ("reservation", "expired", 0, True),
+    ("allocation", "active", -3600, False),
+    ("allocation", "active", 0, False),
+    ("allocation", "active", 7200, True),
+    ("allocation", "cancelled", 0, True),
+])
+def test_availability_preserves_commitments_and_time_boundaries(env, kind, status, offset, expected):
+    from expansion.site_service import availability
+    if kind == "allocation":
+        row = service.reserve(env.db, env.staff, AllocationCreate(**data(env).model_dump()), allocation=True)
+    else:
+        row = service.reserve(env.db, env.staff, data(env))
+        assert row.arrival_deadline == env.now + timedelta(minutes=15)
+    if status != "arrived":
+        row.status = status
+    env.db.commit()
+    if status == "arrived":
+        ParkingService(env.db).check_in(env.vehicle.license_plate, env.vehicle.vehicle_type_id,
+                                       env.staff.id, parking_slot_id=env.slot.id)
+        env.db.refresh(row)
+        assert row.status == "arrived"
+    env.clock["now"] = env.now + timedelta(seconds=offset)
+    result = availability(env.db, env.a.id)
+    occupied = status == "arrived"
+    assert result["slots"][0]["available_now"] is (expected and not occupied)
+    assert result["slots"][0]["reserved"] is (not expected and not occupied)
+    assert env.db.scalar(select(service.has_slot_commitment(env.slot.id, env.clock["now"]))) is (not expected)
+    assert service.admission_allowed(env.db, env.slot.id, at=env.clock["now"], lock=False) is expected
+    env.db.refresh(row)
+    assert row.status == status, "Reading availability must not expire or mutate a reservation"
+
+
+def test_availability_excludes_inactive_slots_and_zones_and_rejects_inactive_site(env):
+    from expansion.site_service import availability
+    env.slot.is_active = False
+    env.db.commit()
+    assert availability(env.db, env.a.id)["total"] == 0
+    env.slot.is_active = True
+    env.slot.zone.is_active = False
+    env.db.commit()
+    assert availability(env.db, env.a.id)["total"] == 0
+    env.a.is_active = False
+    env.db.commit()
+    with pytest.raises(HTTPException) as error:
+        availability(env.db, env.a.id)
+    assert error.value.status_code == 404
+
+
 def test_allocation_protects_space_but_does_not_make_stay_free(env):
     allocation = service.reserve(env.db, env.staff, AllocationCreate(**data(env).model_dump()), allocation=True)
     env.db.commit()

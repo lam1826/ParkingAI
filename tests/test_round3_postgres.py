@@ -28,6 +28,47 @@ from schemas.checkout import CheckoutConfirmation
 pytestmark = pytest.mark.skipif(not POSTGRES_TEST_URL, reason="Requires isolated PostgreSQL service")
 
 
+def test_postgres_availability_batches_future_commitments_at_same_instant(monkeypatch):
+    from crud import parking_session as session_crud
+    from expansion.site_schemas import AllocationCreate
+    from expansion.site_service import availability
+    with _isolated_checkout_postgres() as engine:
+        now = business_now().replace(microsecond=0)
+        clock = {"now": now}
+        monkeypatch.setattr(session_crud, "server_now", lambda: clock["now"])
+        with Session(engine) as db:
+            role, site = Role(name="admin"), ParkingSite(name="Availability batch")
+            owner, kind = Customer(full_name="Read query customer", phone_number="BATCH-OWNER"), VehicleType(name="Batch car")
+            db.add_all([role, site, owner, kind]); db.flush()
+            actor = User(username="batch-admin", role_id=role.id, full_name="Batch", password_hash="unused")
+            zone = Zone(name="Batch zone", site_id=site.id, capacity=3)
+            db.add_all([actor, zone]); db.flush()
+            vehicles = [Vehicle(license_plate=f"BATCH-{i}", vehicle_type_id=kind.id, customer_id=owner.id) for i in range(2)]
+            slots = [ParkingSlot(slot_name=f"BATCH-{i}", vehicle_type_id=kind.id, zone_id=zone.id) for i in range(3)]
+            db.add_all(vehicles + slots); db.flush()
+            for index, schema in enumerate((ReservationCreate, AllocationCreate)):
+                reservations.reserve(db, actor, schema(site_id=site.id, slot_id=slots[index].id,
+                    vehicle_id=vehicles[index].id, start_at=(now + timedelta(hours=1)).replace(tzinfo=BUSINESS_TZ),
+                    end_at=(now + timedelta(hours=2)).replace(tzinfo=BUSINESS_TZ), request_id=uuid4().hex),
+                    allocation=(index == 1))
+            db.commit()
+            site_id = site.id
+        statements = []
+        def record(_connection, _cursor, sql, _parameters, _context, _many):
+            if sql.lstrip().upper().startswith("SELECT"):
+                statements.append(sql)
+        event.listen(engine, "before_cursor_execute", record)
+        try:
+            with Session(engine) as db:
+                result = availability(db, site_id)
+                assert result["total"] == 3 and result["available_now"] == 1 and result["reserved_slots"] == 2
+                assert len(statements) <= 2
+                clock["now"] = now + timedelta(hours=2)
+                assert availability(db, site_id)["available_now"] == 3
+        finally:
+            event.remove(engine, "before_cursor_execute", record)
+
+
 def test_customer_booking_cap_serializes_different_vehicles():
     with _isolated_checkout_postgres() as engine:
         now = business_now()

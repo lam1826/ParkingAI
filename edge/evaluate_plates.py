@@ -204,11 +204,10 @@ def read_ground_truth_crop(engine, image):
     end-to-end recognition accuracy or be substituted for website predictions.
     """
     import numpy as np
-    from expansion.vision_service import _prepare_plate_crop, normalize_candidate
+    from expansion.vision_service import _prepare_plate_crop, normalize_candidate, order_plate_text_lines
     crop = _prepare_plate_crop(image)
     lines, _ = engine.ocr(np.asarray(crop)[:, :, ::-1].copy(), use_cls=False)
-    lines = lines or []
-    lines.sort(key=lambda line: (round(min(p[1] for p in line[0]) / 10), min(p[0] for p in line[0])))
+    lines = order_plate_text_lines(lines or [])
     return normalize_candidate("".join(str(line[1]) for line in lines))
 
 

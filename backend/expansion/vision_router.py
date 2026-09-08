@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import ValidationError
 from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, defer
 from starlette.concurrency import run_in_threadpool
 from starlette.formparsers import MultiPartException, MultiPartParser
 
@@ -205,7 +205,9 @@ async def edge_observation(request: Request, response: Response, db: Session = D
 def observations(response: Response, site_id: int = Query(gt=0), limit: int = Query(25, ge=1, le=100), offset: int = Query(0, ge=0),
                  db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     require_site_access(db, user, site_id)
-    rows = db.execute(select(VisionObservation, Camera).join(Camera).where(
+    rows = db.execute(select(VisionObservation, Camera).options(
+        defer(VisionObservation.image_bytes, raiseload=True),
+    ).join(Camera).where(
         VisionObservation.site_id == site_id, VisionObservation.expires_at > business_now()
     ).order_by(VisionObservation.observed_at.desc(), VisionObservation.id).offset(offset).limit(limit)).all()
     response.headers["Cache-Control"] = "no-store"

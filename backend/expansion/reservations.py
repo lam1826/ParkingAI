@@ -73,16 +73,38 @@ def expire_slot(db, slot_id, now):
     ).values(status="expired")).rowcount
 
 
-def _slot_rows(db, slot_id, now):
-    reservations = db.scalars(select(ParkingReservation).where(
+def _reservation_commitment(slot_id, now):
+    return and_(
         ParkingReservation.slot_id == slot_id,
         ParkingReservation.status.in_(["confirmed", "arrived"]),
         ParkingReservation.end_at > now,
         or_(ParkingReservation.status == "arrived", ParkingReservation.arrival_deadline > now),
-    ).execution_options(populate_existing=True)).all()
-    allocations = db.scalars(select(GuaranteedAllocation).where(
+    )
+
+
+def _allocation_commitment(slot_id, now):
+    return and_(
         GuaranteedAllocation.slot_id == slot_id, GuaranteedAllocation.status == "active",
         GuaranteedAllocation.end_at > now,
+    )
+
+
+def has_slot_commitment(slot_id, now):
+    """SQL predicate for an unscheduled visitor; future commitments also block.
+
+    Read-only availability shares the admission predicates without taking locks.
+    Actual admission still locks and rechecks the slot and the driver's rights.
+    """
+    return or_(exists().where(_reservation_commitment(slot_id, now)),
+               exists().where(_allocation_commitment(slot_id, now)))
+
+
+def _slot_rows(db, slot_id, now):
+    reservations = db.scalars(select(ParkingReservation).where(
+        _reservation_commitment(slot_id, now),
+    ).execution_options(populate_existing=True)).all()
+    allocations = db.scalars(select(GuaranteedAllocation).where(
+        _allocation_commitment(slot_id, now),
     ).execution_options(populate_existing=True)).all()
     return reservations, allocations
 

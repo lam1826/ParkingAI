@@ -1,5 +1,25 @@
 # Plan
 
+## Tối ưu đồ án một bãi từ hệ thống AI tham khảo — 08/09/2026
+
+**Objective / scope:** đối chiếu hệ thống parking AI lớn và mã nguồn mở với bản `8182c3f`; chọn cải tiến có tác dụng cho một bãi trên CPU1GB. Giữ FastAPI/React, QR mô phỏng, Gemini tắt, nhân viên xác nhận biển. Không thêm nhiều bãi, stream camera, dịch vụ trả phí hoặc thay model khi chưa có đối chứng.
+
+**Context:** `site_service.availability` gọi hai truy vấn cam kết cho từng chỗ trống; `vision_router.observations` tải cả BLOB ảnh khi chỉ trả metadata; OCR đang sắp chữ theo các dải y cố định10px. Benchmark Việt Nam trước đây phân biệt rõ crop OCR456/500 và YOLO/OCR trên crop64/500; không dùng chúng như accuracy website.
+
+**Implementation / verification:**
+- [x] Nghiên cứu bảy hệ thống/dự án chính chủ, ghi license/revision và KEEP/ADAPT/FUTURE trong `docs/RESEARCH_SINGLE_SITE_AI_PARKING.md`; không cài model/stack tham khảo.
+- [x] Tái hiện availability10chỗ21SQL/100chỗ201SQL; sau sửa đều1SQL trong service khi site đã nạp. Dùng chung predicate với admission, giữ khóa;11 ca trạng thái/thời điểm đạt, thêm ca PostgreSQL chờ CI.
+- [x] Test SQL của danh sách ảnh thất bại trước sửa, đạt sau defer BLOB với raiseload; endpoint ảnh riêng vẫn đọc được khi có quyền.
+- [x] Tái hiện chữ cùng dòng bị đảo bởi bucket10px; helper dùng chồng lấp dọc, có test hai dòng/nhiều tỷ lệ. Cùng manifest/model500crop: OCR456→457, một ảnh từ sai thành đúng/không ảnh đúng thành sai; pipeline64 không đổi. Pilot20frame vẫn20đúng/9FP. Chỉ coi là regression trên tập cũ, không khẳng định accuracy tổng quát tăng.
+- [x] Hướng dẫn chụp có phần xe xung quanh và phục hồi khi no_plate;8 kiểm tra desktop/mobile với OCR giả lập đạt, đã xem ảnh render. Không coi viewport là điện thoại thật.
+- [ ] Regression liên quan, frontend test/lint/build, CI PostgreSQL/Windows và OCR memory gate; backup gate, đúng SHA và UAT sau phát hành nếu các gate đạt. Cập nhật bằng chứng và ticket theo kết quả thật.
+
+**Risks:** lệch ngữ nghĩa future booking, vô tình lazy-load ảnh, đọc sai hai dòng sau đổi sort. Dùng cùng thời điểm server cho truy vấn, đối chiếu admission guard và giữ corpus/hash trước đo; không benchmark tải cạnh API production. Số đo cục bộ không suy ra p95 production hoặc accuracy Việt Nam tổng quát.
+
+**Rollback / recovery:** thay đổi dự kiến không cần schema/model mới; quay lại application SHA trước nếu regression. Giữ dữ liệu/chứng từ; backup trước cập nhật website theo quy trình hiện có. Nghiên cứu do agent độc lập viết một file; main phụ trách sửa mã, test và phát hành.
+
+**Open questions / status:** đang kiểm chứng ba giả thuyết tối ưu; chụp vật lý iQOO/iPhone vẫn chờ người dùng. Không mở lại yêu cầu mở rộng nhiều bãi.
+
 ## PARK-209 — nghiệm thu điện thoại thật và biển Việt Nam (08/09/2026)
 
 Điều chỉnh phạm vi trong lúc thực hiện: người dùng chỉ cần **một bãi để nộp đồ án**. Giao diện website chọn bãi demo A (ID 2 đã đối chiếu API), ẩn đổi/tạo bãi và chỉ công bố gói vé của bãi này. Cấu hình giao diện không thay quyền server, schema hoặc dữ liệu lịch sử. Dùng bốn vai trò admin/manager_a/staff_a/customer_a cho kịch bản nộp bài. Không triển khai thêm năng lực nhiều bãi.

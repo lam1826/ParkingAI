@@ -10,6 +10,44 @@ import pytest
 from PIL import Image
 
 
+def test_ocr_preserves_left_to_right_order_for_sloped_single_row():
+    np = pytest.importorskip("numpy")
+    from types import SimpleNamespace
+    from expansion.vision_service import YoloRapidOCR
+    runtime = YoloRapidOCR.__new__(YoloRapidOCR)
+    runtime.input = SimpleNamespace(name="image")
+    runtime.plate_classes = [0]
+    # One detected plate; the right text box is higher but overlaps the left
+    # box vertically. It still belongs to the same physical line of text.
+    runtime.detector = SimpleNamespace(run=lambda *_args: [np.array([[[320], [320], [600], [160], [.95]]])])
+    runtime.ocr = lambda *_args, **_kwargs: ([
+        [[[10, 8], [90, 8], [90, 28], [10, 28]], "51A", .99],
+        [[[100, 2], [220, 2], [220, 22], [100, 22]], "12345", .98],
+    ], None)
+    assert runtime.recognize(Image.new("RGB", (640, 640)))[0]["plate"] == "51A-123.45"
+
+
+@pytest.mark.parametrize("scale", [0.5, 1, 4])
+def test_ocr_groups_two_rows_by_geometry_without_mutating_results(scale):
+    from copy import deepcopy
+    from expansion.vision_service import order_plate_text_lines
+    def line(x, y, text):
+        return [[[px * scale, py * scale] for px, py in
+                 [(x, y), (x + 30, y), (x + 30, y + 20), (x, y + 20)]], text, .95]
+    detected = [line(70, 46, "45"), line(70, 2, "A1"), line(10, 40, "123"), line(10, 8, "59")]
+    before = deepcopy(detected)
+    ordered = order_plate_text_lines(detected)
+    assert [part[1] for part in ordered] == ["59", "A1", "123", "45"]
+    assert detected == before
+
+
+def test_ocr_empty_and_single_text_box_keep_their_meaning():
+    from expansion.vision_service import order_plate_text_lines
+    assert order_plate_text_lines([]) == []
+    line = [[[0, 0], [100, 0], [100, 20], [0, 20]], "51A12345", .9]
+    assert order_plate_text_lines([line]) == [line]
+
+
 @pytest.mark.parametrize("size", [(20, 1600), (1600, 8), (60, 30), (640, 480)])
 def test_plate_crop_bounds_both_dimensions_without_losing_image(size):
     from expansion.vision_service import _prepare_plate_crop
