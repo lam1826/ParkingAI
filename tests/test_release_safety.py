@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import os
 from pathlib import Path
+import re
 import shutil
 import sqlite3
 import stat
@@ -1591,7 +1592,17 @@ def test_ci_has_windows_release_safety_job() -> None:
 
 
 def test_windows_release_safety_job_has_enough_time_to_finish() -> None:
-    """Cold Windows runners must not cancel the rollout gate mid-test."""
+    """Cold Windows runners must not cancel the rollout gate mid-test.
+
+    Evidence: the test step took 8m20 (026e692) and 9m30 (0c0fb98) and passed,
+    then >=14m22 and was cancelled by the 15-minute JOB timeout on 501b6e6 (a
+    docs/script-only diff, i.e. runner-side variance); locally the file takes
+    4-6 minutes. The job timeout also covers checkout, setup-python and pip
+    install, and a cancelled job blocks Continuous Delivery exactly like a
+    failure. The value is a hang guard, not a performance budget, so this
+    asserts a floor (and a ceiling so a hung job cannot hide behind an
+    unbounded budget).
+    """
     project_root = Path(__file__).resolve().parents[1]
     workflow = (project_root / ".github" / "workflows" / "ci.yml").read_text(
         encoding="utf-8"
@@ -1599,5 +1610,7 @@ def test_windows_release_safety_job_has_enough_time_to_finish() -> None:
     job_header = workflow.split("release-safety-windows:", 1)[1].split(
         "steps:", 1
     )[0]
+    match = re.search(r"^\s*timeout-minutes:\s*(\d+)", job_header, re.MULTILINE)
 
-    assert "timeout-minutes: 15" in job_header
+    assert match is not None, job_header
+    assert 30 <= int(match.group(1)) <= 60

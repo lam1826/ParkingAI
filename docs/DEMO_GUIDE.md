@@ -133,6 +133,8 @@ Set-Location ..
 .venv/Scripts/python.exe scripts/sync_source_snapshot.py --check
 ```
 
+Lệnh cuối chỉ đối chiếu được khi thư mục hồ sơ bàn giao `HoSo_BaoCao_ParkingAI/` (nằm ngoài Git, xem `.gitignore`) có trên máy; nếu không có, script in `Snapshot check skipped` và trả 0. CI không chạy bước này. Trước khi đóng gói hồ sơ, chạy `.venv/Scripts/python.exe scripts/sync_source_snapshot.py` (không kèm `--check`) để tạo hoặc cập nhật bản mirror SourceCode.
+
 Không nộp `.env`, mật khẩu thật, token, DB cá nhân hoặc thư viện `.venv/node_modules`. Model và ảnh tải về nằm trong thư mục bị Git loại trừ; giữ script tải, SHA-256, thông tin nguồn/giấy phép và các tài liệu hướng dẫn. Trạng thái kiểm chứng cuối cùng được ghi tại [bảng trạng thái mở rộng](EXPANSION_IMPLEMENTATION_STATUS.md).
 
 Ba kiểm thử trình duyệt có thể chạy lại từ thư mục dự án sau khi build và tải model/ảnh mẫu:

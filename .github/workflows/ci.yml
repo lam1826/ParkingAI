@@ -35,9 +35,6 @@ jobs:
           cache: pip
           cache-dependency-path: backend/requirements.txt
 
-      - name: Verify source snapshot parity
-        run: python scripts/sync_source_snapshot.py --check
-
       - name: Install backend dependencies
         run: python -m pip install -r backend/requirements.txt
 
@@ -86,7 +83,12 @@ jobs:
 
   release-safety-windows:
     runs-on: windows-latest
-    timeout-minutes: 15
+    # Job budget = checkout + setup-python + pip install + 188 tests.
+    # Test step alone: 8m20 passed (026e692), 9m30 passed (0c0fb98), >=14m22 then
+    # cancelled by the old 15-minute limit (501b6e6, docs/script-only diff =>
+    # runner variance). tests/test_release_safety.py enforces 30 <= value <= 60.
+    # If this is hit again, profile with --durations before raising.
+    timeout-minutes: 30
 
     steps:
       - name: Checkout source
@@ -103,4 +105,4 @@ jobs:
         run: python -m pip install -r backend/requirements.txt
 
       - name: Run Windows rollout safety tests
-        run: python -m pytest tests/test_release_safety.py -q
+        run: python -m pytest tests/test_release_safety.py -q --durations=20

@@ -8,6 +8,8 @@ Hai trục dưới đây độc lập: “Standards” trả lời PR có vượ
 hay không; “Spec/compatibility” trả lời dependency có phù hợp và cần kiểm thử
 gì. Không dùng một trục để xóa hoặc hạ mức phát hiện của trục còn lại.
 
+> Cập nhật 2026-09-08: từ commit 19088ac hồ sơ `HoSo_BaoCao_ParkingAI/` không còn được Git quản lý và bước `Verify source snapshot parity` đã được gỡ khỏi CI (đối chiếu mirror chỉ còn chạy cục bộ qua `scripts/verify.ps1` trên máy có hồ sơ). Phát hiện chặn "Snapshot fail" bên dưới và quyết định "sửa snapshot trong từng PR" ở mục 3 không còn áp dụng; các PR chỉ cần rebase lên `main` để các gate còn lại (backend/Postgres/frontend) thực sự chạy. Bảng compatibility ở mục 2 vẫn có hiệu lực.
+
 ## 1. Standards review
 
 Nguồn chuẩn trong repo là `README.md`, `.github/workflows/ci.yml` và

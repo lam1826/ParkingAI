@@ -3,6 +3,10 @@
 Mặc định script copy các file được Git quản lý và một allowlist hẹp cho source
 chưa track. ``--check`` chỉ đọc và trả exit 1 nếu mirror lệch hoặc chứa
 artifact/runtime secret. Không bao giờ đi ra ngoài SourceCode cố định.
+
+Hồ sơ ``HoSo_BaoCao_ParkingAI/`` nằm ngoài Git (xem ``.gitignore``): khi thư mục
+hồ sơ không có trên máy (CI, clone mới), ``--check`` in "Snapshot check skipped"
+và trả 0 vì không có gì để đối chiếu; có hồ sơ mà thiếu SourceCode thì vẫn trả 1.
 """
 
 from __future__ import annotations
@@ -15,12 +19,8 @@ import sys
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SNAPSHOT = (
-    ROOT
-    / "HoSo_BaoCao_ParkingAI"
-    / "03_KT3_TrienKhai_KiemThu"
-    / "SourceCode"
-)
+DOSSIER_ROOT = ROOT / "HoSo_BaoCao_ParkingAI"
+SNAPSHOT = DOSSIER_ROOT / "03_KT3_TrienKhai_KiemThu" / "SourceCode"
 SNAPSHOT_PREFIX = SNAPSHOT.relative_to(ROOT).as_posix() + "/"
 ALLOWED_TOP_LEVEL = {
     ".github",
@@ -212,7 +212,23 @@ def sync() -> None:
     )
 
 
+SKIP_NOTICE = (
+    "Snapshot check skipped: HoSo_BaoCao_ParkingAI/ is not on this machine "
+    "(the dossier is kept outside Git); nothing to compare."
+)
+
+
 def check() -> int:
+    if not DOSSIER_ROOT.is_dir():
+        print(SKIP_NOTICE)
+        return 0
+    if not SNAPSHOT.is_dir():
+        print(
+            f"missing: {SNAPSHOT_PREFIX} (dossier present but the mirror was never "
+            "synced; run scripts/sync_source_snapshot.py without --check)",
+            file=sys.stderr,
+        )
+        return 1
     expected = _candidate_paths()
     missing_or_changed, unexpected, forbidden = _differences(expected)
     for label, paths in (
