@@ -98,7 +98,7 @@ jobs:
           npm run build
 
       - name: Upload immutable frontend build evidence
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: parkingai-frontend-${{ steps.resolve.outputs.sha }}
           path: frontend/dist
