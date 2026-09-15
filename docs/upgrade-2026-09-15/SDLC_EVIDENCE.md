@@ -54,3 +54,9 @@ Hai kiểm tra prompt RED→GREEN và122testAI/analytics đạt. Năm output th�
 - Runner UAT trên DB mới schema06: `verify_single_lot_core.py`, `verify_single_lot_extensions.py --session-payments`, `frontend/tests/browser/session_credit_uat.py --mode live-disabled|fixture`, `verify_single_lot_recovery.py`, `verify_single_lot_upgrade.py`; JSON tại `backend/artifacts/demo/p8-uat-8769/` và `backend/artifacts/session-credit-browser/`.
 - Bốn phát hiện provider của reviewer trước có test hồi quy trong `tests/test_session_online_payments.py` và `tests/test_session_payment_concurrency.py` (SQLite hai kết nối); không có bằng chứng ngân hàng thật.
 - Launcher trình bày `scripts/start_single_lot_demo.ps1` được chạy thử thật dưới Windows PowerShell 5.1; mật khẩu chỉ ở sidecar cục bộ ignored.
+
+## CI/CD 15/09 và gate Windows
+
+- Push `4f6116b` → CI: `verify` xanh (1.920 test + PostgreSQL 16 integration + frontend), `release-safety-windows` bị hủy ở 30 phút sau một ca `F` không có traceback (pytest `-q` chỉ in FAILURES ở cuối). Push `e523ebc` (timeout 60) → cả ba job xanh, Windows 39m32; Continuous Delivery đưa backend lên Fly, `release_id` production = `e523ebc…`, `/ready` = ready; Pages đã phục vụ bundle mới từ trước.
+- Ca lỗi/treo không tái hiện cục bộ và trong clone sạch; log job cần đăng nhập GitHub nên chỉ có API công khai (thời điểm bắt đầu/kết thúc từng step) làm bằng chứng. Nguyên nhân đo được của thời gian tăng: số ca gate 192 → 291, ~150 ca readiness tham số hóa mỗi ca dựng DB trọn bộ.
+- Vá gate (không đổi mã sản phẩm): fixture `rollout_template_database` cấp module trong `tests/test_release_safety.py` (một rollout thật, các ca copy file), `faulthandler_timeout = 600` trong `pytest.ini` để lần treo sau tự in stack, chú thích `ci.yml` ghi đúng số ca/thời gian đã quan sát. Tái lập: `python -m pytest tests/test_release_safety.py -q --durations=20`.

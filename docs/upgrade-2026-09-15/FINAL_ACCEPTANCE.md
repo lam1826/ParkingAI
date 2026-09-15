@@ -40,7 +40,16 @@ Các bộ có phần giao nhau, không cộng thành một tổng test. P1 full 
 | --- | --- | --- |
 | `pytest -q --junitxml=backend/artifacts/demo/p8-full-backend-2.xml` (14:02–14:26) | **1.920 thu thập: 1.900 passed / 0 failed / 0 error / 20 skipped**, 1.444 s. Skip: 7 `test_postgres_integration` + 11 `test_round3_postgres` (không có `POSTGRES_TEST_URL`), 1 POSIX owner/group trên Windows, 1 `test_vision_runtime_budget` | `p8-full-backend-2.xml/.log` |
 
-**Kết luận P8 (15/09/2026 14:30):** vòng tích hợp đạt trên SQLite cục bộ với bundle hợp nhất — full backend 0 lỗi, frontend 212/212, HTTP lõi 79/79, mở rộng 41/41, browser phí lượt 7/7 + 29/29, recovery và upgrade 48 bảng. Giới hạn giữ nguyên ở mục dưới; mã chưa commit/push/deploy.
+**Kết luận P8 (15/09/2026 14:30):** vòng tích hợp đạt trên SQLite cục bộ với bundle hợp nhất — full backend 0 lỗi, frontend 212/212, HTTP lõi 79/79, mở rộng 41/41, browser phí lượt 7/7 + 29/29, recovery và upgrade 48 bảng. Giới hạn giữ nguyên ở mục dưới; mã được commit/push/deploy ngay sau đó (mục kế tiếp).
+
+## CI/CD và triển khai (15/09/2026, 14:45–15:55)
+
+| Bước | Kết quả | Bằng chứng |
+| --- | --- | --- |
+| Commit/push `4f6116b` (285 file P4–P8 + docs) | CI `verify` (ubuntu: 1.920 test backend + migration/integration PostgreSQL 16 + frontend test/lint/build) **xanh 12m29**; `vision-memory` xanh; `release-safety-windows` **bị hủy ở 30m12**: log dừng ở một ca `F` (~24%, nhóm readiness tham số hóa) rồi không có tiến triển 28 phút. Continuous Delivery bị bỏ qua vì CI không success. | GitHub Actions run của `4f6116b`; log chỉ có chữ `F`, không có traceback vì pytest in phần FAILURES ở cuối phiên bị cắt |
+| Commit/push `e523ebc` (nâng `timeout-minutes` job Windows 30→60 theo trần của guard test) | `verify` xanh 12m34, `vision-memory` xanh 0m54, `release-safety-windows` **xanh 39m32** (291 ca). CD chạy: `alembic upgrade head` + `production_release_gate.py` trong release_command Fly. | Job API công khai: `release-safety-windows` completed/success 08:07:52Z→08:47:24Z; CD run 34948898918 |
+| Production sau CD | `GET /` trả `release_id = e523ebcdf477fc95e4de1e3285c918275b73a068`; `GET /ready` = `{"status":"ready"}`; OpenAPI 175 path gồm `/api/v2/me/timed-passes`, `/api/v2/sites/{site_id}/online-payments/review*`, `/api/v2/sites/{site_id}/occupancy*`; preflight CORS từ `https://parkingai.am` → 200, `access-control-allow-origin: https://parkingai.am`; Cloudflare Pages phục vụ bundle mới `index-DrCCYjSK.js` (Pages đã build từ lúc push `4f6116b`, tức khoảng 1 giờ UI mới chạy trên API cũ `0b8c54c` cho đến khi backend lên). | curl từ máy phát triển 15:55 +07; không đọc dữ liệu khách |
+| Gate Windows: nguyên nhân và xử lý | Ca `F` và ca treo **không tái hiện** cục bộ (Python 3.12.14/SQLite 3.53.1, 2 ca 6 s; cả file 290 pass/1 skip trong 11m17) lẫn trong bản clone sạch. Bằng chứng đo được: `0b8c54c` thu thập 192 ca → job 16m24; `e523ebc` 291 ca → 39m32; phần tăng là ~150 ca `test_readiness_rejects_wrong_definition_for_every_required_schema_object` mỗi ca chạy trọn bộ rollout (migration, backfill, readiness sâu) trên runner Windows lạnh. Sửa: một DB mẫu cấp module rồi copy cho từng ca (cục bộ 235 ca 57 s thay vì ~2 s/ca), thêm `faulthandler_timeout = 600` trong `pytest.ini` để lần treo sau in stack mọi thread, sửa chú thích sai trong `ci.yml` (0b8c54c có 192 ca, không phải 291). Không sửa mã sản phẩm. | `tests/test_release_safety.py` (fixture `rollout_template_database`), `pytest.ini`, `.github/workflows/ci.yml`; số đo job mới ghi ở HANDOFF sau khi CI chạy |
 
 ## Bằng chứng AI và giao diện đã lưu
 
@@ -52,4 +61,4 @@ Giao diện mở rộng P4–P7: 35 checks tại `backend/artifacts/extensions-b
 
 [Hướng dẫn demo](../SINGLE_LOT_DEMO.md) tạo DB mới riêng với tài khoản ngẫu nhiên, không ghi đè DB cũ. [SDLC_EVIDENCE.md](SDLC_EVIDENCE.md) nối yêu cầu/prompt/code/test; [nghiên cứu website](REAL_WORLD_REFERENCES.md) ghi nguồn tham khảo và quyết định phạm vi.
 
-Chưa nghiệm thu ngân hàng, thiết bị webcam/điện thoại vật lý, độ chính xác CV ngoài bãi hoặc PostgreSQL đang chạy. CI/CD và Word/slide lịch sử chưa được chạy/xuất lại cho working tree này. Các giới hạn này được giữ trong bộ nhớ chung để người tiếp tục không hiểu nhầm bằng chứng mô phỏng thành triển khai thật.
+Chưa nghiệm thu ngân hàng, thiết bị webcam/điện thoại vật lý, độ chính xác CV ngoài bãi hoặc PostgreSQL đang chạy. CI/CD đã chạy cho `4f6116b`/`e523ebc` (mục CI/CD ở trên); Word/slide lịch sử chưa được xuất lại cho working tree này. Các giới hạn này được giữ trong bộ nhớ chung để người tiếp tục không hiểu nhầm bằng chứng mô phỏng thành triển khai thật.

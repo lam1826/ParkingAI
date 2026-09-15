@@ -1221,19 +1221,40 @@ def _required_schema_objects() -> list[tuple[str, str]]:
     ]
 
 
+@pytest.fixture(scope="module")
+def rollout_template_database(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """One explicit rollout shared by the per-object readiness cases below.
+
+    The manifest has grown to ~150 required indexes/triggers and every case
+    used to run the full copy-first rollout (all migrations, backfills and
+    the deep readiness check) on its own file. On a cold windows-latest
+    runner that turned the gate from 16m24 (192 tests) into 39m32 (291
+    tests) and one run was cancelled at 30 minutes. Copying a finished
+    template keeps the assertion (readiness must reject each wrong
+    definition) while the rollout itself is exercised once here and by the
+    dedicated rollout tests above.
+    """
+    from db_rollout import initialize_database
+
+    template = tmp_path_factory.mktemp("rollout-template") / "template.db"
+    initialize_database(template)
+    return template
+
+
 @pytest.mark.parametrize(
     ("object_type", "object_name"),
     _required_schema_objects(),
 )
 def test_readiness_rejects_wrong_definition_for_every_required_schema_object(
     tmp_path: Path,
+    rollout_template_database: Path,
     object_type: str,
     object_name: str,
 ) -> None:
-    from db_rollout import check_database_readiness, initialize_database
+    from db_rollout import check_database_readiness
 
     database_path = tmp_path / f"wrong-{object_name}.db"
-    initialize_database(database_path)
+    shutil.copyfile(rollout_template_database, database_path)
     with sqlite3.connect(database_path) as connection:
         object_row = connection.execute(
             "SELECT tbl_name FROM sqlite_master WHERE type = ? AND name = ?",
