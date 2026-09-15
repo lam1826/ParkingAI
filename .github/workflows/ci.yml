@@ -111,12 +111,14 @@ jobs:
 
   release-safety-windows:
     runs-on: windows-latest
-    # Job budget = checkout + setup-python + pip install + 188 tests.
-    # Test step alone: 8m20 passed (026e692), 9m30 passed (0c0fb98), >=14m22 then
-    # cancelled by the old 15-minute limit (501b6e6, docs/script-only diff =>
-    # runner variance). tests/test_release_safety.py enforces 30 <= value <= 60.
-    # If this is hit again, profile with --durations before raising.
-    timeout-minutes: 30
+    # Job budget = checkout + setup-python + pip install + the rollout gate,
+    # which now collects 291 tests. Observed job wall time: 9m14 (188 tests,
+    # 026e692), 16m24 (291 tests, 0b8c54c), then >30 min and cancelled on
+    # 4f6116b although this file changed by +8/-2 lines => Windows runner
+    # variance can still double it. tests/test_release_safety.py enforces
+    # 30 <= value <= 60; 60 is that ceiling. --durations=20 in the step
+    # records evidence for the next decision instead of another blind bump.
+    timeout-minutes: 60
 
     steps:
       - name: Checkout source
