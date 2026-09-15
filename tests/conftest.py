@@ -175,6 +175,23 @@ def test_user(db_session: Session, role: Role) -> User:
 
 
 @pytest.fixture(scope="function")
+def manager_user(db_session: Session, test_user: User) -> User:
+    """Use a manager actor for contracts that require catalog/finance writes.
+
+    The default test_user remains staff, so operational and denial tests still
+    exercise the least-privileged internal role.
+    """
+    manager_role = db_session.query(Role).filter_by(name="manager").first()
+    if manager_role is None:
+        manager_role = Role(name="manager")
+        db_session.add(manager_role)
+        db_session.flush()
+    test_user.role = manager_role
+    db_session.commit()
+    return test_user
+
+
+@pytest.fixture(scope="function")
 def vehicle_type(db_session: Session) -> VehicleType:
     v_type = VehicleType(
         name="Ô tô 4 chỗ",

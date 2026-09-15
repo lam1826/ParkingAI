@@ -1,0 +1,17 @@
+{
+  "phase": "P0 and independent P2 reporting/permissions",
+  "verified_date": "2026-09-15",
+  "timezone": "Asia/Ho_Chi_Minh",
+  "git_base": "3ef172e",
+  "uncommitted": true,
+  "source_manifest": "backend/artifacts/core-p0-source-manifest.json",
+  "source_file_count": 455,
+  "source_manifest_sha256": "5ea424df2878b90bcd67947101d7563236eada9716ae59bb500b4668fa4daad8",
+  "backend": {"passed": 1359, "skipped": 20, "failed": 0, "seconds": 1755.56, "exit_code": 0},
+  "frontend": {"passed": 155, "failed": 0, "lint_exit_code": 0, "build_exit_code": 0},
+  "http_acceptance": {"checks": 58, "passed": true, "artifact": "backend/artifacts/demo/core-http-acceptance.json"},
+  "recovery": {"tables_equal": 36, "passed": true, "artifact": "backend/artifacts/demo/core-recovery-acceptance.json"},
+  "browser_fixture": {"checks": 34, "passed": true, "artifact": "backend/artifacts/core-roles-ui/aec717b3d4/result.json"},
+  "browser_live_backend": {"checks": 24, "passed": true, "business_rows_unchanged": true, "artifact": "backend/artifacts/core-roles-live/6b637d64dd/result.json"},
+  "limits": ["SQLite local", "No live AI provider call", "No real payment or physical camera", "Not completion of P1-P8", "No commit, push or deployment"]
+}

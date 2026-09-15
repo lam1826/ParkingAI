@@ -6,8 +6,13 @@ import { formatParkingFee } from "../../../utils/formatCurrency";
 import { formatParkingDuration } from "../sessionPresentation";
 import { createCheckoutFlow } from "../checkoutFlow";
 import parkingSessionService from "../services/parkingSessionService";
+import BillingBasisDetails from "./BillingBasisDetails";
+import PrepaidDetails from "./PrepaidDetails";
+import { settlementAmounts } from "../settlementAmounts";
+import SessionFeePayment from "../../Expansion/SessionFeePayment";
+import { singleSiteId } from "../../../utils/singleSiteMode";
 
-export default function CheckoutDialog({ sessionId, onClose, onCompleted,
+export default function CheckoutDialog({ sessionId, siteId, onClose, onCompleted,
   loadQuote = parkingSessionService.getCheckoutQuote, confirmCheckout = parkingSessionService.checkOut }) {
   const [flow] = useState(() => {
     const token = localStorage.getItem("token");
@@ -16,6 +21,8 @@ export default function CheckoutDialog({ sessionId, onClose, onCompleted,
       isAuthorized: () => Boolean(token) && localStorage.getItem("token") === token });
   });
   const state = useSyncExternalStore(flow.subscribe, flow.getSnapshot, flow.getSnapshot);
+  const [onlineOpen, setOnlineOpen] = useState(false);
+  const paymentSite = siteId || singleSiteId();
   useEffect(() => {
     void flow.start();
     const timer = window.setInterval(flow.tick, 1000);
@@ -30,9 +37,10 @@ export default function CheckoutDialog({ sessionId, onClose, onCompleted,
   const loading = phase === "idle" || phase === "loading";
   const pending = phase === "submitting";
   const uncertain = phase === "uncertain";
-  const free = quote?.parking_fee === 0;
+  const amounts = settlementAmounts(quote);
+  const free = amounts?.due === 0;
   const editable = phase === "ready" && !expired;
-  const canConfirm = uncertain || (editable && (free || (Boolean(paymentMethod) && paymentConfirmed)));
+  const canConfirm = !onlineOpen && (uncertain || (editable && (free || (Boolean(paymentMethod) && paymentConfirmed))));
   const dismiss = () => { if (flow.canDismiss()) onClose(); };
 
   return <Dialog open onClose={dismiss} maxWidth="sm" fullWidth aria-labelledby="checkout-title">
@@ -55,21 +63,28 @@ export default function CheckoutDialog({ sessionId, onClose, onCompleted,
             "& dt": { color: "text.secondary" }, "& dd": { m: 0, mb: { xs: 1, sm: 0 }, overflowWrap: "anywhere" } }}>
             <Typography component="dt">Giờ vào</Typography><Typography component="dd">{formatBusinessTimestamp(quote.check_in_time)}</Typography>
             <Typography component="dt">Thời gian gửi</Typography><Typography component="dd">{formatParkingDuration(quote.duration_minutes)} (tính đến lúc xem phí)</Typography>
-            <Typography component="dt">Vé tháng</Typography><Typography component="dd">
+            {!quote.prepaid && <><Typography component="dt">Vé tháng</Typography><Typography component="dd">
               {quote.monthly_coverage_end ? `Lượt này được hưởng quyền vé tháng đến hết ${formatBusinessDateOnly(quote.monthly_coverage_end)}.` : "Lượt này không được áp dụng vé tháng."}
-            </Typography>
+            </Typography></>}
           </Box>
+          <PrepaidDetails prepaid={quote.prepaid} />
+          <BillingBasisDetails basis={quote.billing_basis} preview />
           <Box sx={{ borderTop: "1px solid", borderBottom: "1px solid", borderColor: "divider", py: 2 }}>
-            <Typography>{free ? "Phí gửi xe" : "Số tiền cần thu"}</Typography>
+            {amounts.paid > 0 && <Stack spacing={0.5} sx={{ mb: 1.5 }}>
+              <Typography>Tổng phí lượt gửi: {formatParkingFee(amounts.gross)} VND</Typography>
+              <Typography>Đã trả online: {formatParkingFee(amounts.paid)} VND</Typography>
+              {quote.paid_through && <Typography variant="body2" color="text.secondary">Đã trả đến {formatBusinessTimestamp(quote.paid_through)}.</Typography>}
+            </Stack>}
+            <Typography>{amounts.paid > 0 ? "Số tiền còn thu" : quote.prepaid ? "Phí phát sinh cần thu khi ra" : free ? "Phí gửi xe" : "Số tiền cần thu"}</Typography>
             <Typography variant="h4" component="p" fontWeight={700} sx={{ mt: 0.5, fontVariantNumeric: "tabular-nums" }}>
-              {formatParkingFee(quote.parking_fee)} VND
+              {formatParkingFee(amounts.due)} VND
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>
-              {free ? "Không thu tiền cho lượt xe ra này." : `Phí có hiệu lực đến ${formatBusinessTimestamp(quote.expires_at)}.`}
+              {free ? (quote.prepaid || amounts.paid > 0 ? "Không thu thêm tiền khi xe ra theo phí xem trước này." : "Không thu tiền cho lượt xe ra này.") : `Phí có hiệu lực đến ${formatBusinessTimestamp(quote.expires_at)}.`}
             </Typography>
           </Box>
           {expired && phase === "ready" && <Alert severity="warning">Phí xem trước đã hết hiệu lực. Tải lại phí và kiểm tra số tiền trước khi xác nhận.</Alert>}
-          {!free && <>
+          {!free && !onlineOpen && <>
             <FormControl disabled={!editable}>
               <FormLabel id="checkout-payment-label">Hình thức đã thu tiền</FormLabel>
               <RadioGroup row aria-labelledby="checkout-payment-label" value={paymentMethod} onChange={event => flow.setPaymentMethod(event.target.value)}>
@@ -80,7 +95,14 @@ export default function CheckoutDialog({ sessionId, onClose, onCompleted,
             </FormControl>
             <FormControlLabel disabled={!editable || !paymentMethod} sx={{ m: 0, alignItems: "flex-start" }}
               control={<Checkbox checked={paymentConfirmed} onChange={event => flow.setPaymentConfirmed(event.target.checked)} sx={{ pt: 0 }} />}
-              label={`Tôi xác nhận đã nhận đủ ${formatParkingFee(quote.parking_fee)} VND cho lượt gửi xe này.`} />
+              label={`Tôi xác nhận đã nhận đủ ${formatParkingFee(amounts.due)} VND còn thu cho lượt gửi xe này.`} />
+          </>}
+          {paymentSite && !uncertain && !pending && <>
+            {!onlineOpen && <Button variant="outlined" disabled={!editable} onClick={() => { flow.setPaymentConfirmed(false); setOnlineOpen(true); }}>Xem thanh toán QR của lượt này</Button>}
+            {onlineOpen && <>
+              <SessionFeePayment key={`${paymentSite}:${sessionId}`} sessionId={sessionId} siteId={paymentSite} />
+              <Button variant="outlined" onClick={() => { setOnlineOpen(false); void flow.refresh(); }}>Quay lại xác nhận xe ra và tải lại phí</Button>
+            </>}
           </>}
           {uncertain && <Typography variant="body2">Yêu cầu đã gửi được giữ nguyên, kể cả khi phí xem trước hết hiệu lực. Nút thử lại bên dưới kiểm tra hoặc hoàn tất chính yêu cầu đó.</Typography>}
         </>}
@@ -91,7 +113,7 @@ export default function CheckoutDialog({ sessionId, onClose, onCompleted,
       {(phase === "error" || (phase === "ready" && expired)) && <Button variant="contained" onClick={() => void flow.refresh()}>Tải lại phí</Button>}
       {quote && !(phase === "ready" && expired) && <Button variant="contained" disabled={!canConfirm || pending} onClick={() => void flow.submit()}
         startIcon={pending ? <CircularProgress size={18} color="inherit" /> : undefined} sx={{ flex: { xs: "1 1 100%", sm: "0 1 auto" } }}>
-        {pending ? "Đang xác nhận…" : uncertain ? "Thử lại yêu cầu đã gửi" : free ? "Xác nhận xe ra miễn phí" : "Đã thu tiền — cho xe ra"}
+        {pending ? "Đang xác nhận…" : uncertain ? "Thử lại yêu cầu đã gửi" : free ? (quote.prepaid || amounts.paid > 0 ? "Xác nhận xe ra — không thu thêm" : "Xác nhận xe ra miễn phí") : "Đã thu tiền — cho xe ra"}
       </Button>}
     </DialogActions>
   </Dialog>;

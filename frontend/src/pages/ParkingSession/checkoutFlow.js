@@ -1,4 +1,5 @@
 import { getErrorMessage } from "../../utils/errorMessage.js";
+import { settlementAmounts } from "./settlementAmounts.js";
 
 const REQUOTE_CODES = new Set(["checkout_quote_expired", "checkout_quote_changed"]);
 const RECONFIRM_NOTICE = "Phí cần được cập nhật. Kiểm tra số tiền mới và xác nhận lại trước khi cho xe ra.";
@@ -12,7 +13,7 @@ function errorMessage(error, fallback) {
 function validQuote(quote, sessionId) {
   return quote?.session_id === sessionId && typeof quote.quote_token === "string" && quote.quote_token.length > 0
     && typeof quote.license_plate === "string" && quote.license_plate.length > 0
-    && Number.isSafeInteger(quote.parking_fee) && quote.parking_fee >= 0
+    && settlementAmounts(quote) !== null
     && Number.isSafeInteger(quote.duration_minutes) && quote.duration_minutes >= 0
     && Number.isFinite(Date.parse(quote.check_in_time))
     && Number.isFinite(Date.parse(quote.quoted_at)) && Number.isFinite(Date.parse(quote.expires_at))
@@ -56,7 +57,7 @@ export function createCheckoutFlow({ sessionId, loadQuote, confirmCheckout, onCo
     if (!current() || !["ready", "uncertain"].includes(state.phase)) return;
     if (!submittedBody) {
       if (now() >= state.expiresAt) { await refresh(RECONFIRM_NOTICE); return; }
-      const free = state.quote.parking_fee === 0;
+      const free = settlementAmounts(state.quote).due === 0;
       if (!free && (!state.paymentConfirmed || !["cash", "transfer"].includes(state.paymentMethod))) return;
       submittedBody = Object.freeze({ quote_token: state.quote.quote_token,
         payment_confirmed: true, payment_method: free ? null : state.paymentMethod });

@@ -60,7 +60,7 @@ OVERLAP_BASE = datetime.date(2035, 1, 1)
 def test_delete_used_monthly_pass_is_blocked_and_preserves_provenance(
     client: TestClient,
     db_session: Session,
-    test_user: User,
+    manager_user: User,
     vehicle: Vehicle,
     customer: Customer,
     parking_slot,
@@ -82,14 +82,14 @@ def test_delete_used_monthly_pass_is_blocked_and_preserves_provenance(
         monthly_pass_id=monthly_pass.id,
         check_in_time=business_reference_now,
         status="active",
-        staff_in_id=test_user.id,
+        staff_in_id=manager_user.id,
     )
     db_session.add(parking_session)
     db_session.commit()
 
     response = client.delete(
         f"/api/v1/monthly-passes/{monthly_pass.id}",
-        headers=make_headers(test_user),
+        headers=make_headers(manager_user),
     )
 
     assert response.status_code == 409
@@ -102,7 +102,7 @@ def test_delete_used_monthly_pass_is_blocked_and_preserves_provenance(
 def test_used_monthly_pass_can_be_soft_deactivated_without_losing_provenance(
     client: TestClient,
     db_session: Session,
-    test_user: User,
+    manager_user: User,
     vehicle: Vehicle,
     customer: Customer,
     parking_slot,
@@ -122,7 +122,7 @@ def test_used_monthly_pass_can_be_soft_deactivated_without_losing_provenance(
         monthly_pass_id=monthly_pass.id,
         check_in_time=business_reference_now,
         status="active",
-        staff_in_id=test_user.id,
+        staff_in_id=manager_user.id,
     )
     db_session.add(parking_session)
     db_session.commit()
@@ -130,7 +130,7 @@ def test_used_monthly_pass_can_be_soft_deactivated_without_losing_provenance(
     response = client.put(
         f"/api/v1/monthly-passes/{monthly_pass.id}",
         json={"is_active": False},
-        headers=make_headers(test_user),
+        headers=make_headers(manager_user),
     )
 
     assert response.status_code == 200
@@ -143,7 +143,7 @@ def test_used_monthly_pass_can_be_soft_deactivated_without_losing_provenance(
 def test_used_monthly_pass_business_fields_are_immutable(
     client: TestClient,
     db_session: Session,
-    test_user: User,
+    manager_user: User,
     vehicle: Vehicle,
     customer: Customer,
     parking_slot,
@@ -177,7 +177,7 @@ def test_used_monthly_pass_business_fields_are_immutable(
         monthly_pass_id=monthly_pass.id,
         check_in_time=business_reference_now,
         status="active",
-        staff_in_id=test_user.id,
+        staff_in_id=manager_user.id,
     )
     db_session.add(parking_session)
     db_session.commit()
@@ -205,7 +205,7 @@ def test_used_monthly_pass_business_fields_are_immutable(
         response = client.put(
             f"/api/v1/monthly-passes/{monthly_pass.id}",
             json=payload,
-            headers=make_headers(test_user),
+            headers=make_headers(manager_user),
         )
         assert response.status_code == 409, payload
         db_session.expire_all()
@@ -405,7 +405,7 @@ def test_migration_rejects_invalid_legacy_monthly_pass_contract(
 def test_delete_unused_monthly_pass_remains_available_for_data_cleanup(
     client: TestClient,
     db_session: Session,
-    test_user: User,
+    manager_user: User,
     vehicle: Vehicle,
     customer: Customer,
     business_reference_now,
@@ -420,7 +420,7 @@ def test_delete_unused_monthly_pass_remains_available_for_data_cleanup(
 
     response = client.delete(
         f"/api/v1/monthly-passes/{monthly_pass.id}",
-        headers=make_headers(test_user),
+        headers=make_headers(manager_user),
     )
 
     assert response.status_code == 204
@@ -440,7 +440,7 @@ def test_pytest_uses_isolated_database_engine():
 
 
 def test_create_rejects_active_pass_overlap_at_inclusive_boundary(
-    client: TestClient, db_session: Session, test_user: User,
+    client: TestClient, db_session: Session, manager_user: User,
     vehicle: Vehicle, customer: Customer,
 ):
     """Hai khoảng active chạm nhau tại một ngày vẫn là giao nhau.
@@ -466,7 +466,7 @@ def test_create_rejects_active_pass_overlap_at_inclusive_boundary(
             "end_date": existing_start.isoformat(),
             "is_active": True,
         },
-        headers=make_headers(test_user),
+        headers=make_headers(manager_user),
     )
 
     assert response.status_code == 409
@@ -475,7 +475,7 @@ def test_create_rejects_active_pass_overlap_at_inclusive_boundary(
 
 
 def test_partial_update_rejects_merged_interval_overlap_and_keeps_db_unchanged(
-    client: TestClient, db_session: Session, test_user: User,
+    client: TestClient, db_session: Session, manager_user: User,
     vehicle: Vehicle, customer: Customer,
 ):
     """PUT chỉ end_date phải ghép với start_date hiện có trước
@@ -501,7 +501,7 @@ def test_partial_update_rejects_merged_interval_overlap_and_keeps_db_unchanged(
     response = client.put(
         f"/api/v1/monthly-passes/{target.id}",
         json={"end_date": blocker.start_date.isoformat()},
-        headers=make_headers(test_user),
+        headers=make_headers(manager_user),
     )
 
     assert response.status_code == 409
@@ -511,7 +511,7 @@ def test_partial_update_rejects_merged_interval_overlap_and_keeps_db_unchanged(
 
 
 def test_create_allows_disjoint_active_intervals_for_same_vehicle(
-    client: TestClient, db_session: Session, test_user: User,
+    client: TestClient, db_session: Session, manager_user: User,
     vehicle: Vehicle, customer: Customer,
 ):
     """Hai vé active cùng xe được phép khi vé sau bắt đầu từ
@@ -536,7 +536,7 @@ def test_create_allows_disjoint_active_intervals_for_same_vehicle(
             "end_date": (next_start + datetime.timedelta(days=10)).isoformat(),
             "is_active": True,
         },
-        headers=make_headers(test_user),
+        headers=make_headers(manager_user),
     )
 
     assert response.status_code == 201
@@ -544,7 +544,7 @@ def test_create_allows_disjoint_active_intervals_for_same_vehicle(
 
 
 def test_partial_update_allows_disjoint_interval_and_excludes_self(
-    client: TestClient, db_session: Session, test_user: User,
+    client: TestClient, db_session: Session, manager_user: User,
     vehicle: Vehicle, customer: Customer,
 ):
     """PUT partial hợp lệ không được xung đột với chính record;
@@ -568,7 +568,7 @@ def test_partial_update_allows_disjoint_interval_and_excludes_self(
     response = client.put(
         f"/api/v1/monthly-passes/{target.id}",
         json={"start_date": new_start.isoformat()},
-        headers=make_headers(test_user),
+        headers=make_headers(manager_user),
     )
 
     assert response.status_code == 200
@@ -688,7 +688,7 @@ def test_migration_fails_loudly_on_legacy_monthly_pass_overlap(tmp_path):
 
 
 def test_update_only_start_date_after_end_rejected(
-    client: TestClient, db_session: Session, test_user: User,
+    client: TestClient, db_session: Session, manager_user: User,
     vehicle: Vehicle, customer: Customer,
 ):
     """PUT chỉ start_date thành ngày SAU end_date hiện có -> 422, DB không đổi."""
@@ -701,7 +701,7 @@ def test_update_only_start_date_after_end_rejected(
     response = client.put(
         f"/api/v1/monthly-passes/{monthly_pass.id}",
         json={"start_date": bad_start},
-        headers=make_headers(test_user),
+        headers=make_headers(manager_user),
     )
 
     assert response.status_code == 422
@@ -711,7 +711,7 @@ def test_update_only_start_date_after_end_rejected(
 
 
 def test_update_only_end_date_before_start_rejected(
-    client: TestClient, db_session: Session, test_user: User,
+    client: TestClient, db_session: Session, manager_user: User,
     vehicle: Vehicle, customer: Customer,
 ):
     """PUT chỉ end_date thành ngày TRƯỚC start_date hiện có -> 422, DB không đổi."""
@@ -725,7 +725,7 @@ def test_update_only_end_date_before_start_rejected(
     response = client.put(
         f"/api/v1/monthly-passes/{monthly_pass.id}",
         json={"end_date": bad_end},
-        headers=make_headers(test_user),
+        headers=make_headers(manager_user),
     )
 
     assert response.status_code == 422
@@ -734,7 +734,7 @@ def test_update_only_end_date_before_start_rejected(
 
 
 def test_update_valid_dates_succeeds(
-    client: TestClient, db_session: Session, test_user: User,
+    client: TestClient, db_session: Session, manager_user: User,
     vehicle: Vehicle, customer: Customer,
 ):
     """Gia hạn hợp lệ (chỉ gửi end_date mới, vẫn >= start_date) -> 200."""
@@ -746,7 +746,7 @@ def test_update_valid_dates_succeeds(
     response = client.put(
         f"/api/v1/monthly-passes/{monthly_pass.id}",
         json={"end_date": new_end},
-        headers=make_headers(test_user),
+        headers=make_headers(manager_user),
     )
 
     assert response.status_code == 200
@@ -757,14 +757,14 @@ def test_update_valid_dates_succeeds(
 
 
 def test_list_still_works_after_failed_update(
-    client: TestClient, db_session: Session, test_user: User,
+    client: TestClient, db_session: Session, manager_user: User,
     vehicle: Vehicle, customer: Customer,
 ):
     """Request lỗi không được 'đầu độc' GET danh sách cho các vé khác."""
     monthly_pass = _create_pass(
         db_session, vehicle, customer, TODAY, TODAY + datetime.timedelta(days=10)
     )
-    headers = make_headers(test_user)
+    headers = make_headers(manager_user)
 
     bad_start = (TODAY + datetime.timedelta(days=99)).isoformat()
     failed = client.put(
@@ -782,12 +782,12 @@ def test_list_still_works_after_failed_update(
 
 
 def test_response_contract_includes_vehicle_and_customer(
-    client: TestClient, db_session: Session, test_user: User,
+    client: TestClient, db_session: Session, manager_user: User,
     vehicle: Vehicle, customer: Customer,
 ):
     """GET/POST/PUT phải trả cùng contract: nhúng vehicle.license_plate và
     customer.full_name mà bảng frontend hiển thị."""
-    headers = make_headers(test_user)
+    headers = make_headers(manager_user)
     payload = {
         "customer_id": customer.id,
         "vehicle_id": vehicle.id,
@@ -825,7 +825,7 @@ def test_response_contract_includes_vehicle_and_customer(
 
 
 def test_list_survives_legacy_corrupted_row(
-    client: TestClient, db_session: Session, test_user: User,
+    client: TestClient, db_session: Session, manager_user: User,
     vehicle: Vehicle, customer: Customer,
 ):
     """Bản ghi cũ lỡ sai khoảng ngày (tạo trước khi có validation) không được
@@ -843,7 +843,7 @@ def test_list_survives_legacy_corrupted_row(
     db_session.add(corrupted)
     db_session.commit()
 
-    response = client.get("/api/v1/monthly-passes", headers=make_headers(test_user))
+    response = client.get("/api/v1/monthly-passes", headers=make_headers(manager_user))
     assert response.status_code == 200
     assert len(response.json()) == 1
 
@@ -854,7 +854,7 @@ def test_list_survives_legacy_corrupted_row(
 
 
 def test_create_persists_pass_code_and_price(
-    client: TestClient, db_session: Session, test_user: User,
+    client: TestClient, db_session: Session, manager_user: User,
     vehicle: Vehicle, customer: Customer,
 ):
     """POST không được silent-drop: pass_code (đã chuẩn hóa) và price phải
@@ -869,7 +869,7 @@ def test_create_persists_pass_code_and_price(
     }
 
     response = client.post(
-        "/api/v1/monthly-passes", json=payload, headers=make_headers(test_user)
+        "/api/v1/monthly-passes", json=payload, headers=make_headers(manager_user)
     )
 
     assert response.status_code == 201
@@ -883,7 +883,7 @@ def test_create_persists_pass_code_and_price(
 
 
 def test_create_requires_pass_code(
-    client: TestClient, test_user: User, vehicle: Vehicle, customer: Customer,
+    client: TestClient, manager_user: User, vehicle: Vehicle, customer: Customer,
 ):
     """pass_code là bắt buộc — thiếu phải trả 422, không được lặng lẽ chấp nhận."""
     payload = {
@@ -894,13 +894,13 @@ def test_create_requires_pass_code(
         "end_date": (TODAY + datetime.timedelta(days=30)).isoformat(),
     }
     response = client.post(
-        "/api/v1/monthly-passes", json=payload, headers=make_headers(test_user)
+        "/api/v1/monthly-passes", json=payload, headers=make_headers(manager_user)
     )
     assert response.status_code == 422
 
 
 def test_create_rejects_unknown_fields(
-    client: TestClient, test_user: User, vehicle: Vehicle, customer: Customer,
+    client: TestClient, manager_user: User, vehicle: Vehicle, customer: Customer,
 ):
     """extra='forbid': field lạ trong payload phải bị từ chối (422),
     không còn bị Pydantic âm thầm loại bỏ."""
@@ -914,17 +914,17 @@ def test_create_rejects_unknown_fields(
         "totally_unknown_field": "x",
     }
     response = client.post(
-        "/api/v1/monthly-passes", json=payload, headers=make_headers(test_user)
+        "/api/v1/monthly-passes", json=payload, headers=make_headers(manager_user)
     )
     assert response.status_code == 422
 
 
 def test_duplicate_pass_code_rejected(
-    client: TestClient, db_session: Session, test_user: User,
+    client: TestClient, db_session: Session, manager_user: User,
     vehicle: Vehicle, customer: Customer,
 ):
     """pass_code trùng (kể cả khác hoa/thường, thừa khoảng trắng) -> 400."""
-    headers = make_headers(test_user)
+    headers = make_headers(manager_user)
     base_payload = {
         "customer_id": customer.id,
         "vehicle_id": vehicle.id,
@@ -947,7 +947,7 @@ def test_duplicate_pass_code_rejected(
 
 
 def test_negative_price_rejected(
-    client: TestClient, test_user: User, vehicle: Vehicle, customer: Customer,
+    client: TestClient, manager_user: User, vehicle: Vehicle, customer: Customer,
 ):
     payload = {
         "customer_id": customer.id,
@@ -958,17 +958,17 @@ def test_negative_price_rejected(
         "end_date": (TODAY + datetime.timedelta(days=30)).isoformat(),
     }
     response = client.post(
-        "/api/v1/monthly-passes", json=payload, headers=make_headers(test_user)
+        "/api/v1/monthly-passes", json=payload, headers=make_headers(manager_user)
     )
     assert response.status_code == 422
 
 
 def test_update_pass_code_checks_duplicate(
-    client: TestClient, db_session: Session, test_user: User,
+    client: TestClient, db_session: Session, manager_user: User,
     vehicle: Vehicle, customer: Customer,
 ):
     """PUT đổi pass_code sang mã đã thuộc vé khác -> 400; đổi sang mã mới -> 200."""
-    headers = make_headers(test_user)
+    headers = make_headers(manager_user)
     pass_a = _create_pass(db_session, vehicle, customer, TODAY, TODAY + datetime.timedelta(days=10))
     pass_a.pass_code = "NFC-A"
     pass_b = MonthlyPass(
@@ -996,7 +996,7 @@ def test_update_pass_code_checks_duplicate(
 
 
 def test_legacy_row_without_pass_code_serializes_safely(
-    client: TestClient, db_session: Session, test_user: User,
+    client: TestClient, db_session: Session, manager_user: User,
     vehicle: Vehicle, customer: Customer,
 ):
     """Bản ghi cũ (pass_code NULL, price backfill 0) phải serialize an toàn."""
@@ -1005,7 +1005,7 @@ def test_legacy_row_without_pass_code_serializes_safely(
     )
     assert legacy.pass_code is None
 
-    response = client.get("/api/v1/monthly-passes", headers=make_headers(test_user))
+    response = client.get("/api/v1/monthly-passes", headers=make_headers(manager_user))
     assert response.status_code == 200
     row = response.json()[0]
     assert row["pass_code"] is None
@@ -1023,7 +1023,7 @@ def test_legacy_row_without_pass_code_serializes_safely(
 )
 def test_update_rejects_explicit_null(
     field_name: str,
-    client: TestClient, db_session: Session, test_user: User,
+    client: TestClient, db_session: Session, manager_user: User,
     vehicle: Vehicle, customer: Customer,
 ):
     """Key có mặt với giá trị null -> 422 (chỉ rõ field), DB giữ nguyên,
@@ -1034,7 +1034,7 @@ def test_update_rejects_explicit_null(
     monthly_pass.pass_code = "NFC-NULLTEST"
     monthly_pass.price = 123000
     db_session.commit()
-    headers = make_headers(test_user)
+    headers = make_headers(manager_user)
 
     snapshot = {
         "customer_id": monthly_pass.customer_id,
@@ -1065,7 +1065,7 @@ def test_update_rejects_explicit_null(
 
 
 def test_partial_update_single_fields_still_work(
-    client: TestClient, db_session: Session, test_user: User,
+    client: TestClient, db_session: Session, manager_user: User,
     vehicle: Vehicle, customer: Customer,
 ):
     """Partial update hợp lệ không bắt buộc gửi lại toàn bộ object:
@@ -1073,7 +1073,7 @@ def test_partial_update_single_fields_still_work(
     monthly_pass = _create_pass(
         db_session, vehicle, customer, TODAY, TODAY + datetime.timedelta(days=10)
     )
-    headers = make_headers(test_user)
+    headers = make_headers(manager_user)
 
     only_price = client.put(
         f"/api/v1/monthly-passes/{monthly_pass.id}",

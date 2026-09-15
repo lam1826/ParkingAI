@@ -27,13 +27,13 @@ def make_headers(user: User) -> dict[str, str]:
 def test_client_cannot_create_slot_as_occupied(
     client: TestClient,
     db_session: Session,
-    test_user: User,
+    manager_user: User,
     zone: Zone,
     vehicle_type: VehicleType,
 ):
     response = client.post(
         "/api/v1/parking-slots",
-        headers=make_headers(test_user),
+        headers=make_headers(manager_user),
         json={
             "slot_name": "A-CLIENT-STATE",
             "zone_id": zone.id,
@@ -50,14 +50,14 @@ def test_client_cannot_create_slot_as_occupied(
 def test_client_cannot_update_slot_occupancy(
     client: TestClient,
     db_session: Session,
-    test_user: User,
+    manager_user: User,
     parking_slot: ParkingSlot,
 ):
     original_state = parking_slot.is_occupied
 
     response = client.put(
         f"/api/v1/parking-slots/{parking_slot.id}",
-        headers=make_headers(test_user),
+        headers=make_headers(manager_user),
         json={"is_occupied": not original_state},
     )
 
@@ -167,7 +167,7 @@ def test_available_slot_summary_excludes_inactive_zones(
 def test_parking_statistics_exclude_inactive_zones(
     client: TestClient,
     db_session: Session,
-    test_user: User,
+    manager_user: User,
     zone: Zone,
     vehicle_type: VehicleType,
 ):
@@ -192,7 +192,7 @@ def test_parking_statistics_exclude_inactive_zones(
     )
     db_session.commit()
 
-    response = client.get("/parking/statistics", headers=make_headers(test_user))
+    response = client.get("/parking/statistics", headers=make_headers(manager_user))
 
     assert response.status_code == 200
     assert response.json()["available_slots"] == 0
@@ -202,7 +202,7 @@ def test_parking_statistics_exclude_inactive_zones(
 def test_dashboard_occupancy_excludes_inactive_zones(
     client: TestClient,
     db_session: Session,
-    test_user: User,
+    manager_user: User,
     zone: Zone,
     vehicle_type: VehicleType,
 ):
@@ -218,7 +218,7 @@ def test_dashboard_occupancy_excludes_inactive_zones(
     )
     db_session.commit()
 
-    response = client.get("/dashboard", headers=make_headers(test_user))
+    response = client.get("/dashboard", headers=make_headers(manager_user))
 
     assert response.status_code == 200
     assert response.json()["occupancy_rate_percentage"] == 0.0
@@ -227,7 +227,7 @@ def test_dashboard_occupancy_excludes_inactive_zones(
 def test_create_slot_rejects_zone_capacity_overflow(
     client: TestClient,
     db_session: Session,
-    test_user: User,
+    manager_user: User,
     zone: Zone,
     vehicle_type: VehicleType,
 ):
@@ -245,7 +245,7 @@ def test_create_slot_rejects_zone_capacity_overflow(
 
     response = client.post(
         "/api/v1/parking-slots",
-        headers=make_headers(test_user),
+        headers=make_headers(manager_user),
         json={
             "slot_name": "A-CAPACITY-02",
             "zone_id": zone.id,
@@ -262,7 +262,7 @@ def test_create_slot_rejects_zone_capacity_overflow(
 def test_move_slot_rejects_full_destination_zone(
     client: TestClient,
     db_session: Session,
-    test_user: User,
+    manager_user: User,
     parking_slot: ParkingSlot,
     vehicle_type: VehicleType,
 ):
@@ -283,7 +283,7 @@ def test_move_slot_rejects_full_destination_zone(
 
     response = client.put(
         f"/api/v1/parking-slots/{parking_slot.id}",
-        headers=make_headers(test_user),
+        headers=make_headers(manager_user),
         json={"zone_id": destination.id},
     )
 
@@ -296,13 +296,13 @@ def test_move_slot_rejects_full_destination_zone(
 def test_zone_capacity_cannot_be_reduced_below_existing_slot_count(
     client: TestClient,
     db_session: Session,
-    test_user: User,
+    manager_user: User,
     zone: Zone,
     parking_slot: ParkingSlot,
 ):
     response = client.put(
         f"/api/v1/zones/{zone.id}",
-        headers=make_headers(test_user),
+        headers=make_headers(manager_user),
         json={"capacity": 0},
     )
 
@@ -316,12 +316,12 @@ def test_zone_capacity_cannot_be_reduced_below_existing_slot_count(
 def test_zone_name_is_trimmed_and_unique_case_insensitively(
     client: TestClient,
     db_session: Session,
-    test_user: User,
+    manager_user: User,
     zone: Zone,
 ):
     response = client.post(
         "/api/v1/zones",
-        headers=make_headers(test_user),
+        headers=make_headers(manager_user),
         json={"name": "  kHU a  ", "capacity": 10, "is_active": True},
     )
 
@@ -333,7 +333,7 @@ def test_zone_name_is_trimmed_and_unique_case_insensitively(
 def test_zone_update_rejects_another_zone_name(
     client: TestClient,
     db_session: Session,
-    test_user: User,
+    manager_user: User,
     zone: Zone,
 ):
     other_zone = Zone(name="Khu B", capacity=10, is_active=True)
@@ -342,7 +342,7 @@ def test_zone_update_rejects_another_zone_name(
 
     response = client.put(
         f"/api/v1/zones/{other_zone.id}",
-        headers=make_headers(test_user),
+        headers=make_headers(manager_user),
         json={"name": " khu a "},
     )
 
@@ -354,7 +354,7 @@ def test_zone_update_rejects_another_zone_name(
 def test_zone_name_uniqueness_uses_unicode_casefold(
     client: TestClient,
     db_session: Session,
-    test_user: User,
+    manager_user: User,
     zone: Zone,
 ):
     zone.name = "KHU ĐỖ"
@@ -362,7 +362,7 @@ def test_zone_name_uniqueness_uses_unicode_casefold(
 
     response = client.post(
         "/api/v1/zones",
-        headers=make_headers(test_user),
+        headers=make_headers(manager_user),
         json={"name": " khu đỗ ", "capacity": 10, "is_active": True},
     )
 
@@ -373,14 +373,14 @@ def test_zone_name_uniqueness_uses_unicode_casefold(
 def test_slot_code_is_normalized_and_unique_case_insensitively(
     client: TestClient,
     db_session: Session,
-    test_user: User,
+    manager_user: User,
     zone: Zone,
     vehicle_type: VehicleType,
     parking_slot: ParkingSlot,
 ):
     response = client.post(
         "/api/v1/parking-slots",
-        headers=make_headers(test_user),
+        headers=make_headers(manager_user),
         json={
             "slot_name": " a-01 ",
             "zone_id": zone.id,
@@ -397,7 +397,7 @@ def test_slot_code_is_normalized_and_unique_case_insensitively(
 def test_slot_update_rejects_another_slot_code(
     client: TestClient,
     db_session: Session,
-    test_user: User,
+    manager_user: User,
     zone: Zone,
     vehicle_type: VehicleType,
     parking_slot: ParkingSlot,
@@ -414,7 +414,7 @@ def test_slot_update_rejects_another_slot_code(
 
     response = client.put(
         f"/api/v1/parking-slots/{other_slot.id}",
-        headers=make_headers(test_user),
+        headers=make_headers(manager_user),
         json={"slot_name": " a-01 "},
     )
 
@@ -426,12 +426,12 @@ def test_slot_update_rejects_another_slot_code(
 def test_create_slot_rejects_missing_vehicle_type_before_write(
     client: TestClient,
     db_session: Session,
-    test_user: User,
+    manager_user: User,
     zone: Zone,
 ):
     response = client.post(
         "/api/v1/parking-slots",
-        headers=make_headers(test_user),
+        headers=make_headers(manager_user),
         json={
             "slot_name": "A-NO-TYPE",
             "zone_id": zone.id,
@@ -448,14 +448,14 @@ def test_create_slot_rejects_missing_vehicle_type_before_write(
 def test_update_slot_rejects_missing_vehicle_type_before_write(
     client: TestClient,
     db_session: Session,
-    test_user: User,
+    manager_user: User,
     parking_slot: ParkingSlot,
 ):
     original_type_id = parking_slot.vehicle_type_id
 
     response = client.put(
         f"/api/v1/parking-slots/{parking_slot.id}",
-        headers=make_headers(test_user),
+        headers=make_headers(manager_user),
         json={"vehicle_type_id": 999999},
     )
 
@@ -468,13 +468,13 @@ def test_update_slot_rejects_missing_vehicle_type_before_write(
 def test_slot_create_normalizes_code_and_keeps_server_occupancy_default(
     client: TestClient,
     db_session: Session,
-    test_user: User,
+    manager_user: User,
     zone: Zone,
     vehicle_type: VehicleType,
 ):
     response = client.post(
         "/api/v1/parking-slots",
-        headers=make_headers(test_user),
+        headers=make_headers(manager_user),
         json={
             "slot_name": " b-02 ",
             "zone_id": zone.id,
@@ -495,13 +495,13 @@ def test_slot_create_normalizes_code_and_keeps_server_occupancy_default(
 def test_active_session_blocks_slot_deactivation(
     client: TestClient,
     db_session: Session,
-    test_user: User,
+    manager_user: User,
     parking_slot: ParkingSlot,
     parking_session: ParkingSession,
 ):
     response = client.put(
         f"/api/v1/parking-slots/{parking_slot.id}",
-        headers=make_headers(test_user),
+        headers=make_headers(manager_user),
         json={"is_active": False},
     )
 
@@ -515,14 +515,14 @@ def test_active_session_blocks_slot_deactivation(
 def test_active_session_blocks_zone_deactivation(
     client: TestClient,
     db_session: Session,
-    test_user: User,
+    manager_user: User,
     zone: Zone,
     parking_slot: ParkingSlot,
     parking_session: ParkingSession,
 ):
     response = client.put(
         f"/api/v1/zones/{zone.id}",
-        headers=make_headers(test_user),
+        headers=make_headers(manager_user),
         json={"is_active": False},
     )
 
@@ -537,13 +537,13 @@ def test_active_session_blocks_zone_deactivation(
 def test_slot_with_session_history_cannot_be_deleted(
     client: TestClient,
     db_session: Session,
-    test_user: User,
+    manager_user: User,
     parking_slot: ParkingSlot,
     parking_session: ParkingSession,
 ):
     response = client.delete(
         f"/api/v1/parking-slots/{parking_slot.id}",
-        headers=make_headers(test_user),
+        headers=make_headers(manager_user),
     )
 
     assert response.status_code == 409
@@ -556,13 +556,13 @@ def test_slot_with_session_history_cannot_be_deleted(
 def test_zone_with_slots_cannot_be_deleted(
     client: TestClient,
     db_session: Session,
-    test_user: User,
+    manager_user: User,
     zone: Zone,
     parking_slot: ParkingSlot,
 ):
     response = client.delete(
         f"/api/v1/zones/{zone.id}",
-        headers=make_headers(test_user),
+        headers=make_headers(manager_user),
     )
 
     assert response.status_code == 409
@@ -585,7 +585,7 @@ def test_zone_with_slots_cannot_be_deleted(
 )
 def test_partial_updates_reject_explicit_null(
     client: TestClient,
-    test_user: User,
+    manager_user: User,
     zone: Zone,
     parking_slot: ParkingSlot,
     resource: str,
@@ -593,19 +593,19 @@ def test_partial_updates_reject_explicit_null(
 ):
     resource_id = zone.id if resource == "zones" else parking_slot.id
     before = client.get(
-        f"/api/v1/{resource}/{resource_id}", headers=make_headers(test_user)
+        f"/api/v1/{resource}/{resource_id}", headers=make_headers(manager_user)
     ).json()
 
     response = client.put(
         f"/api/v1/{resource}/{resource_id}",
-        headers=make_headers(test_user),
+        headers=make_headers(manager_user),
         json={field: None},
     )
 
     assert response.status_code == 422
     assert field in str(response.json())
     after = client.get(
-        f"/api/v1/{resource}/{resource_id}", headers=make_headers(test_user)
+        f"/api/v1/{resource}/{resource_id}", headers=make_headers(manager_user)
     ).json()
     assert after == before
 
@@ -981,7 +981,9 @@ def test_migration_adds_zone_slot_operational_race_backstops(tmp_path):
         connection.exec_driver_sql(
             "CREATE TABLE parking_sessions ("
             "id VARCHAR(36) PRIMARY KEY, vehicle_id INTEGER NOT NULL, "
-            "parking_slot_id INTEGER, parking_fee INTEGER, "
+            "parking_slot_id INTEGER, monthly_pass_id INTEGER, "
+            "check_in_time DATETIME NOT NULL, check_out_time DATETIME, "
+            "staff_in_id INTEGER NOT NULL, staff_out_id INTEGER, parking_fee INTEGER, "
             "status VARCHAR(20) NOT NULL)"
         )
 
@@ -1088,7 +1090,7 @@ def test_migration_rejects_invalid_legacy_zone_capacity(
 def test_slot_cannot_move_zone_after_completed_history(
     client: TestClient,
     db_session: Session,
-    test_user: User,
+    manager_user: User,
     parking_session: ParkingSession,
     parking_slot: ParkingSlot,
 ):
@@ -1096,7 +1098,7 @@ def test_slot_cannot_move_zone_after_completed_history(
     parking_session.status = "completed"
     parking_session.check_out_time = parking_session.check_in_time
     parking_session.parking_fee = 0
-    parking_session.staff_out_id = test_user.id
+    parking_session.staff_out_id = manager_user.id
     parking_slot.is_occupied = False
     destination = Zone(name="Khu lịch sử", capacity=10, is_active=True)
     db_session.add(destination)
@@ -1105,7 +1107,7 @@ def test_slot_cannot_move_zone_after_completed_history(
     response = client.put(
         f"/api/v1/parking-slots/{parking_slot.id}",
         json={"zone_id": destination.id},
-        headers=make_headers(test_user),
+        headers=make_headers(manager_user),
     )
 
     assert response.status_code == 409

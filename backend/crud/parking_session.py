@@ -8,6 +8,7 @@ from crud import price_config as crud_price_config
 from models.parking_session import ParkingSession
 from models.parking_slot import ParkingSlot
 from models.monthly_pass import MonthlyPass
+from models.vehicle import Vehicle
 from models.zone import Zone
 from schemas import parking_session as session_schema
 
@@ -164,6 +165,19 @@ def resolve_check_in_monthly_pass_id(
     billing still has a stable rate contract to fall back to.
     """
     check_in_date = check_in_time.date()
+    # All HTTP admission paths (plate, legacy vehicle ID, reserved arrival)
+    # resolve entitlement here before claiming the slot. Hold the type's
+    # shared lock through insertion so a manager cannot deactivate in between.
+    from crud.vehicle_type import require_active_vehicle_type
+    require_active_vehicle_type(db, vehicle_type_id)
+    from expansion.timed_parking_models import TimedParkingPass
+    vehicle = db.get(Vehicle, vehicle_id)
+    prepaid = db.scalar(select(TimedParkingPass.id).where(TimedParkingPass.vehicle_id == vehicle_id,
+        TimedParkingPass.customer_id == vehicle.customer_id, TimedParkingPass.site_id == site_id,
+        TimedParkingPass.status == "ready", TimedParkingPass.start_at <= check_in_time,
+        TimedParkingPass.arrival_deadline > check_in_time).limit(1))
+    if prepaid:
+        return None
     effective_price = crud_price_config.get_effective_active_price_by_vehicle_type(
         db,
         vehicle_type_id=vehicle_type_id,
@@ -258,6 +272,13 @@ def create_parking_session(
     monthly_coverage_end: date | None = None,
 ) -> ParkingSession:
     """Persist a prepared check-in without sampling a second clock."""
+    vehicle = db.get(Vehicle, session_in.vehicle_id)
+    from expansion.timed_parking_service import admission_snapshot
+    snapshot = admission_snapshot(db, vehicle, session_in.parking_slot_id, check_in_time)
+    if snapshot is not None:
+        monthly_pass_id = monthly_coverage_end = None
+    else:
+        snapshot = resolve_check_in_billing_snapshot(db, vehicle.vehicle_type_id, check_in_time)
     db_session = ParkingSession(
         vehicle_id=session_in.vehicle_id,
         parking_slot_id=session_in.parking_slot_id,
@@ -265,7 +286,8 @@ def create_parking_session(
         monthly_coverage_end=monthly_coverage_end,
         check_in_time=check_in_time,
         staff_in_id=staff_in_id,
-        status="active"
+        status="active",
+        **snapshot,
     )
     db.add(db_session)
     db.flush()
@@ -281,3 +303,14 @@ def delete_parking_session(db: Session, db_session: ParkingSession) -> ParkingSe
     db.delete(db_session)
     db.commit()
     return db_session
+
+
+def resolve_check_in_billing_snapshot(db: Session, vehicle_type_id: int, check_in_time: datetime) -> dict:
+    """Hold the selected tariff through admission; edits affect later stays."""
+    from core.billing import snapshot_values
+    rate = crud_price_config.get_effective_active_price_by_vehicle_type(
+        db, vehicle_type_id, check_in_time.date(), lock=True,
+    )
+    if rate is None:
+        raise MissingEffectiveCheckInPriceError()
+    return snapshot_values(rate)

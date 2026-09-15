@@ -40,9 +40,40 @@ def period_bounds(period, anchor):
         raise HTTPException(422, "Ngày nằm ngoài phạm vi báo cáo được hỗ trợ.") from error
 
 
+def data_scope(db, actor, site_id):
+    """Both account role and site membership must permit financial access."""
+    require_site_access(db, actor, site_id)
+    try:
+        require_site_access(db, actor, site_id, minimum_role="manager")
+    except HTTPException as error:
+        if error.status_code != 403:
+            raise
+        return "operations"
+    return "management"
+
+
+def financial_summary(db, site_id, start, end):
+    parking = monthly = prepaid = refunds = demo_receipts = demo_refunds = 0
+    for source, kind, amount, method in db.execute(select(Payment.source_type, Payment.kind, Payment.amount, Payment.method).where(
+        Payment.site_id == site_id, Payment.created_at >= start, Payment.created_at < end)):
+        value = require_exact_vnd(amount)
+        if method == "demo":
+            if kind == "refund": demo_refunds += value
+            else: demo_receipts += value
+        elif kind == "refund": refunds += value
+        elif source in {"parking_session", "session_credit"}: parking += value
+        elif source == "monthly_pass": monthly += value
+        elif source == "portal_order": prepaid += value
+    return {"parking_revenue": require_exact_vnd(parking), "monthly_pass_revenue": require_exact_vnd(monthly),
+            "prepaid_revenue": require_exact_vnd(prepaid),
+            "refunds": require_exact_vnd(refunds), "total_revenue": signed_exact_vnd(parking + monthly + prepaid - refunds),
+            "demo_receipts": require_exact_vnd(demo_receipts), "demo_refunds": require_exact_vnd(demo_refunds)}
+
+
 def summarize(db, actor, site_id, period="day", anchor_date=None):
     from expansion.site_service import availability
     site = require_site_access(db, actor, site_id)
+    scope = data_scope(db, actor, site_id)
     anchor = anchor_date or business_today()
     start, end = period_bounds(period, anchor)
     slot_ids = select(ParkingSlot.id).join(Zone).where(Zone.site_id == site_id)
@@ -52,18 +83,14 @@ def summarize(db, actor, site_id, period="day", anchor_date=None):
     day = day_bucket(ParkingSession.check_in_time)
     hours = {int(h): count for h, count in db.execute(select(hour, func.count()).where(*incoming).group_by(hour))}
     days = {str(d): count for d, count in db.execute(select(day, func.count()).where(*incoming).group_by(day))}
-    departed = db.scalar(select(func.count()).select_from(ParkingSession).where(*base,
-        ParkingSession.check_out_time >= start, ParkingSession.check_out_time < end))
-    parking = monthly = refunds = demo_receipts = demo_refunds = 0
-    for source, kind, amount, method in db.execute(select(Payment.source_type, Payment.kind, Payment.amount, Payment.method).where(
-        Payment.site_id == site_id, Payment.created_at >= start, Payment.created_at < end)):
-        value = require_exact_vnd(amount)
-        if method == "demo":
-            if kind == "refund": demo_refunds += value
-            else: demo_receipts += value
-        elif kind == "refund": refunds += value
-        elif source == "parking_session": parking += value
-        else: monthly += value
+    outgoing = (*base, ParkingSession.check_out_time >= start, ParkingSession.check_out_time < end)
+    exit_hour = hour_bucket(ParkingSession.check_out_time)
+    exit_day = day_bucket(ParkingSession.check_out_time)
+    exit_hours = {int(h): count for h, count in db.execute(select(exit_hour, func.count()).where(*outgoing).group_by(exit_hour))}
+    exit_days = {str(d): count for d, count in db.execute(select(exit_day, func.count()).where(*outgoing).group_by(exit_day))}
+    departed = sum(exit_hours.values())
+    # Do not read the ledger at all for operational users, including AI input.
+    revenue = financial_summary(db, site_id, start, end) if scope == "management" else None
     current = availability(db, site_id)
     zones = {}
     for slot in current.pop("slots"):
@@ -75,18 +102,25 @@ def summarize(db, actor, site_id, period="day", anchor_date=None):
     current.update(as_of=business_now().replace(tzinfo=BUSINESS_TZ).isoformat(), zones=list(zones.values()),
                    occupancy_rate=round(100 * current["occupied"] / current["total"], 2) if current["total"] else None)
     peak = max(hours.values(), default=0)
+    departure_peak = max(exit_hours.values(), default=0)
+    movements = {h: hours.get(h, 0) + exit_hours.get(h, 0) for h in range(24)}
+    movement_peak = max(movements.values(), default=0)
     return {"site_id": site_id, "site_name": site.name, "period": period, "start_date": str(start.date()),
             "end_date": str(anchor), "timezone": "Asia/Ho_Chi_Minh", "source": "database", "demo_mode": settings.PARKINGAI_SHOWCASE_MODE,
+            "data_scope": scope,
             "total_arrivals": sum(hours.values()), "total_departures": departed,
-            "hourly_traffic": [{"hour": f"{h:02d}:00", "arrivals": hours.get(h, 0)} for h in range(24)],
-            "daily_traffic": [{"date": str((start + timedelta(days=i)).date()), "arrivals": days.get(str((start + timedelta(days=i)).date()), 0)} for i in range((end-start).days)],
+            "total_movements": sum(movements.values()),
+            "hourly_traffic": [{"hour": f"{h:02d}:00", "arrivals": hours.get(h, 0), "departures": exit_hours.get(h, 0), "movements": movements[h]} for h in range(24)],
+            "daily_traffic": [{"date": str(d), "arrivals": days.get(str(d), 0), "departures": exit_days.get(str(d), 0),
+                               "movements": days.get(str(d), 0) + exit_days.get(str(d), 0)}
+                              for d in ((start + timedelta(days=i)).date() for i in range((end-start).days))],
             "peak_hours": [f"{h:02d}:00" for h, count in sorted(hours.items()) if count == peak and peak > 0],
-            "revenue": {"parking_revenue": require_exact_vnd(parking), "monthly_pass_revenue": require_exact_vnd(monthly),
-                "refunds": require_exact_vnd(refunds), "total_revenue": signed_exact_vnd(parking + monthly - refunds),
-                "demo_receipts": require_exact_vnd(demo_receipts), "demo_refunds": require_exact_vnd(demo_refunds)},
+            "peak_departure_hours": [f"{h:02d}:00" for h, count in sorted(exit_hours.items()) if count == departure_peak and departure_peak > 0],
+            "peak_movement_hours": [f"{h:02d}:00" for h, count in movements.items() if count == movement_peak and movement_peak > 0],
+            "revenue": revenue,
             "current_availability": current,
             "notes": ["Ngày cuối được tính trọn ngày; tuần là 7 ngày kết thúc ở ngày đã chọn.",
-                "Cao điểm dựa trên lượt vào, gộp cùng giờ trong kỳ. Chỗ trống và tỷ lệ lấp đầy là thời điểm as_of, không phải số đo của kỳ lịch sử.",
+                "Cao điểm tách lượt vào, lượt ra và tổng vào + ra; gộp cùng giờ trong kỳ. Tổng giao dịch vào/ra không phải số xe duy nhất. Chỗ trống và tỷ lệ lấp đầy là thời điểm as_of, không phải số đo của kỳ lịch sử.",
                 "Doanh thu là chứng từ thu trừ hoàn trong kỳ; loại khoản demo và lịch sử chưa xác định bãi.",
                 "Chế độ đồ án có dữ liệu mẫu; không dùng để kết luận vận hành thực tế." if settings.PARKINGAI_SHOWCASE_MODE else "Không có năng suất nhân viên đã được đo trong dữ liệu này."]}
 
@@ -96,6 +130,16 @@ def summary(site_id: int, response: Response, period: Literal["day", "week"] = "
             db=Depends(get_db), actor=Depends(get_current_user)):
     response.headers["Cache-Control"] = "no-store"
     return summarize(db, actor, site_id, period, anchor_date)
+
+
+@router.get("/reports/export")
+def export_summary(site_id: int, period: Literal["day", "week"] = "day", anchor_date: date | None = None,
+                   db=Depends(get_db), actor=Depends(get_current_user)):
+    from expansion.analytics_export import summary_csv
+    data = summarize(db, actor, site_id, period, anchor_date)
+    filename = f"parking-{site_id}-{period}-{data['end_date']}.csv"
+    return Response(content=summary_csv(data), media_type="text/csv; charset=utf-8",
+                    headers={"Content-Disposition": f'attachment; filename="{filename}"', "Cache-Control": "no-store"})
 
 
 class AnalysisRequest(BaseModel):
@@ -124,8 +168,11 @@ def serialize_analysis(row):
 def history_query(db, actor, site_id):
     require_site_access(db, actor, site_id)
     query = select(SiteAiAnalysis).where(SiteAiAnalysis.site_id == site_id)
-    if actor.role.name == "staff":
-        query = query.where(SiteAiAnalysis.generated_by_id == actor.id)
+    if data_scope(db, actor, site_id) == "operations":
+        # Legacy analyses had no scope and may contain finance; keep them for
+        # managers, never guess that an old staff-generated answer is safe.
+        query = query.where(SiteAiAnalysis.generated_by_id == actor.id,
+                            SiteAiAnalysis.context["data_scope"].as_string() == "operations")
     return query
 
 
@@ -161,6 +208,8 @@ def generate_analysis(site_id: int, body: AnalysisRequest, response: Response, d
     input_hash = hashlib.sha256(json.dumps({"site_id": site_id, **body.model_dump(mode="json", exclude={"request_id"})}, sort_keys=True).encode()).hexdigest()
     existing_query = select(SiteAiAnalysis).where(SiteAiAnalysis.generated_by_id == actor.id, SiteAiAnalysis.request_id == str(body.request_id))
     def replay(row):
+        if data_scope(db, actor, site_id) == "operations" and row.context.get("data_scope") != "operations":
+            raise HTTPException(403, "Bạn không có quyền xem phân tích tài chính đã lưu.")
         if row.input_hash != input_hash:
             raise HTTPException(409, "Mã yêu cầu đã dùng cho nội dung khác. Hãy tạo yêu cầu mới.")
         return serialize_analysis(row)
@@ -176,6 +225,8 @@ def generate_analysis(site_id: int, body: AnalysisRequest, response: Response, d
         # A role/site grant may have been revoked during the provider request.
         db.expire_all()
         require_site_access(db, actor, site_id)
+        if context["data_scope"] == "management" and data_scope(db, actor, site_id) != "management":
+            raise HTTPException(403, "Quyền quản lý đã thay đổi trong khi tạo phân tích. Hãy thử lại với quyền hiện tại.")
         row = SiteAiAnalysis(id=str(uuid4()), site_id=site_id, generated_by_id=actor.id,
             request_id=str(body.request_id), input_hash=input_hash, kind=body.kind, model=service.model_name,
             context=context, content=content)

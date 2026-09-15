@@ -77,6 +77,7 @@ def check_out_endpoint(
 
 @router.get(
     "/statistics",
+    dependencies=[Depends(RoleChecker("manager"))],
     status_code=status.HTTP_200_OK,
     summary="Thống kê hoạt động bãi đỗ trong ngày"
 )
@@ -137,6 +138,7 @@ def search_parking_sessions_endpoint(
     """
     service = ParkingService(db)
     return service.search_sessions(
+        session_id=filters.session_id,
         license_plate=filters.license_plate,
         parking_status=filters.status_filter,
         date_from=filters.date_from,

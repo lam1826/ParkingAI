@@ -1,5 +1,7 @@
 # Minh chứng sử dụng AI trong SDLC – ParkingAI
 
+Đợt triển khai đã duyệt 15/09/2026: [minh chứng mới](upgrade-2026-09-15/SDLC_EVIDENCE.md), [ma trận nghiệm thu](upgrade-2026-09-15/CORE_ACCEPTANCE.md) và [kết quả triển khai](upgrade-2026-09-15/IMPLEMENTATION.md). P1 có snapshot giá/quá hạn/ngoại lệ, UAT và phục hồi. Sau phát hiện lỗi diễn giải khoảng giờ, đã sửa prompt,122test đạt và gọi lại5caGemini/30checks; review semantic và26kiểmtraUIlịch sử đạt trong phạm vi bộ ca. Các mô tả/mốc/prompt mẫu bên dưới là lịch sử, không thay bằng chứng mới hoặc chính sách `entry-v1`.
+
 > Phạm vi theo đề: [ORIGINAL_REQUIREMENTS.md](ORIGINAL_REQUIREMENTS.md). Bản `0b8c54c` đã nghiệm thu báo cáo ngày/tuần, hỏi đáp, gợi ý nhân sự, kỳ rỗng và sinh báo cáo trên website bằng Gemini thật. Đã phát hiện/sửa lỗi diễn giải tổng giờ của tuần từ kết quả live. [CORE_AI_COMPLETION.md](CORE_AI_COMPLETION.md) ghi riêng lỗi, test mock, kết quả thật và giới hạn. Các prompt mẫu/mốc cũ bên dưới là tài liệu lịch sử/tái lập, không thay log đã dùng thực tế.
 
 Phần mở rộng đồ án ngày 07/09/2026 có ma trận yêu cầu–code–test và prompt tái lập riêng tại [Minh chứng SDLC mở rộng](EXPANSION_SDLC.md); cách trình diễn QR, camera và dự báo tại [Hướng dẫn demo](DEMO_GUIDE.md).

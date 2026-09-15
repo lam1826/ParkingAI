@@ -4,6 +4,7 @@ from typing import List
 from sqlalchemy.exc import IntegrityError
 
 from database import get_db
+from services.auth_service import RoleChecker
 from schemas import vehicle_type as vt_schema
 from crud import vehicle_type as crud_vt
 
@@ -26,7 +27,8 @@ def read_vehicle_type(id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vehicle Type not found")
     return db_vt
 
-@router.post("", response_model=vt_schema.VehicleTypeResponse, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=vt_schema.VehicleTypeResponse, status_code=status.HTTP_201_CREATED,
+             dependencies=[Depends(RoleChecker("manager"))])
 def create_vehicle_type(vt_in: vt_schema.VehicleTypeCreate, db: Session = Depends(get_db)):
     """Tạo loại xe mới"""
     existing_vt = crud_vt.get_vehicle_type_by_name(db, name=vt_in.name)
@@ -41,7 +43,8 @@ def create_vehicle_type(vt_in: vt_schema.VehicleTypeCreate, db: Session = Depend
             detail="Tên loại xe đã tồn tại.",
         )
 
-@router.put("/{id}", response_model=vt_schema.VehicleTypeResponse)
+@router.put("/{id}", response_model=vt_schema.VehicleTypeResponse,
+            dependencies=[Depends(RoleChecker("manager"))])
 def update_vehicle_type(id: int, vt_in: vt_schema.VehicleTypeUpdate, db: Session = Depends(get_db)):
     """Cập nhật thông tin loại xe"""
     db_vt = crud_vt.get_vehicle_type(db, vt_id=id)
@@ -63,12 +66,17 @@ def update_vehicle_type(id: int, vt_in: vt_schema.VehicleTypeUpdate, db: Session
             detail="Tên loại xe đã tồn tại.",
         )
 
-@router.delete("/{id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{id}", status_code=status.HTTP_204_NO_CONTENT,
+               dependencies=[Depends(RoleChecker("manager"))])
 def delete_vehicle_type(id: int, db: Session = Depends(get_db)):
     """Xóa một loại xe"""
     db_vt = crud_vt.get_vehicle_type(db, vt_id=id)
     if not db_vt:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vehicle Type not found")
     
-    crud_vt.delete_vehicle_type(db=db, db_vt=db_vt)
+    try:
+        crud_vt.delete_vehicle_type(db=db, db_vt=db_vt)
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(409, "Loại xe đang được tham chiếu. Hãy ngừng sử dụng thay vì xóa.")
     return None

@@ -30,6 +30,8 @@ from expansion.site_finance import router as finance_router
 router.include_router(finance_router)
 from expansion.site_analytics import router as analytics_router
 router.include_router(analytics_router)
+from routers.session_exception import router as session_exception_router
+router.include_router(session_exception_router)
 
 
 def _save(db, action):
@@ -233,11 +235,12 @@ def remove_member(site_id: int, user_id: int, db: Session = Depends(get_db), act
 
 @router.get("/sites/{site_id}/sessions")
 def sessions(site_id: int, limit: int = Query(100, ge=1, le=100), offset: int = Query(0, ge=0),
-             license_plate: str | None = Query(None, max_length=20), status: Literal["active", "completed"] | None = None,
+             license_plate: str | None = Query(None, max_length=20), status: Literal["active", "completed", "cancelled"] | None = None,
+             session_id: str | None = Query(None, min_length=1, max_length=36, pattern=r"\S"),
              date_from: date | None = None, date_to: date | None = None,
              db: Session = Depends(get_db), actor: User = Depends(get_current_user)):
     return site_service.site_sessions(db, actor, site_id, limit=limit, offset=offset,
-                                      license_plate=license_plate, status=status, date_from=date_from, date_to=date_to)
+                                      license_plate=license_plate, status=status, date_from=date_from, date_to=date_to, session_id=session_id)
 
 
 @router.post("/sites/{site_id}/check-in", status_code=201)

@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react";
 import { Alert, Box, Button, MenuItem, Tab, Tabs, TextField, Typography } from "@mui/material";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import FleetSection from "./FleetSection";
 import { Availability, BookingForm, BookingRecords, WaitlistRecords } from "./siteComponents";
 import { combineRemotes, items, PageControls, read, refreshAll, RemoteSection, Section, send, useAction, usePage, useRemote, useSites, Workspace, SitePicker } from "./shared";
@@ -24,6 +24,9 @@ function StatusFilter({ label, value, options, onChange, disabled }) {
 
 function MySiteBookings({ site, organizations }) {
   const [tab, setTab] = useState("booking");
+  const [useGrantedRight, setUseGrantedRight] = useState(false);
+  const navigate = useNavigate();
+  const paidPackages = site.customer_booking_mode === "paid_packages";
   const loadAvailability = useCallback(() => read(`/sites/${site.id}/availability`), [site.id]);
   const profile = useRemote(loadProfile);
   const availability = useRemote(loadAvailability);
@@ -58,16 +61,22 @@ function MySiteBookings({ site, organizations }) {
     {["booking", "waitlist"].includes(tab) && profile.data && <>
       {!linked ? <Alert severity="info" action={<Button component={Link} to="/portal">Mở hồ sơ</Button>}>Tạo hồ sơ khách hàng hoặc chờ quản lý xác minh hồ sơ để đăng ký chỗ.</Alert> : <>
         {vehicles.data && !ownedVehicles.length && <Alert severity="info" action={<Button component={Link} to="/portal">Đăng ký xe</Button>}>Bạn cần ít nhất một xe đã được duyệt.</Alert>}
-        <Section title={tab === "booking" ? "Giữ một vị trí" : "Đăng ký khi chưa còn chỗ"} description={tab === "booking" ? "Đến trong 15 phút từ giờ bắt đầu. Đặt chỗ không bao gồm phí gửi xe hoặc vé tháng." : "Danh sách chờ chưa giữ chỗ. Khi nhân viên cấp vị trí, đặt chỗ mới sẽ xuất hiện ở mục Đặt chỗ."}>
+        {paidPackages && <Section title="Mua vé kèm đặt chỗ" description="Vé giờ/ngày gồm quyền gửi và chỗ đỗ trong khung giờ đã chọn. Chỉ một đơn cho cả hai quyền, không thêm phí đặt chỗ riêng.">
+          <Button component={Link} to="/portal?tab=purchase&kind=hourly" variant="contained" sx={{ alignSelf: "flex-start" }}>Chọn gói giờ / ngày</Button>
+          <Button variant="text" sx={{ alignSelf: "flex-start" }} onClick={() => setUseGrantedRight((old) => !old)}>{useGrantedRight ? "Đóng phần quyền đã cấp" : "Tôi có quyền bảo đảm chỗ đã được cấp"}</Button>
+          {useGrantedRight && <Alert severity="info">Máy chủ kiểm tra quyền bảo đảm chỗ còn hiệu lực do quản lý cấp. Vé tháng thông thường không bao gồm quyền này.</Alert>}
+        </Section>}
+        {(!paidPackages || useGrantedRight) && <Section title={tab === "booking" ? "Giữ một vị trí" : "Đăng ký khi chưa còn chỗ"} description={tab === "booking" ? "Đến trong 15 phút từ giờ bắt đầu. Đặt chỗ riêng không bao gồm phí gửi xe." : "Danh sách chờ chưa giữ chỗ. Khi nhân viên cấp vị trí, đặt chỗ mới sẽ xuất hiện ở mục Đặt chỗ."}>
           <Box component="fieldset" disabled={formUnavailable} sx={{ border: 0, p: 0, m: 0, minWidth: 0 }}>
             <BookingForm key={tab} siteId={site.id} vehicles={ownedVehicles} slots={slots} action={tab === "waitlist" ? waitlistAction : bookingAction} kind={tab === "waitlist" ? "waitlist" : "reservation"}
               onSubmit={(body) => send(tab === "booking" ? "/me/reservations" : "/me/waitlist", body)} />
           </Box>
-        </Section>
+        </Section>}
         {tab === "booking" ? <RemoteSection remote={reservations} title="Lịch đặt chỗ của tôi" description="Lọc theo bãi đang chọn tại máy chủ; mỗi trang 25 đặt chỗ, mới nhất trước."
           actions={<StatusFilter label="Trạng thái" value={bookingPage.filters.status} options={RESERVATION_STATES} disabled={reservations.loading} onChange={(status) => bookingPage.setFilters({ status })} />}>
           {(rows) => <>
             <BookingRecords rows={rows} slots={slots} vehicles={ownedVehicles} busy={bookingAction.busy}
+              onOpenOrder={(row) => navigate(`/portal?order=${encodeURIComponent(row.order_id)}`)}
               onCancel={(row) => void bookingAction.run(() => send(`/me/reservations/${row.id}/cancel`), "Đã hủy đặt chỗ.")} />
             <PageControls page={bookingPage.page} count={rows.length} size={bookingPage.size} busy={reservations.loading || bookingAction.busy} onChange={bookingPage.setPage} />
           </>}

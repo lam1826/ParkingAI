@@ -42,15 +42,15 @@ const VehicleTable = ({ vehicles, loading, onAdd, onEdit, onDelete }) => {
       renderCell: (params) => (
         <Box>
           <Tooltip title="Chỉnh sửa">
-            <IconButton color="primary" size="small" onClick={() => onEdit(params.row)}>
+            <IconButton aria-label={`Sửa xe ${params.row.license_plate}`} color="primary" size="small" onClick={() => onEdit(params.row)}>
               <EditIcon fontSize="small" />
             </IconButton>
           </Tooltip>
-          <Tooltip title="Xóa">
-            <IconButton color="error" size="small" onClick={() => onDelete(params.row)}>
+          {onDelete && <Tooltip title="Xóa">
+            <IconButton aria-label={`Xóa xe ${params.row.license_plate}`} color="error" size="small" onClick={() => onDelete(params.row)}>
               <DeleteIcon fontSize="small" />
             </IconButton>
-          </Tooltip>
+          </Tooltip>}
         </Box>
       ),
     },

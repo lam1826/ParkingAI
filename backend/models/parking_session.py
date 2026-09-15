@@ -2,7 +2,7 @@ import uuid
 from typing import Optional
 from datetime import date, datetime
 
-from sqlalchemy import DDL, String, ForeignKey, Date, DateTime, Index, event, text
+from sqlalchemy import DDL, String, ForeignKey, Date, DateTime, Index, Integer, event, text
 from sqlalchemy.sql import func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -33,6 +33,7 @@ from database import (
     SESSION_STATUS_UPDATE_VALIDATION_TRIGGER_SQL,
 )
 from core.money import VND_DATABASE_TYPE
+from core.billing_guards import BILLING_SQLITE_GUARDS, BILLING_POSTGRES_GUARD_SQL
 
 class ParkingSession(Base):
     __tablename__ = "parking_sessions"
@@ -76,6 +77,16 @@ class ParkingSession(Base):
     # Snapshot of all consecutive prepaid card periods at admission. NULL
     # keeps the original-period billing policy for historical sessions.
     monthly_coverage_end: Mapped[Optional[date]] = mapped_column(Date)
+    # NULL identifies a legacy stay; an unknown tariff must never be invented.
+    billing_policy_version: Mapped[Optional[str]] = mapped_column(String(32))
+    rate_config_id: Mapped[Optional[int]] = mapped_column(Integer)
+    rate_ticket_type: Mapped[Optional[str]] = mapped_column(String(8))
+    rate_unit_price: Mapped[Optional[int]] = mapped_column(VND_DATABASE_TYPE)
+    rate_effective_date: Mapped[Optional[date]] = mapped_column(Date)
+    # Source trigger enforces this cyclic reference; the ticket owns its session FK.
+    timed_pass_id: Mapped[Optional[str]] = mapped_column(String(36), unique=True)
+    prepaid_start_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    prepaid_end_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
     # Exact accepted confirmation for safe retry, including free departures.
     # Historical completed sessions remain NULL; confirmation is never invented.
     checkout_quote_hash: Mapped[Optional[str]] = mapped_column(String(64))
@@ -117,6 +128,23 @@ class ParkingSession(Base):
     staff_out: Mapped[Optional["User"]] = relationship(
         foreign_keys=[staff_out_id], back_populates="parking_sessions_out"
     )
+
+    @property
+    def billing_basis(self):
+        from core.billing import snapshot_basis
+        if self.status != "completed" or self.check_out_time is None:
+            return None
+        return snapshot_basis(self, self.check_out_time)
+
+    @property
+    def prepaid(self):
+        from expansion.timed_parking_service import prepaid
+        return prepaid(self)
+
+
+for _billing_guard in BILLING_SQLITE_GUARDS.values():
+    event.listen(ParkingSession.__table__, "after_create", DDL(_billing_guard).execute_if(dialect="sqlite"))
+event.listen(ParkingSession.__table__, "after_create", DDL(BILLING_POSTGRES_GUARD_SQL).execute_if(dialect="postgresql"))
 
 
 event.listen(

@@ -1,5 +1,39 @@
 # Plan
 
+## Phương án nâng cấp một bãi phục vụ đồ án — 15/09/2026
+
+**Objective:** bảo toàn/hoàn thiện F01–F13 theo đề, sau đó mở rộng E01–E08 cho một bãi đồ án. Người dùng đã phê duyệt phương án ngày 15/09/2026; bắt đầu triển khai, không cần tham vấn Claude.
+
+**Context:** HEAD `3ef172e` có nhiều nghiệp vụ; UI một bãi còn đi qua guard dữ liệu nhiều bãi cũ. CRUD loại xe/giá cần phân quyền theo thao tác. Đã có thu/hoàn/chốt ca, quote 120s và ba nhóm AI theo bãi; tái sử dụng thay vì làm lại.
+
+**Scope / implementation steps đã duyệt (P0–P3 là lõi):**
+
+1. P0: dữ liệu demo độc lập một bãi, quyền manager/staff và menu lõi. Dùng lại `system_router.py`, `site_scope.py`, `routers/api.py`, các router CRUD, `MainLayout.jsx`, `AppRoutes.jsx`, `SiteConfiguration.jsx`. Nghiệm thu đúng dữ liệu/quyền trên API và UI.
+2. P1: hợp đồng phí, giá chốt khi vào, quá hạn vé tháng, hủy/điều chỉnh có lịch sử và đối soát ca. Tác động services/models/schemas/migrations, trang vé/checkout và `SiteFinance.jsx`; phụ thuộc P0. Có test biên, retry, tranh chấp, migration và lịch sử tiền.
+3. P2: màn hình vận hành, báo cáo và AI. Dùng `SitesWorkspace.jsx`, `CoreAnalyticsPage.jsx`, `site_analytics.py`, `ai_service.py`; phụ thuộc dữ liệu P1. Nghiệm thu nguồn/kỳ/đơn vị/quyền AI, 3 chức năng live, rỗng/lỗi.
+4. P3: UAT hai vai trò, bộ minh chứng KT1/KT2/KT3/cuối kỳ, demo/cài mới/backup-restore; phụ thuộc P0–P2. Chỉ kết luận hoàn tất khi từng F01–F13 có bằng chứng.
+5. P4: portal khách, vé giờ/ngày/tháng và đặt chỗ có hạn. Tái sử dụng `portal_models.py`, `portal_service.py`, `site_models.py`, `reservations.py`, `CustomerPortal.jsx`, `ReservationsPage.jsx`; thêm hợp đồng loại đơn/quyền sử dụng/hold. Phụ thuộc P3; kiểm quyền khách, chống bán trùng, mua–nhận xe–quá giờ.
+6. P5: QR nhận tiền, bảng kê/biên nhận và đối soát. Tái sử dụng event/ledger/worker, bổ sung adapter provider trong `expansion/gateway.py` hoặc module mới có interface chung; migration order/payment-mode. Phụ thuộc P4; kiểm signature, duplicate/late payment, số dư, thanh toán tại quầy đồng thời. payOS là ứng viên, không có sandbox riêng theo docs; test nội bộ và nghiệm thu live tách riêng.
+7. P6: camera OCR làn vào/ra; tái sử dụng vision/edge/`VisionPage.jsx`. Phụ thuộc luồng vào/ra lõi ổn định; nhân viên xác nhận, có nhập tay, đo ảnh độc lập và thiết bị demo.
+8. P7: CV ô đỗ; thêm vùng camera/ô và observations có timestamp/unknown; không tự sửa trạng thái nghiệp vụ. Phụ thuộc cấu hình khu/chỗ và thiết bị phù hợp; đo confusion matrix, stale/occlusion và cảnh báo chênh lệch.
+9. P8: nghiệm thu khách–nhân viên–quản lý với F01–F13 + E01–E08, hồi quy lõi, hồ sơ SDLC và backup/restore schema mở rộng.
+
+Chi tiết lõi tại [PROPOSAL.md](docs/upgrade-2026-09-15/PROPOSAL.md), mở rộng tại [EXTENSION_PLAN.md](docs/upgrade-2026-09-15/EXTENSION_PLAN.md), nguồn website tại [REAL_WORLD_REFERENCES.md](docs/upgrade-2026-09-15/REAL_WORLD_REFERENCES.md). [IMPLEMENTATION.md](docs/upgrade-2026-09-15/IMPLEMENTATION.md) ghi bằng chứng của các bước đã thực hiện.
+
+**Out of scope:** nhiều bãi/SaaS/marketplace, ví tiền tự quản, barrier tự mở, GPU và microservices bắt buộc. Portal/đặt chỗ/QR thật/OCR/CV thuộc lộ trình sau lõi. Chưa tạo tài khoản provider, giao dịch tiền thật, kết nối camera hoặc deploy trong task nghiên cứu.
+
+**Risks / recovery:** menu một bãi không thay cho phạm vi dữ liệu; thay giá/quyền lợi cần migration và chính sách tương thích. Backup và thử restore trên DB riêng trước các migration. Không tính lại chứng từ đã hoàn tất; không bỏ guard giá khi chưa có snapshot thay thế.
+
+**Verification:** baseline lập phương án 115 test ở [VERIFICATION.md](docs/upgrade-2026-09-15/VERIFICATION.md); bằng chứng sau sửa và giới hạn được ghi riêng trong [IMPLEMENTATION.md](docs/upgrade-2026-09-15/IMPLEMENTATION.md), gồm API, UI, race và backup/restore.
+
+**Status (14:30, 15/09 — Claude):** P8 gate đạt trên SQLite cục bộ: full backend lượt 2 **1.900 pass/0 fail/20 skip** (lượt 1 có 13 test cũ thất bại theo hợp đồng checkout mới, đã sửa test), frontend 212/lint/build, UAT 8769 trên schema06 với bundle hợp nhất `frontend/dist`: lõi 79/79, mở rộng 41/41 (+session payments), browser phí lượt 7+29, recovery/upgrade 48 bảng, launcher chạy thử dưới PowerShell 5.1. Chi tiết [FINAL_ACCEPTANCE.md](docs/upgrade-2026-09-15/FINAL_ACCEPTANCE.md). Chưa commit/push/deploy; chưa nghiệm thu PostgreSQL thật, webcam/OCR thật, payOS thật.
+
+**Status (08:09, 15/09 — lịch sử):** APPROVED / IMPLEMENTING. P0–P3 accepted locally with documented limits. P1 full run:1469 passed/20 skipped/2 fixture failures; repaired fixtures verified separately3+69. P2 corrected real Gemini5 semantic accepted, transport/history30, saved-outputUI26. P4/P6 real local HTTP36 passed after fixing early departure leaving a reservation commitment; synthetic video capture reached the edge API. P5 portal integration258 scoped tests plus cancellation regressions104 passed; session-fee credit backend/finance/UI now being integrated. P7 API36 and offline evaluator9 passed; browser manager/staff22 checks, customer continuation pending. Full P8 regression/recovery remains. User has webcam/phone, no payOS; no physical-camera/bank/deploy acceptance claimed.
+
+**Phân công hiện tại:** root memory/plan/review/recovery/UAT/P6 capture+health/P5 UI; single_lot_demo shared checkout/finance/guards/migrations; core_frontend P7/backend/UI/evaluator/browser and independent UI review; core_permissions P5 session-payment models/service/provider/worker. Baseline8768 loaded schema05 with capacity fix; credit wiring is authorized on source, upgrade a new candidate before restarting that backend.
+
+**Các phần bên dưới là lịch sử, không phải lệnh triển khai mới hoặc phạm vi nhiều bãi hiện hành.**
+
 ## Hoàn tất ba mục sửa trên website — 09/09/2026
 
 Người dùng đã cho phép bật Gemini, gửi thống kê tổng hợp demo tới provider và lưu kết quả. Bản hiện tại `0b8c54c15d940face4ca30b2dfb4b6cc3509b9ad`; [CI 34268240778](https://github.com/lam1826/ParkingAI/actions/runs/34268240778) và [CD 34269857506](https://github.com/lam1826/ParkingAI/actions/runs/34269857506) đạt. Release gate READY cho ba mục sửa, không phải toàn bộ đồ án.

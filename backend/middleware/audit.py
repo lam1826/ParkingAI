@@ -50,6 +50,9 @@ def _persist_audit(app, values: dict, method: str, path: str) -> None:
 
 def _classify_action(method: str, path: str) -> str:
     normalized_path = path.rstrip("/") or "/"
+    exception = re.fullmatch(r"/api/(?:v1/parking-sessions|v2/sites/\d+/sessions)/[^/]+/(cancel|lost-ticket|correct-plate)", normalized_path)
+    if exception and method == "POST":
+        return {"cancel": "SESSION_CANCEL", "lost-ticket": "TICKET_LOST", "correct-plate": "PLATE_CORRECTION"}[exception.group(1)]
     if normalized_path.startswith("/api/v2/"):
         if "/ai/" in normalized_path:
             return "AI_ANALYSIS"

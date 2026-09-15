@@ -1,9 +1,9 @@
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from typing import Literal, Optional, List
-from datetime import datetime
+from datetime import date, datetime
 
 from core.clock import BUSINESS_TZ
-from schemas.checkout import CheckoutConfirmation
+from schemas.checkout import BillingBasis, CheckoutConfirmation
 
 
 class CheckInRequest(BaseModel):
@@ -63,6 +63,9 @@ class CheckOutResponse(BaseModel):
     duration_minutes: int
     parking_fee: int
     status: str
+    online_paid: int = 0
+    balance_due: int | None = None
+    paid_through: datetime | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -126,6 +129,12 @@ class ParkingSessionDetailResponse(BaseModel):
         description="Thời gian gửi đã hoàn tất, tính bằng phút",
     )
     parking_fee: int = 0
+    monthly_coverage_end: date | None = None
+    billing_basis: BillingBasis | None = None
+    prepaid: dict | None = None
+    online_paid: int = 0
+    balance_due: int | None = None
+    paid_through: datetime | None = None
     status: str
     handled_by_staff: Optional[StaffInfoResponse] = None
 
@@ -152,6 +161,13 @@ class ParkingSearchQuery(BaseModel):
     """
 
     model_config = ConfigDict(populate_by_name=True)
+
+    session_id: str | None = Field(default=None, min_length=1, max_length=36)
+
+    @field_validator("session_id", mode="before")
+    @classmethod
+    def trim_session_id(cls, value):
+        return value.strip() if isinstance(value, str) else value
 
     license_plate: Optional[str] = Field(
         default=None,

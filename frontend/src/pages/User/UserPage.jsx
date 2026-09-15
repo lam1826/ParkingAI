@@ -7,7 +7,7 @@ import useUser from "./hooks/useUser";
 
 export default function UsersPage() {
   const {
-    users, roles, loading, submitting, canManage,
+    users, roles, loading, submitting, canManage, canDeleteUsers, canEditUser,
     dialogOpen, deleteDialogOpen, selectedUser, notify,
     handleOpenCreate, handleOpenEdit, handleOpenDelete,
     closeDialogs, handleSave, handleDelete, fetchUsers, closeNotify
@@ -31,12 +31,15 @@ export default function UsersPage() {
           Lưu ý: Bạn đang đăng nhập với quyền hạn hạn chế. Các chức năng Thêm/Sửa/Xóa đã bị vô hiệu hóa.
         </Alert>
       )}
+      {canManage && !canDeleteUsers && <Alert severity="info" sx={{ mb: 3 }}>Bạn có thể tạo, cập nhật và khóa tài khoản nhân viên. Tài khoản quản lý và quản trị viên do quản trị viên phụ trách.</Alert>}
 
       {/* Table */}
       <UserTable
         users={users}
         loading={loading}
         canManage={canManage}
+        canDelete={canDeleteUsers}
+        canEditUser={canEditUser}
         onAdd={handleOpenCreate}
         onEdit={handleOpenEdit}
         onDelete={handleOpenDelete}
@@ -54,7 +57,7 @@ export default function UsersPage() {
             submitting={submitting}
           />
 
-          <Dialog open={deleteDialogOpen} onClose={closeDialogs}>
+          <Dialog open={deleteDialogOpen && canDeleteUsers} onClose={closeDialogs}>
             <DialogTitle fontWeight="bold">Xác nhận xóa tài khoản</DialogTitle>
             <DialogContent>
               <DialogContentText>

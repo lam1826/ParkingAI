@@ -144,6 +144,7 @@ class ReportService:
                 filter_type, anchor_date
             )
             period_conditions = (
+                ParkingSession.status != "cancelled",
                 ParkingSession.check_in_time >= start_date,
                 ParkingSession.check_in_time < end_exclusive,
             )

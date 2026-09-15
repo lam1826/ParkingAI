@@ -4,7 +4,7 @@ import EditIcon from "@mui/icons-material/Edit";
 import DeleteIcon from "@mui/icons-material/Delete";
 import AddIcon from "@mui/icons-material/Add";
 
-const UserTable = ({ users, loading, canManage, onAdd, onEdit, onDelete }) => {
+const UserTable = ({ users, loading, canManage, canDelete = false, canEditUser = () => false, onAdd, onEdit, onDelete }) => {
   // Cấu hình các cột mặc định
   const columns = [
     { field: "username", headerName: "Tên đăng nhập", flex: 1, minWidth: 150, renderCell: (p) => <strong>{p.value}</strong> },
@@ -43,16 +43,16 @@ const UserTable = ({ users, loading, canManage, onAdd, onEdit, onDelete }) => {
       sortable: false,
       renderCell: (params) => (
         <Box>
-          <Tooltip title="Chỉnh sửa">
-            <IconButton color="primary" size="small" onClick={() => onEdit(params.row)}>
+          {canEditUser(params.row) && <Tooltip title="Chỉnh sửa">
+            <IconButton aria-label={`Sửa tài khoản ${params.row.username}`} color="primary" size="small" onClick={() => onEdit(params.row)}>
               <EditIcon fontSize="small" />
             </IconButton>
-          </Tooltip>
-          <Tooltip title="Xóa tài khoản">
-            <IconButton color="error" size="small" onClick={() => onDelete(params.row)}>
+          </Tooltip>}
+          {canDelete && <Tooltip title="Xóa tài khoản">
+            <IconButton aria-label={`Xóa tài khoản ${params.row.username}`} color="error" size="small" onClick={() => onDelete(params.row)}>
               <DeleteIcon fontSize="small" />
             </IconButton>
-          </Tooltip>
+          </Tooltip>}
         </Box>
       ),
     });

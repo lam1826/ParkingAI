@@ -4,7 +4,9 @@ export function mergeSelectedOrder(detail, rows = []) {
   const listed = rows?.find((row) => row.id === detail.id);
   // A refreshed list intentionally excludes the private QR; keep it from detail.
   // A response to a mutation can arrive before the list is refreshed.
-  const merged = listed?.status === "pending" && detail.status !== "pending"
+  const listedTime = Date.parse(listed?.server_now), detailTime = Date.parse(detail.server_now);
+  const olderList = Number.isFinite(listedTime) && Number.isFinite(detailTime) && listedTime < detailTime;
+  const merged = olderList || (listed?.status === "pending" && detail.status !== "pending")
     ? { ...listed, ...detail } : { ...detail, ...listed };
   if (merged.status !== "pending") {
     delete merged.demo_qr_svg;

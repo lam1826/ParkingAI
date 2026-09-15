@@ -1,5 +1,5 @@
 """Portal contracts run in a separate application and an isolated SQLite database."""
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 import pytest
 from fastapi import FastAPI
@@ -66,6 +66,25 @@ def onboard(portal):
     current["user"] = users[1]
     vehicles = client.get("/api/v2/me/vehicles").json()["items"]
     return {"plan_id": plan.json()["id"], "vehicle_id": vehicles[0]["id"], "idempotency_key": "purchase-0001"}
+
+
+
+def advance_past_order_deadline(monkeypatch, db, identity):
+    """Advance the shared clock, preserving immutable purchased order terms."""
+    import core.clock as clock
+    deadline = db.get(PortalOrder, identity).expires_at
+    instant = (deadline + timedelta(seconds=1)).replace(tzinfo=clock.BUSINESS_TZ)
+
+    class AfterDeadline(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return instant.astimezone(tz) if tz else instant.astimezone().replace(tzinfo=None)
+
+    # Patch the documented clock seam so SQLAlchemy callable defaults and all
+    # service/worker aliases observe the same time, including received_at.
+    monkeypatch.setattr(clock, "datetime", AfterDeadline)
+    assert clock.business_now() > deadline
+    assert db.get(PortalOrder, identity).expires_at == deadline
 
 
 def test_new_profile_does_not_claim_existing_phone_or_reveal_other_customer(portal):
@@ -193,11 +212,10 @@ def test_demo_failure_or_cancel_never_issues_pass_and_cannot_turn_into_success(p
     assert client.get("/api/v2/me/receipts").json()["items"] == []
 
 
-def test_late_demo_success_is_reviewed_without_activating_pass(portal):
+def test_late_demo_success_is_reviewed_without_activating_pass(portal, monkeypatch):
     client, *_, db = portal
     order = client.post("/api/v2/me/orders", json=onboard(portal)).json()
-    db.get(PortalOrder, order["id"]).expires_at -= timedelta(hours=1)
-    db.commit()
+    advance_past_order_deadline(monkeypatch, db, order["id"])
     result = client.post(f"/api/v2/me/orders/{order['id']}/simulate", json={"token": order["demo_token"], "outcome": "success"})
     assert result.status_code == 200 and result.json()["status"] == "review"
     assert result.json()["review_reason"] == "late_payment"
@@ -309,23 +327,21 @@ def test_frozen_price_and_period_survive_plan_changes_and_reject_second_pending_
     assert client.get("/api/v2/me/passes").json()["items"][0]["price"] == 300000
 
 
-def test_expired_order_can_be_closed_by_owner_and_worker_is_idempotent(portal):
+def test_expired_order_can_be_closed_by_owner_and_worker_is_idempotent(portal, monkeypatch):
     from expansion.portal_worker import run_portal_maintenance
     client, *_, db = portal
     order = client.post("/api/v2/me/orders", json=onboard(portal)).json()
-    db.get(PortalOrder, order["id"]).expires_at -= timedelta(hours=1)
-    db.commit()
+    advance_past_order_deadline(monkeypatch, db, order["id"])
     assert run_portal_maintenance(db)["expired"] == 1
     assert run_portal_maintenance(db)["expired"] == 0
     assert client.get(f"/api/v2/me/orders/{order['id']}").json()["status"] == "expired"
 
 
-def test_due_manual_order_expires_lazily_and_no_longer_blocks_a_new_order(portal):
+def test_due_manual_order_expires_lazily_and_no_longer_blocks_a_new_order(portal, monkeypatch):
     client, *_unused, db = portal
     body = onboard(portal)
     first = client.post("/api/v2/me/orders", json={**body, "payment_mode": "manual"}).json()
-    db.get(PortalOrder, first["id"]).expires_at -= timedelta(hours=1)
-    db.commit()
+    advance_past_order_deadline(monkeypatch, db, first["id"])
 
     detail = client.get(f"/api/v2/me/orders/{first['id']}")
     second = client.post("/api/v2/me/orders", json={
@@ -414,11 +430,10 @@ def test_existing_customer_phone_needs_manager_approval_not_user_claim(portal):
     assert client.post(f"/api/v2/portal/admin/link-requests/{duplicate['id']}/resolve", json={"approve": True}).status_code == 409
 
 
-def test_review_result_requires_explicit_manager_reason_and_can_be_cancelled(portal):
+def test_review_result_requires_explicit_manager_reason_and_can_be_cancelled(portal, monkeypatch):
     client, current, users, site, kind, db = portal
     order = client.post("/api/v2/me/orders", json=onboard(portal)).json()
-    db.get(PortalOrder, order["id"]).expires_at -= timedelta(hours=1)
-    db.commit()
+    advance_past_order_deadline(monkeypatch, db, order["id"])
     client.post(f"/api/v2/me/orders/{order['id']}/simulate", json={"token": order["demo_token"], "outcome": "success"})
     current["user"] = users[0]
     url = f"/api/v2/portal/admin/orders/{order['id']}/review"

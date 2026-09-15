@@ -16,7 +16,7 @@ def get_users(db: Session, skip: int = 0, limit: int = 100):
     stmt = select(User).offset(skip).limit(limit)
     return db.execute(stmt).scalars().all()
 
-def create_user(db: Session, user_in: user_schema.UserCreate) -> User:
+def create_user(db: Session, user_in: user_schema.UserCreate, *, commit: bool = True) -> User:
     # Lấy dữ liệu và loại bỏ trường password để chuyển thành password_hash
     user_data = user_in.model_dump()
     password = user_data.pop("password")
@@ -26,8 +26,12 @@ def create_user(db: Session, user_in: user_schema.UserCreate) -> User:
 
     db_user = User(**user_data)
     db.add(db_user)
-    db.commit()
-    db.refresh(db_user)
+    if commit:
+        db.commit()
+        db.refresh(db_user)
+    else:
+        # Account and its site membership must be committed atomically.
+        db.flush()
     return db_user
 
 def update_user(db: Session, db_user: User, user_in: user_schema.UserUpdate) -> User:

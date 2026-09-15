@@ -32,3 +32,12 @@ test("pass visibility distinguishes active flag from inclusive business-date val
   assert.equal(passStatus(period, "2026-10-07"), "Hết hạn");
   assert.equal(passStatus({ ...period, is_active: false }, "2026-09-07"), "Ngừng áp dụng");
 });
+
+test("older order lists cannot revert a refunded detail or restore its payment controls", () => {
+  const detail = { id: "one", status: "refunded", server_now: "2026-09-15T10:10:00+07:00", allowed_actions: [] };
+  const listed = { id: "one", status: "fulfilled", server_now: "2026-09-15T10:09:00+07:00", allowed_actions: ["request_refund"], demo_token: "old" };
+  const result = mergeSelectedOrder(detail, [listed]);
+  assert.equal(result.status, "refunded");
+  assert.deepEqual(result.allowed_actions, []);
+  assert.equal(result.demo_token, undefined);
+});

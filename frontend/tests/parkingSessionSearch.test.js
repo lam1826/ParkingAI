@@ -112,6 +112,29 @@ test("requestParkingSessionSearch gọi đúng API một lần và trả metadat
   });
 });
 
+test("ticket id is an explicit exact filter and never overwrites the plate", () => {
+  assert.deepEqual(buildParkingSearchParams({ sessionId: " stay-id ", licensePlate: "30A-12345", status: "cancelled" }),
+    { page: 1, size: 10, session_id: "stay-id", license_plate: "30A-12345", status: "cancelled" });
+  assert.equal("session_id" in buildParkingSearchParams({ sessionId: "  " }), false);
+});
+
+test("history mapping keeps frozen billing facts and leaves old history explicitly missing", () => {
+  const basis = { policy_version: "entry-v1", unit_price: 10000, billable_blocks: 2 };
+  const prepaid = { order_id: "order", amount: 30000, payment_mode: "demo" };
+  const { items } = mapParkingSearchResponse({ items: [
+    { session_id: "new", status: "completed", parking_fee: 20000, billing_basis: basis, prepaid, monthly_coverage_end: "2026-09-17" },
+    { session_id: "old", status: "completed", parking_fee: 5000 },
+  ] });
+  assert.equal(items[0].billing_basis, basis);
+  assert.equal(items[0].prepaid, prepaid);
+  assert.equal(items[0].parkingFee, 20000);
+  assert.equal(items[0].monthly_coverage_end, "2026-09-17");
+  assert.equal(items[1].billing_basis, null);
+  assert.equal(items[1].prepaid, null);
+  assert.equal(items[1].monthly_coverage_end, null);
+  assert.equal(items[1].parkingFee, 5000);
+});
+
 
 test("ParkingSession wiring có date filter, reset page và DataGrid server-side", async () => {
   const [hookSource, pageSource, tableSource] = await Promise.all([

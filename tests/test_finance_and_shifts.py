@@ -84,7 +84,7 @@ def test_monthly_payment_is_included_once_and_by_collection_day(db_session, test
     _receipt(db_session, "monthly_pass", 12, 500_000, test_user.id, created_at=when)
     _receipt(db_session, "monthly_pass", 12, 500_000, test_user.id, created_at=when)
     result = PaymentService.revenue_breakdown(db_session, when.replace(hour=0, minute=0), when + timedelta(days=1))
-    assert result == {"parking_revenue": 0, "monthly_pass_revenue": 500_000, "refunds": 0, "total_revenue": 500_000}
+    assert result == {"parking_revenue": 0, "monthly_pass_revenue": 500_000, "prepaid_revenue": 0, "refunds": 0, "total_revenue": 500_000}
 
 
 def test_shift_closing_freezes_cash_and_excludes_transfer(db_session, test_user):

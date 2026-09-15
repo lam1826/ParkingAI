@@ -20,6 +20,18 @@ class CheckoutConfirmation(BaseModel):
         return value
 
 
+class BillingBasis(BaseModel):
+    policy_version: Literal["entry-v1", "legacy-current-rate", "prepaid-window-v1"]
+    rate_source: Literal["entry_snapshot", "legacy_current_rate", "prepaid_snapshot"]
+    rate_id: int | None
+    unit_price: int
+    ticket_type: Literal["HOURLY", "DAILY"]
+    effective_date: date | None
+    billable_from: datetime
+    billable_seconds: int
+    billable_blocks: int
+
+
 class CheckoutQuoteResponse(BaseModel):
     quote_token: str
     session_id: str
@@ -32,3 +44,8 @@ class CheckoutQuoteResponse(BaseModel):
     monthly_coverage_end: date | None
     slot_name: str | None
     zone_name: str | None
+    billing_basis: BillingBasis | None
+    prepaid: dict | None = None
+    online_paid: int = 0
+    balance_due: int
+    paid_through: datetime | None = None

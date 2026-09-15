@@ -4,8 +4,10 @@ import RefreshIcon from "@mui/icons-material/Refresh";
 import MonthlyPassTable from "./components/MonthlyPassTable";
 import MonthlyPassDialog from "./components/MonthlyPassDialog";
 import useMonthlyPass from "./hooks/useMonthlyPass";
+import useCorePermissions from "../../hooks/useCorePermissions";
 
 const MonthlyPassPage = () => {
+  const { canManageMonthlyPasses } = useCorePermissions();
   const {
     passes, vehicles, customers, loading, submitting,
     dialogOpen, deactivateDialogOpen, selectedPass, notify,
@@ -24,16 +26,19 @@ const MonthlyPassPage = () => {
         </Button>
       </Stack>
 
+      {!canManageMonthlyPasses && <Alert severity="info" sx={{ mb: 2 }}>Bạn có thể kiểm tra hiệu lực vé. Quản lý phụ trách cấp, gia hạn và ngừng vé tháng.</Alert>}
+
       <MonthlyPassTable
         passes={passes}
         loading={loading}
+        canManage={canManageMonthlyPasses}
         onAdd={handleOpenCreate}
         onEdit={handleOpenEdit}
         onDeactivate={handleOpenDeactivate}
       />
 
       <MonthlyPassDialog
-        isOpen={dialogOpen}
+        isOpen={dialogOpen && canManageMonthlyPasses}
         onClose={closeDialogs}
         onSave={handleSave}
         pass={selectedPass}
@@ -42,7 +47,7 @@ const MonthlyPassPage = () => {
         submitting={submitting}
       />
 
-      <Dialog open={deactivateDialogOpen} onClose={closeDialogs}>
+      <Dialog open={deactivateDialogOpen && canManageMonthlyPasses} onClose={closeDialogs}>
         <DialogTitle fontWeight="bold">Xác nhận hủy vé</DialogTitle>
         <DialogContent>
           <DialogContentText>

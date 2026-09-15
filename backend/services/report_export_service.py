@@ -106,6 +106,7 @@ class ReportExportService:
             ("Loại xe phổ biến", summary["most_frequent_vehicle_type"], False),
             ("Thu từ lượt gửi xe", summary["parking_revenue"], True),
             ("Thu từ vé tháng", summary["monthly_pass_revenue"], True),
+            ("Thu từ vé giờ/ngày", summary.get("prepaid_revenue", 0), True),
             ("Hoàn tiền", summary["refunds"], True),
         ]
         for label, value, monetary in rows:
@@ -198,6 +199,7 @@ class ReportExportService:
             ["Loại xe phổ biến", escape(str(summary["most_frequent_vehicle_type"]))],
             ["Thu từ lượt gửi xe", f'{summary["parking_revenue"]:,.0f} ₫'],
             ["Thu từ vé tháng", f'{summary["monthly_pass_revenue"]:,.0f} ₫'],
+            ["Thu từ vé giờ/ngày", f'{summary.get("prepaid_revenue", 0):,.0f} ₫'],
             ["Hoàn tiền", f'{summary["refunds"]:,.0f} ₫'],
         ]
         summary_table = Table(summary_rows, colWidths=[55 * mm, 105 * mm], repeatRows=1)

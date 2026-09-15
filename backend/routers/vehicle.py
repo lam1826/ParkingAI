@@ -4,6 +4,7 @@ from sqlalchemy.exc import IntegrityError
 from typing import List
 
 from database import get_db
+from services.auth_service import RoleChecker
 from schemas import vehicle as vehicle_schema
 from crud import vehicle as crud_vehicle
 from models.customer import Customer
@@ -145,7 +146,8 @@ def update_vehicle(id: int, vehicle_in: vehicle_schema.VehicleUpdate, db: Sessio
         db.rollback()
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Không thể cập nhật phương tiện với dữ liệu này")
 
-@router.delete("/{id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{id}", status_code=status.HTTP_204_NO_CONTENT,
+               dependencies=[Depends(RoleChecker("manager"))])
 def delete_vehicle(id: int, db: Session = Depends(get_db)):
     """Xóa một phương tiện"""
     db_vehicle = crud_vehicle.get_vehicle(db, vehicle_id=id)

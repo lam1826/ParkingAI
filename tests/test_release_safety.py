@@ -142,7 +142,10 @@ def test_importing_database_module_does_not_create_default_directory(
     shutil.copy2(backend_dir / "database.py", isolated_dir / "database.py")
     isolated_core = isolated_dir / "core"
     isolated_core.mkdir()
-    shutil.copy2(backend_dir / "core" / "money.py", isolated_core / "money.py")
+    # Include the pure guard catalog imported by the database module. The
+    # isolated copy still has no models, DB directory, or writable schema.
+    for module_name in ("money.py", "billing_guards.py"):
+        shutil.copy2(backend_dir / "core" / module_name, isolated_core / module_name)
 
     env = os.environ.copy()
     inherited_pythonpath = env.get("PYTHONPATH")
@@ -1127,7 +1130,9 @@ def test_initialize_keeps_existing_database_byte_identical_on_late_fk_failure(
         connection.commit()
 
     database_before = database_path.read_bytes()
-    with pytest.raises(RuntimeError, match="foreign_key_check"):
+    # An additive migration can detect the orphan before final readiness.
+    # Either FK gate must preserve the original target byte for byte.
+    with pytest.raises(RuntimeError, match=r"(?i)foreign.?key"):
         initialize_database(database_path)
     assert database_path.read_bytes() == database_before
 
@@ -1495,6 +1500,7 @@ def test_readiness_rejects_partial_index_in_place_of_full_unique_constraint(
         connection.executescript(
             """
             PRAGMA foreign_keys=OFF;
+            PRAGMA legacy_alter_table=ON;
             CREATE TABLE users_replacement (
                 id INTEGER NOT NULL PRIMARY KEY,
                 role_id INTEGER NOT NULL,

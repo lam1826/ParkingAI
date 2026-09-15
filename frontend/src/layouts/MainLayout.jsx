@@ -1,6 +1,5 @@
 import { useState, useContext } from "react";
 import { Outlet, useNavigate, useLocation } from "react-router-dom";
-import { hasMinimumRole } from "../constants/roles";
 import {
   Box,
   Drawer,
@@ -44,6 +43,7 @@ import { useExpansion } from "../context/ExpansionContext";
 import PhotoCameraIcon from "@mui/icons-material/PhotoCamera";
 import { isMenuPathSelected } from "../utils/navigationState";
 import { singleSiteId } from "../utils/singleSiteMode";
+import { canShowMenuItem } from "../utils/menuPermissions";
 
 const drawerWidth = 260; // Độ rộng của Sidebar
 
@@ -67,9 +67,10 @@ export default function MainLayout() {
     { text: "Vận hành bãi", icon: <DomainIcon />, path: "/sites", role: "staff", scoped: true },
     { text: "Khách & đơn vé", icon: <CardMembershipIcon />, path: "/portal-admin", role: "manager", scoped: true },
     { text: "Camera & biển số", icon: <PhotoCameraIcon />, path: "/vision", role: "staff", scoped: true },
+    { text: "Chỗ đỗ qua camera", icon: <LocalParkingIcon />, path: "/occupancy", role: "staff", scoped: true },
     { text: "Dự báo & điều hành", icon: <AssessmentIcon />, path: "/insights", role: "staff", scoped: true },
     { text: "Tài khoản của tôi", icon: <AccountCircleIcon />, path: "/account" },
-    { text: "Dashboard", icon: <DashboardIcon />, path: "/", role: "staff" },
+    { text: "Dashboard", icon: <DashboardIcon />, path: "/", role: "manager" },
     { text: "Phiên Đỗ Xe", icon: <LocalParkingIcon />, path: "/sessions", role: "staff" },
     { text: "Khu vực", icon: <DomainIcon />, path: "/zones", role: "staff" },
     { text: "Vị trí đỗ", icon: <LocalParkingIcon />, path: "/parking-slots", role: "staff" },
@@ -79,8 +80,8 @@ export default function MainLayout() {
     { text: "Vé Tháng", icon: <CardMembershipIcon />, path: "/monthly-passes", role: "staff" },
     { text: "Thu tiền & Chốt ca", icon: <PriceChangeIcon />, path: "/finance", role: "staff" },
     { text: "Bảng giá", icon: <PriceChangeIcon />, path: "/price-configs", role: "staff" },
-    { text: "Báo cáo", icon: <AssessmentIcon />, path: "/reports", role: "staff", scoped: capabilities?.site_analytics_enabled },
-    { text: "AI báo cáo & hỏi đáp", icon: <SmartToyIcon />, path: "/ai", role: "staff", scoped: capabilities?.site_analytics_enabled },
+    { text: "Báo cáo", icon: <AssessmentIcon />, path: "/reports", role: capabilities?.site_analytics_enabled ? "staff" : "manager", scoped: capabilities?.site_analytics_enabled },
+    { text: "AI báo cáo & hỏi đáp", icon: <SmartToyIcon />, path: "/ai", role: capabilities?.site_analytics_enabled ? "staff" : "manager", scoped: capabilities?.site_analytics_enabled },
     { text: "Tài Khoản", icon: <PeopleIcon />, path: "/users", role: "manager" },
     { text: "Nhật ký hoạt động", icon: <HistoryIcon />, path: "/audit-logs", role: "manager" },
     { text: "Vai trò", icon: <AdminPanelSettingsIcon />, path: "/roles", role: "manager" },
@@ -117,6 +118,7 @@ export default function MainLayout() {
         <Toolbar>
           {/* Nút mở Sidebar - chỉ hiện trên màn hình nhỏ */}
           <IconButton
+            aria-label="Mở menu điều hướng"
             color="inherit"
             edge="start"
             onClick={() => setMobileOpen(true)}
@@ -134,7 +136,7 @@ export default function MainLayout() {
             <Typography variant="body1" sx={{ display: { xs: "none", sm: "block" } }}>
               Xin chào, {user?.username || "Admin"}
             </Typography>
-            <IconButton color="inherit" onClick={handleMenuOpen}>
+            <IconButton aria-label="Mở menu tài khoản" color="inherit" onClick={handleMenuOpen}>
               <AccountCircleIcon fontSize="large" />
             </IconButton>
             <Menu
@@ -163,10 +165,7 @@ export default function MainLayout() {
             <Box sx={{ overflow: "auto", mt: 2 }}>
               <List>
                 {menuItems.map((item) => {
-                  // Ẩn menu nếu có yêu cầu role mà user không thỏa mãn (ví dụ giả lập)
-                  if (item.role && !hasMinimumRole(user?.role, item.role)) return null;
-                  if (item.role && !item.scoped && !capabilities?.legacy_workspace_allowed) return null;
-                  if (singleSiteMode && item.role && !item.scoped && !["/vehicle-types", "/price-configs", "/users", "/audit-logs"].includes(item.path)) return null;
+                  if (!canShowMenuItem(item, user?.role, capabilities, singleSiteMode)) return null;
 
                   const isSelected = isMenuPathSelected(location.pathname, item.path);
 
@@ -253,7 +252,7 @@ export default function MainLayout() {
           <Outlet />
         </ErrorBoundary>
       </Box>
-      {!singleSiteMode && capabilities?.legacy_workspace_allowed && (["staff", "manager", "admin"].includes(String(user?.role).toLowerCase())) && <AIChatbot />}
+      {!singleSiteMode && capabilities?.legacy_workspace_allowed && (["manager", "admin"].includes(String(user?.role).toLowerCase())) && <AIChatbot />}
     </Box>
   );
 }

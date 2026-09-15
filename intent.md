@@ -1,5 +1,19 @@
 # Intent — ParkingAI theo đề bài gốc
 
+## Yêu cầu hiện hành — nâng cấp đồ án một bãi (15/09/2026)
+
+Người dùng đã phê duyệt phương án ngày 15/09/2026 và cho phép triển khai. Phạm vi vẫn là **một bãi duy nhất phục vụ đồ án**: giữ đầy đủ lõi gốc trước, sau đó thêm QR nhận tiền, camera quét biển, computer vision, website khách mua vé giờ/ngày/tháng, đặt chỗ và thanh toán hóa đơn. Không cần tham vấn Claude. Triển khai theo các giai đoạn trong plan.md; phê duyệt không thay cho nghiệm thu hoặc giao dịch ngân hàng thật.
+
+Mục tiêu: hai vai trò quản lý/nhân viên có hành trình khép kín từ cấu hình → nhận xe → tra cứu → tính phí/thu tiền → trả xe → báo cáo/AI; có vé tháng/khách quen, kiểm thử và minh chứng KT1/KT2/KT3/cuối kỳ. Giữ FastAPI/React và các nghiệp vụ đã có. Dùng bộ dữ liệu demo một bãi độc lập, không xóa bãi/lịch sử cũ hoặc bỏ guard để mở chức năng.
+
+Điều kiện thành công: ma trận F01–F13 đạt nghiệm thu, quyền backend/UI/AI nhất quán, tiền/chỗ đúng khi thao tác lặp hoặc lỗi, số liệu AI đối chiếu được, hướng dẫn demo/cài mới có thể thực hiện. Đề xuất cụ thể và các chính sách giá/quá hạn **chưa triển khai** ở [PROPOSAL.md](docs/upgrade-2026-09-15/PROPOSAL.md).
+
+Codex đã đối chiếu HEAD `3ef172e`; sau khi được duyệt đã triển khai nền một bãi và phần báo cáo/AI theo quyền, có UAT HTTP và kiểm tra khôi phục DB riêng. Xem [tiến độ triển khai](docs/upgrade-2026-09-15/IMPLEMENTATION.md). Nghiên cứu trước đó tham khảo JustPark, Q-Park, SKIDATA, Futech iParking, Parquery và tài liệu payOS/VietQR. [Nguồn thực tế](docs/upgrade-2026-09-15/REAL_WORLD_REFERENCES.md), [thiết kế E01–E08](docs/upgrade-2026-09-15/EXTENSION_PLAN.md). Không chờ Claude; lần tham vấn thất bại chỉ còn là [lịch sử](docs/upgrade-2026-09-15/DISCUSSION.md).
+
+Lộ trình: P0–P3 hoàn thiện/nghiệm thu lõi F01–F13 → P4 portal/gói vé/đặt chỗ → P5 QR/hóa đơn/đối soát → P6 camera OCR → P7 CV ô đỗ → P8 nghiệm thu tích hợp. Phần mở rộng là mục tiêu chính thức giai đoạn sau, không bị loại bỏ vì độ khó cơ bản của đề. Mỗi giai đoạn phải giữ các kiểm thử lõi và bảo toàn dữ liệu/chứng từ.
+
+Các phần phía dưới là bối cảnh và kết quả lịch sử; khi khác với yêu cầu 15/09, phần này được ưu tiên.
+
 ## Phạm vi hiện tại — đề bài gốc là căn cứ ưu tiên
 
 Ngày 08/09/2026, người dùng yêu cầu bám sát đề **Hệ thống quản lý bãi đỗ xe có tích hợp AI**, mức cơ bản, một bãi có nhiều khu/vị trí. Hai vai trò nghiệp vụ chính là quản lý và nhân viên. Không phát triển tiếp nhiều bãi.

@@ -15,7 +15,7 @@ class Payment(Base):
     __tablename__ = "payments"
     __table_args__ = (
         CheckConstraint(f"amount >= 0 AND amount <= {MAX_EXACT_VND}", name="ck_payment_amount"),
-        CheckConstraint("source_type IN ('parking_session', 'monthly_pass')", name="ck_payment_source"),
+        CheckConstraint("source_type IN ('parking_session', 'monthly_pass', 'portal_order', 'session_credit')", name="ck_payment_source"),
         CheckConstraint("kind IN ('receipt', 'refund')", name="ck_payment_kind"),
         CheckConstraint("method IN ('cash', 'transfer', 'legacy_unknown', 'demo')", name="ck_payment_method"),
         CheckConstraint("method != 'demo' OR shift_id IS NULL", name="ck_payment_demo_unassigned"),
@@ -51,7 +51,7 @@ PAYMENT_SQLITE_TRIGGERS = (
 # Polymorphic sources cannot use one SQL foreign key. Preserve the same
 # referential/amount guarantees with source guards after all tables exist.
 PAYMENT_SQLITE_SOURCE_TRIGGERS = (
-    "CREATE TRIGGER IF NOT EXISTS trg_payment_receipt_source BEFORE INSERT ON payments WHEN NEW.kind = 'receipt' AND ((NEW.source_type = 'parking_session' AND NOT EXISTS (SELECT 1 FROM parking_sessions WHERE id = NEW.source_id AND status = 'completed' AND parking_fee = NEW.amount)) OR (NEW.source_type = 'monthly_pass' AND NOT EXISTS (SELECT 1 FROM monthly_passes WHERE CAST(id AS TEXT) = NEW.source_id AND price = NEW.amount))) BEGIN SELECT RAISE(ABORT, 'payment source or amount invalid'); END",
+    "CREATE TRIGGER IF NOT EXISTS trg_payment_receipt_source BEFORE INSERT ON payments WHEN NEW.kind = 'receipt' AND ((NEW.source_type = 'parking_session' AND NOT EXISTS (SELECT 1 FROM parking_sessions s WHERE s.id = NEW.source_id AND s.status = 'completed' AND s.parking_fee - COALESCE((SELECT SUM(c.amount) FROM session_fee_credits c WHERE c.session_id=s.id AND c.receipt_id IS NOT NULL), 0) = NEW.amount)) OR (NEW.source_type = 'session_credit' AND NOT EXISTS (SELECT 1 FROM session_fee_credits WHERE id=NEW.source_id AND amount=NEW.amount)) OR (NEW.source_type = 'monthly_pass' AND NOT EXISTS (SELECT 1 FROM monthly_passes WHERE CAST(id AS TEXT) = NEW.source_id AND price = NEW.amount))) BEGIN SELECT RAISE(ABORT, 'payment source or amount invalid'); END",
     "CREATE TRIGGER IF NOT EXISTS trg_paid_parking_session_delete BEFORE DELETE ON parking_sessions WHEN EXISTS (SELECT 1 FROM payments WHERE source_type = 'parking_session' AND source_id = OLD.id) BEGIN SELECT RAISE(ABORT, 'paid parking session cannot be deleted'); END",
 )
 
@@ -62,7 +62,12 @@ BEGIN
     IF TG_OP <> 'INSERT' THEN RAISE EXCEPTION 'payment is immutable' USING ERRCODE = '23514'; END IF;
     IF NEW.kind = 'receipt' THEN
         IF NEW.source_type = 'parking_session' THEN
-            SELECT parking_fee INTO source_amount FROM parking_sessions WHERE id = NEW.source_id AND status = 'completed' FOR UPDATE;
+            SELECT parking_fee - COALESCE((SELECT SUM(c.amount) FROM session_fee_credits c WHERE c.session_id=s.id AND c.receipt_id IS NOT NULL), 0)
+                INTO source_amount FROM parking_sessions s WHERE s.id = NEW.source_id AND s.status = 'completed' FOR UPDATE;
+        ELSIF NEW.source_type = 'session_credit' THEN
+            SELECT amount INTO source_amount FROM session_fee_credits WHERE id = NEW.source_id FOR UPDATE;
+        ELSIF NEW.source_type = 'portal_order' THEN
+            SELECT amount INTO source_amount FROM portal_orders WHERE id = NEW.source_id AND product_kind IN ('hourly','daily') FOR UPDATE;
         ELSE
             SELECT price INTO source_amount FROM monthly_passes WHERE id::text = NEW.source_id FOR UPDATE;
         END IF;

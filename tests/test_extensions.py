@@ -37,11 +37,11 @@ def create_manager(db_session: Session) -> User:
     return manager
 
 
-def test_export_report_as_real_excel(client: TestClient, test_user: User):
+def test_export_report_as_real_excel(client: TestClient, manager_user: User):
     response = client.get(
         "/reports/export/xlsx",
         params={"period": "week"},
-        headers=make_headers(test_user),
+        headers=make_headers(manager_user),
     )
 
     assert response.status_code == 200
@@ -55,11 +55,11 @@ def test_export_report_as_real_excel(client: TestClient, test_user: User):
     assert workbook["Tong quan"]["A1"].value == "BÁO CÁO BÃI ĐỖ XE"
 
 
-def test_export_report_as_real_pdf(client: TestClient, test_user: User):
+def test_export_report_as_real_pdf(client: TestClient, manager_user: User):
     response = client.get(
         "/reports/export/pdf",
         params={"period": "month"},
-        headers=make_headers(test_user),
+        headers=make_headers(manager_user),
     )
 
     assert response.status_code == 200
@@ -71,17 +71,17 @@ def test_export_report_as_real_pdf(client: TestClient, test_user: User):
 def test_audit_middleware_records_authenticated_mutation(
     client: TestClient,
     db_session: Session,
-    test_user: User,
+    manager_user: User,
 ):
     response = client.post(
         "/api/v1/zones",
-        headers=make_headers(test_user),
+        headers=make_headers(manager_user),
         json={"name": "Khu nhật ký", "capacity": 20, "is_active": True},
     )
 
     assert response.status_code == 201
     audit = db_session.query(AuditLog).filter(AuditLog.path == "/api/v1/zones").one()
-    assert audit.username == test_user.username
+    assert audit.username == manager_user.username
     assert audit.action == "CREATE"
     assert audit.resource == "zones"
     assert audit.success is True

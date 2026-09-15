@@ -1,6 +1,7 @@
 from typing import Literal
+from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
 from core.money import MAX_EXACT_VND
 
@@ -35,21 +36,48 @@ class PlanCreate(Input):
     name: str = Field(min_length=1, max_length=100)
     site_id: int | None = Field(default=None, strict=True, gt=0)
     vehicle_type_id: int = Field(strict=True, gt=0)
-    duration_days: int = Field(strict=True, ge=1, le=366)
+    product_kind: Literal["monthly", "hourly", "daily"] = "monthly"
+    duration_days: int | None = Field(default=None, strict=True, ge=1, le=366)
+    duration_minutes: int | None = Field(default=None, strict=True, ge=60, le=1440)
     price: int = Field(strict=True, gt=0, le=MAX_EXACT_VND)
+
+    @model_validator(mode="after")
+    def valid_duration(self):
+        if self.product_kind == "monthly":
+            if self.duration_days is None or self.duration_minutes is not None:
+                raise ValueError("Vé tháng cần duration_days và không nhận duration_minutes.")
+        elif self.duration_days is not None:
+            raise ValueError("Vé giờ/ngày không nhận duration_days.")
+        elif self.product_kind == "daily":
+            if self.duration_minutes not in (None, 1440):
+                raise ValueError("Vé ngày có thời lượng 1440 phút.")
+            self.duration_minutes = 1440
+        elif self.duration_minutes is None or self.duration_minutes % 60:
+            raise ValueError("Vé giờ cần số phút chia hết cho 60.")
+        return self
 
 
 class OrderCreate(Input):
     plan_id: int = Field(strict=True, gt=0)
     vehicle_id: int = Field(strict=True, gt=0)
     idempotency_key: str = Field(min_length=8, max_length=64, pattern=r"^[a-zA-Z0-9_\-]+$")
-    payment_mode: Literal["demo", "manual"] = "demo"
+    payment_mode: Literal["demo", "manual", "payos"] = "demo"
+    start_at: datetime | None = None
+    zone_id: int | None = Field(default=None, strict=True, gt=0)
+
+    @field_validator("start_at")
+    @classmethod
+    def aware_start(cls, value):
+        if value is not None and value.tzinfo is None:
+            raise ValueError("Thời gian bắt đầu phải có múi giờ.")
+        return value
 
 
 class PlanUpdate(Input):
     name: str | None = Field(default=None, min_length=1, max_length=100)
     price: int | None = Field(default=None, strict=True, gt=0, le=MAX_EXACT_VND)
     duration_days: int | None = Field(default=None, strict=True, ge=1, le=366)
+    duration_minutes: int | None = Field(default=None, strict=True, ge=60, le=1440)
     is_active: bool | None = Field(default=None, strict=True)
 
 

@@ -121,14 +121,23 @@ def _seed_rows(db, password, now):
 
 
 def create_demo(database_path, password):
+    if len(password) < 10 or len(password.encode("utf-8")) > 72:
+        raise ValueError("Demo password must contain at least 10 characters and at most 72 UTF-8 bytes")
+    return create_new_demo(database_path, lambda db, now: _seed_rows(db, password, now))
+
+
+def create_new_demo(database_path, seed_rows):
+    """Publish a newly migrated, verified demo without touching an existing DB.
+
+    ``seed_rows`` receives only the scratch session and the business clock. It
+    returns public marker metadata; credentials must never be placed there.
+    """
     target = Path(database_path).expanduser().resolve()
     marker = Path(str(target) + ".demo.json")
     if target.suffix.lower() not in {".db", ".sqlite", ".sqlite3"}:
         raise ValueError("Use a new .db/.sqlite/.sqlite3 file for the isolated demo")
     if target.exists() or marker.exists():
         raise FileExistsError("Demo target or marker already exists; neither was changed")
-    if len(password) < 10 or len(password.encode("utf-8")) > 72:
-        raise ValueError("Demo password must contain at least 10 characters and at most 72 UTF-8 bytes")
     target.parent.mkdir(parents=True, exist_ok=True)
     from core.clock import business_now
     from database import create_database_engine
@@ -145,7 +154,7 @@ def create_demo(database_path, password):
         engine = create_database_engine("sqlite:///" + candidate.as_posix())
         try:
             with Session(engine) as db:
-                details = _seed_rows(db, password, business_now())
+                details = seed_rows(db, business_now())
             check_database_readiness(engine)
         finally:
             engine.dispose()

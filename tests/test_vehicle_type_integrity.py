@@ -40,12 +40,12 @@ def _other_vehicle_type(db: Session) -> VehicleType:
 
 def test_vehicle_type_name_is_unique_after_unicode_normalization(
     client: TestClient,
-    test_user: User,
+    manager_user: User,
     vehicle_type: VehicleType,
 ):
     response = client.post(
         "/api/v1/vehicle-types",
-        headers=_headers(test_user),
+        headers=_headers(manager_user),
         json={"name": "  Ô TÔ 4 CHỖ  ", "description": "Bản ghi trùng"},
     )
 
@@ -56,14 +56,14 @@ def test_vehicle_type_name_is_unique_after_unicode_normalization(
 def test_vehicle_type_update_cannot_create_normalized_duplicate(
     client: TestClient,
     db_session: Session,
-    test_user: User,
+    manager_user: User,
     vehicle_type: VehicleType,
 ):
     other = _other_vehicle_type(db_session)
 
     response = client.put(
         f"/api/v1/vehicle-types/{other.id}",
-        headers=_headers(test_user),
+        headers=_headers(manager_user),
         json={"name": " ô TÔ 4 CHỖ "},
     )
 
@@ -74,10 +74,10 @@ def test_vehicle_type_update_cannot_create_normalized_duplicate(
 
 def test_vehicle_type_write_contract_rejects_unknown_and_null_fields(
     client: TestClient,
-    test_user: User,
+    manager_user: User,
     vehicle_type: VehicleType,
 ):
-    headers = _headers(test_user)
+    headers = _headers(manager_user)
 
     unknown = client.post(
         "/api/v1/vehicle-types",

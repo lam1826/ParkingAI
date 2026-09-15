@@ -9,13 +9,13 @@ from services.auth_service import AuthService
 
 
 @pytest.fixture
-def auth_headers(test_user: User) -> dict:
+def auth_headers(manager_user: User) -> dict:
     """Fixture tạo Authentication Header (Bearer Token) cho test user."""
     auth_service = AuthService()
     token = auth_service.create_access_token(
-        user_id=test_user.id,
-        username=test_user.username,
-        role=str(test_user.role)
+        user_id=manager_user.id,
+        username=manager_user.username,
+        role=str(manager_user.role)
     )
     return {"Authorization": f"Bearer {token}"}
 

@@ -13,6 +13,8 @@ from schemas.checkout import CheckoutQuoteResponse
 from models.user import User
 from models.parking_slot import ParkingSlot
 from models.vehicle import Vehicle
+from schemas.session_exception import PlateCorrectionRequest, SessionExceptionRequest
+from services.session_exception_service import SessionExceptionService
 from expansion.site_models import ParkingSite
 
 router = APIRouter()
@@ -29,6 +31,29 @@ def read_parking_ticket(id: str, db: Session = Depends(get_db)):
     from services.ticket_service import get_ticket
     return get_ticket(db, id)
 
+
+@router.get("/{id}/exceptions")
+def session_exception_detail(id: str, db: Session = Depends(get_db), actor: User = Depends(get_current_user)):
+    return SessionExceptionService(db).detail(actor, None, id)
+
+
+@router.post("/{id}/cancel")
+def cancel_session(id: str, body: SessionExceptionRequest, db: Session = Depends(get_db),
+                   actor: User = Depends(RoleChecker("manager"))):
+    return SessionExceptionService(db).apply(actor, None, id, body, "cancelled")
+
+
+@router.post("/{id}/lost-ticket")
+def record_lost_ticket(id: str, body: SessionExceptionRequest, db: Session = Depends(get_db),
+                       actor: User = Depends(RoleChecker("manager"))):
+    return SessionExceptionService(db).apply(actor, None, id, body, "lost_ticket")
+
+
+@router.post("/{id}/correct-plate")
+def correct_session_plate(id: str, body: PlateCorrectionRequest, db: Session = Depends(get_db),
+                          actor: User = Depends(RoleChecker("manager"))):
+    return SessionExceptionService(db).apply(actor, None, id, body, "plate_corrected")
+
 @router.get("", response_model=List[session_schema.ParkingSessionResponse])
 def read_parking_sessions(
     skip: int = Query(0, ge=0),
@@ -36,7 +61,12 @@ def read_parking_sessions(
     db: Session = Depends(get_db),
 ):
     """Lấy danh sách lịch sử các phiên đỗ xe"""
-    return crud_session.get_parking_sessions(db, skip=skip, limit=limit)
+    rows = crud_session.get_parking_sessions(db, skip=skip, limit=limit)
+    from expansion.reservations import serialize
+    from expansion.timed_parking_service import prepaid_many
+    from services.session_credit_presentation import credit_details_many
+    prepaid_values, credit_values = prepaid_many(db, rows), credit_details_many(db, rows)
+    return [serialize(row, prepaid_values=prepaid_values, credit_values=credit_values) for row in rows]
 
 @router.get("/{id}", response_model=session_schema.ParkingSessionResponse)
 def read_parking_session(id: str, db: Session = Depends(get_db)):
@@ -44,7 +74,8 @@ def read_parking_session(id: str, db: Session = Depends(get_db)):
     db_session = crud_session.get_parking_session(db, session_id=id)
     if not db_session:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Parking session not found")
-    return db_session
+    from expansion.reservations import serialize
+    return serialize(db_session)
 
 @router.post("/check-in", response_model=session_schema.ParkingSessionResponse, status_code=status.HTTP_201_CREATED)
 def check_in_vehicle(
@@ -169,7 +200,8 @@ def check_out_vehicle(
     current_user: User = Depends(get_current_user),
 ):
     """Complete this exact session only after confirming its signed fee quote."""
-    return CheckoutService(db).confirm(session_in, current_user.id, session_id=id)
+    from expansion.reservations import serialize
+    return serialize(CheckoutService(db).confirm(session_in, current_user.id, session_id=id))
 
 @router.delete("/{id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(RoleChecker("admin"))])
 def delete_parking_session(id: str, db: Session = Depends(get_db)):
@@ -179,6 +211,12 @@ def delete_parking_session(id: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Parking session not found")
 
     from models.payment import Payment
+    if db_session.billing_policy_version is not None:
+        raise HTTPException(409, "Lượt đã chốt căn cứ giá cần được lưu lịch sử. Hãy dùng nghiệp vụ hủy có lý do hoặc hoàn tiền.")
+    from models.parking_session_event import ParkingSessionEvent
+    from sqlalchemy import or_
+    if db.scalar(select(ParkingSessionEvent.id).where(or_(ParkingSessionEvent.session_id == id, ParkingSessionEvent.replacement_session_id == id)).limit(1)):
+        raise HTTPException(409, "Lượt có lịch sử xử lý ngoại lệ nên không thể xóa.")
     if db.query(Payment.id).filter(Payment.source_type == "parking_session", Payment.source_id == id).first():
         raise HTTPException(409, "Phiên đã có chứng từ thu tiền nên không thể xóa. Hãy dùng nghiệp vụ hoàn tiền.")
 

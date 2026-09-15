@@ -20,6 +20,7 @@ router = APIRouter(
 @router.get(
     "",
     response_model=DashboardResponse,
+    dependencies=[Depends(RoleChecker("manager"))],
     status_code=status.HTTP_200_OK,
     summary="Lấy thông tin tổng quan hệ thống bãi đỗ xe"
 )
@@ -75,6 +76,7 @@ def get_recent_sessions(
 @router.get(
     "/revenue-chart",
     response_model=List[RevenueChartItem],
+    dependencies=[Depends(RoleChecker("manager"))],
     status_code=status.HTTP_200_OK,
     summary="Lấy doanh thu theo từng ngày trong 7 ngày gần nhất"
 )

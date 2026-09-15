@@ -36,7 +36,7 @@ export default function FleetSection({ organizations = [], canManage = false, si
       {action.notice && <Alert severity="success">{action.notice}</Alert>}
       {remote.loading && <Typography role="status">Đang tải đội xe…</Typography>}
       {!remote.loading && remote.data && <>
-        <Typography>Tổng lượt: {remote.data.total_sessions ?? 0} · Đang đỗ: {remote.data.active_sessions} · Đã hoàn tất: {remote.data.completed_sessions} · Tổng phí lượt gửi: {money(remote.data.parking_fees)}</Typography>
+        <Typography>Tổng lượt: {remote.data.total_sessions ?? 0} · Đang đỗ: {remote.data.active_sessions} · Đã hoàn tất: {remote.data.completed_sessions} · Tổng phí lượt gửi: {remote.data.parking_fees == null ? "Dành cho quản lý" : money(remote.data.parking_fees)}</Typography>
         <Typography variant="body2" color="text.secondary">{remote.data.fee_note || "Tổng phí lượt gửi chưa trừ hoàn tiền và không phải hóa đơn công nợ."}</Typography>
         <Records rows={remote.data.vehicles} columns={[
           { key: "vehicle_id", label: "Mã xe" }, { key: "license_plate", label: "Biển số" },

@@ -400,7 +400,8 @@ def serialize_observation(observation, camera):
         return value.replace(tzinfo=BUSINESS_TZ).isoformat() if value else None
     return {"id": observation.id, "camera_id": observation.camera_id, "site_id": observation.site_id,
             "event_id": observation.event_id, "observed_at": stamp(observation.observed_at),
-            "captured_at": stamp(observation.captured_at), "expires_at": stamp(observation.expires_at),
+            "captured_at": stamp(observation.captured_at),
+            "expires_at": stamp(min(observation.expires_at, observation.observed_at + timedelta(hours=camera.retention_hours))),
             "ocr_status": observation.ocr_status, "engine": observation.engine,
             "suggested_plate": observation.suggested_plate, "confidence": observation.confidence,
             "detections": observation.detections, "review_status": observation.review_status,

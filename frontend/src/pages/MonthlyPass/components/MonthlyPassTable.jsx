@@ -4,9 +4,9 @@ import AutorenewIcon from "@mui/icons-material/Autorenew";
 import DeleteIcon from "@mui/icons-material/Delete";
 import AddIcon from "@mui/icons-material/Add";
 import formatDate from "../../../utils/formatDate";
-import { isBusinessDateExpired, toBusinessDateString } from "../../../utils/businessDate";
+import { getMonthlyPassStatus } from "../../../utils/monthlyPassStatus";
 
-const MonthlyPassTable = ({ passes, loading, onAdd, onEdit, onDeactivate }) => {
+const MonthlyPassTable = ({ passes, loading, canManage = false, onAdd, onEdit, onDeactivate }) => {
   // Lưu ý: MUI DataGrid v9 — valueGetter/valueFormatter nhận (value, row) thay vì params
   const columns = [
     { field: "card_code", headerName: "Mã thẻ", width: 130, valueGetter: (_value, row) => row.card_code || row.pass_code, renderCell: ({ value }) => <strong>{value || "—"}</strong> },
@@ -45,22 +45,11 @@ const MonthlyPassTable = ({ passes, loading, onAdd, onEdit, onDeactivate }) => {
       flex: 1,
       minWidth: 130,
       renderCell: ({ row }) => {
-        if (!row.is_active) {
-          return <Chip label="Ngừng hoạt động" color="default" size="small" />;
-        }
-        // Vé còn hiệu lực đến HẾT ngày end_date (23:59:59), khớp cách backend tính phí
-        const isExpired = isBusinessDateExpired(row.end_date);
-        const isFuture = row.start_date > toBusinessDateString();
-        return (
-          <Chip
-            label={isExpired ? "Hết hạn" : isFuture ? "Chưa đến hạn" : "Đang hoạt động"}
-            color={isExpired ? "error" : isFuture ? "info" : "success"}
-            size="small"
-          />
-        );
+        const status = getMonthlyPassStatus(row);
+        return <Chip label={status.label} color={status.color} size="small" />;
       },
     },
-    {
+    ...(canManage ? [{
       field: "actions",
       headerName: "Thao tác",
       width: 100,
@@ -79,17 +68,17 @@ const MonthlyPassTable = ({ passes, loading, onAdd, onEdit, onDeactivate }) => {
           </Tooltip>
         </Box>
       ),
-    },
+    }] : []),
   ];
 
   return (
     <Card elevation={0} sx={{ border: "1px solid #e0e0e0" }}>
       <CardContent sx={{ p: 2, "&:last-child": { pb: 2 } }}>
-        <Box sx={{ display: "flex", justifyContent: "flex-end", mb: 2 }}>
+        {canManage && <Box sx={{ display: "flex", justifyContent: "flex-end", mb: 2 }}>
           <Button variant="contained" startIcon={<AddIcon />} onClick={onAdd}>
             Đăng ký vé tháng
           </Button>
-        </Box>
+        </Box>}
         <Box sx={{ height: 500, width: "100%" }}>
           <DataGrid
             rows={passes}

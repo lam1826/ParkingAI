@@ -4,17 +4,18 @@ import hmac
 import secrets
 import threading
 import uuid
+from datetime import timedelta
 from types import SimpleNamespace
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import ValidationError
-from sqlalchemy import select, update
+from sqlalchemy import case, exists, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, defer
 from starlette.concurrency import run_in_threadpool
 from starlette.formparsers import MultiPartException, MultiPartParser
 
-from core.clock import business_now
+from core.clock import BUSINESS_TZ, business_now
 from database import get_db
 from expansion.site_scope import require_site_access
 from expansion.vision_models import Camera, VisionObservation
@@ -35,6 +36,15 @@ router = APIRouter(prefix="/api/v2", tags=["Camera nhận diện thử nghiệm"
 _upload_gate = threading.BoundedSemaphore(value=1)
 
 
+def _within_retention(now):
+    # Retention is a bounded integer number of hours. A CASE of exact Python
+    # cutoffs avoids backend-specific datetime arithmetic/rounding, and filters
+    # expired rows before pagination without fetching any private image bytes.
+    cutoff = case({hours: now - timedelta(hours=hours) for hours in range(1, 73)},
+                  value=Camera.retention_hours, else_=now)
+    return (VisionObservation.expires_at > now) & (VisionObservation.observed_at > cutoff)
+
+
 async def _admit_upload():
     """Shed concurrent camera work before authentication opens a DB session."""
     if not _upload_gate.acquire(blocking=False):
@@ -53,10 +63,26 @@ def _camera(db, user, camera_id, minimum_role="staff"):
     return camera
 
 
-def _camera_json(camera):
+CAMERA_RECENT_SECONDS = 30
+
+
+def _camera_json(camera, last_received_at=None, *, now=None):
+    # Receipt freshness is not a device heartbeat or a claim about image quality.
+    # It is derived only from retained observations, never client capture time.
+    age = ((now or business_now()) - last_received_at).total_seconds() if last_received_at else None
+    health = ("disabled" if not camera.is_active else "unseen" if age is None else
+              "recent" if 0 <= age < CAMERA_RECENT_SECONDS else "stale")
     return {"id": camera.id, "site_id": camera.site_id, "zone_id": camera.zone_id, "name": camera.name,
             "direction": camera.direction, "is_active": camera.is_active, "retention_hours": camera.retention_hours,
-            "edge_enabled": camera.edge_token_hash is not None}
+            "edge_enabled": camera.edge_token_hash is not None, "health": health,
+            "last_received_at": last_received_at.replace(tzinfo=BUSINESS_TZ).isoformat() if last_received_at else None,
+            "health_window_seconds": CAMERA_RECENT_SECONDS}
+
+
+def _camera_with_health(db, camera):
+    latest = db.scalar(select(func.max(VisionObservation.observed_at)).where(
+        VisionObservation.camera_id == camera.id, VisionObservation.site_id == camera.site_id))
+    return _camera_json(camera, latest)
 
 
 def _save(db):
@@ -70,7 +96,13 @@ def _save(db):
 @router.get("/cameras")
 def cameras(site_id: int = Query(gt=0), db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     require_site_access(db, user, site_id)
-    return [_camera_json(camera) for camera in db.scalars(select(Camera).where(Camera.site_id == site_id).order_by(Camera.id)).all()]
+    latest = select(VisionObservation.camera_id,
+        func.max(VisionObservation.observed_at).label("last_received_at")).where(
+        VisionObservation.site_id == site_id).group_by(VisionObservation.camera_id).subquery()
+    rows = db.execute(select(Camera, latest.c.last_received_at).outerjoin(
+        latest, latest.c.camera_id == Camera.id).where(Camera.site_id == site_id).order_by(Camera.id)).all()
+    now = business_now()
+    return [_camera_json(camera, received_at, now=now) for camera, received_at in rows]
 
 
 @router.post("/cameras", status_code=201, dependencies=[Depends(RoleChecker("manager"))])
@@ -89,12 +121,23 @@ def create_camera(body: CameraCreate, db: Session = Depends(get_db), user: User 
 @router.patch("/cameras/{camera_id}", dependencies=[Depends(RoleChecker("manager"))])
 def update_camera(camera_id: int, body: CameraUpdate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     camera = _camera(db, user, camera_id, "manager")
+    if body.retention_hours is not None:
+        # Keep reductions irreversible for existing images, even if retention is
+        # raised again before the purge worker runs. Read metadata only and clamp
+        # rather than extend each row in the same camera configuration transaction.
+        hours = min(camera.retention_hours, body.retention_hours)
+        rows = db.execute(select(VisionObservation.id, VisionObservation.observed_at).where(
+            VisionObservation.camera_id == camera.id)).all()
+        for identity, observed_at in rows:
+            cutoff = observed_at + timedelta(hours=hours)
+            db.execute(update(VisionObservation).where(VisionObservation.id == identity,
+                VisionObservation.expires_at > cutoff).values(expires_at=cutoff))
     for name, value in body.model_dump(exclude_unset=True).items():
         setattr(camera, name, value)
     if not camera.is_active:
         camera.edge_token_hash = None
     _save(db)
-    return _camera_json(camera)
+    return _camera_with_health(db, camera)
 
 
 @router.delete("/cameras/{camera_id}", dependencies=[Depends(RoleChecker("manager"))])
@@ -103,7 +146,7 @@ def disable_camera(camera_id: int, db: Session = Depends(get_db), user: User = D
     camera.is_active = False
     camera.edge_token_hash = None
     _save(db)
-    return _camera_json(camera)
+    return _camera_with_health(db, camera)
 
 
 @router.post("/cameras/{camera_id}/edge-token", dependencies=[Depends(RoleChecker("manager"))])
@@ -208,16 +251,17 @@ def observations(response: Response, site_id: int = Query(gt=0), limit: int = Qu
     rows = db.execute(select(VisionObservation, Camera).options(
         defer(VisionObservation.image_bytes, raiseload=True),
     ).join(Camera).where(
-        VisionObservation.site_id == site_id, VisionObservation.expires_at > business_now()
+        VisionObservation.site_id == site_id, _within_retention(business_now())
     ).order_by(VisionObservation.observed_at.desc(), VisionObservation.id).offset(offset).limit(limit)).all()
     response.headers["Cache-Control"] = "no-store"
     return [serialize_observation(observation, camera) for observation, camera in rows]
 
 
 def _observation(db, user, observation_id, lock=False):
-    query = select(VisionObservation).where(VisionObservation.id == observation_id, VisionObservation.expires_at > business_now())
+    query = select(VisionObservation).join(Camera).where(
+        VisionObservation.id == observation_id, _within_retention(business_now()))
     if lock:
-        query = query.with_for_update()
+        query = query.with_for_update(of=VisionObservation)
     observation = db.scalar(query)
     if observation is None:
         raise HTTPException(404, "Ảnh không tồn tại hoặc đã hết thời hạn lưu.")
@@ -249,7 +293,8 @@ def review_observation(observation_id: str, body: ObservationReview, response: R
         changed = db.execute(update(VisionObservation).where(
             VisionObservation.id == observation.id,
             VisionObservation.review_status == "pending",
-            VisionObservation.expires_at > business_now(),
+            exists(select(Camera.id).where(Camera.id == VisionObservation.camera_id,
+                _within_retention(business_now()))),
         ).values(review_status=decision, confirmed_plate=body.license_plate,
                  reviewed_by_id=user.id, reviewed_at=business_now()))
         db.commit()

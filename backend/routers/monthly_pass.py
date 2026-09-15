@@ -6,7 +6,7 @@ from database import get_db
 from schemas import monthly_pass as monthly_pass_schema
 from crud import monthly_pass as crud_monthly_pass
 from models.parking_session import ParkingSession
-from services.auth_service import get_current_user
+from services.auth_service import RoleChecker, get_current_user
 from services.monthly_subscription_service import create_subscription, renew_subscription, has_receipt
 
 router = APIRouter()
@@ -28,7 +28,8 @@ def read_monthly_pass(id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Monthly pass not found")
     return db_pass
 
-@router.post("", response_model=monthly_pass_schema.MonthlyPassResponse, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=monthly_pass_schema.MonthlyPassResponse, status_code=status.HTTP_201_CREATED,
+             dependencies=[Depends(RoleChecker("manager"))])
 def create_monthly_pass(pass_in: monthly_pass_schema.MonthlyPassCreate, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
     """Đăng ký vé tháng mới"""
     # Mã thẻ NFC/RFID phải duy nhất toàn hệ thống (DB còn có unique index backstop)
@@ -60,12 +61,14 @@ def create_monthly_pass(pass_in: monthly_pass_schema.MonthlyPassCreate, db: Sess
     return create_subscription(db, pass_in, current_user.id)
 
 
-@router.post("/{id}/renew", response_model=monthly_pass_schema.MonthlyPassResponse, status_code=201)
+@router.post("/{id}/renew", response_model=monthly_pass_schema.MonthlyPassResponse, status_code=201,
+             dependencies=[Depends(RoleChecker("manager"))])
 def renew_monthly_pass(id: int, renewal: monthly_pass_schema.MonthlyPassRenew,
                       db: Session = Depends(get_db), current_user=Depends(get_current_user)):
     return renew_subscription(db, id, renewal, current_user.id)
 
-@router.put("/{id}", response_model=monthly_pass_schema.MonthlyPassResponse)
+@router.put("/{id}", response_model=monthly_pass_schema.MonthlyPassResponse,
+            dependencies=[Depends(RoleChecker("manager"))])
 def update_monthly_pass(id: int, pass_in: monthly_pass_schema.MonthlyPassUpdate, db: Session = Depends(get_db)):
     """Gia hạn hoặc cập nhật trạng thái vé tháng"""
     db_pass = crud_monthly_pass.get_monthly_pass(db, pass_id=id)
@@ -142,7 +145,8 @@ def update_monthly_pass(id: int, pass_in: monthly_pass_schema.MonthlyPassUpdate,
 
     return crud_monthly_pass.update_monthly_pass(db=db, db_pass=db_pass, pass_in=pass_in)
 
-@router.delete("/{id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{id}", status_code=status.HTTP_204_NO_CONTENT,
+               dependencies=[Depends(RoleChecker("manager"))])
 def delete_monthly_pass(id: int, db: Session = Depends(get_db)):
     """Xóa vé tháng"""
     db_pass = crud_monthly_pass.get_monthly_pass(db, pass_id=id)

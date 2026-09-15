@@ -9,6 +9,7 @@ import {
   CircularProgress,
 } from "@mui/material";
 import LoginIcon from "@mui/icons-material/Login";
+import { admissionTypeId, admissionVehicleTypes } from "../../../utils/admissionVehicleTypes";
 
 const CheckInCard = ({
   licensePlate,
@@ -25,9 +26,11 @@ const CheckInCard = ({
   onSubmit,
   submitting,
 }) => {
+  const activeTypes = admissionVehicleTypes(vehicleTypes);
+  const selectedTypeId = admissionTypeId(activeTypes, vehicleTypeId);
   // Chỉ hiển thị các vị trí trống phù hợp loại xe và khu vực đã chọn
   const filteredSlots = availableSlots.filter((s) => {
-    if (vehicleTypeId && s.vehicle_type_id !== vehicleTypeId) return false;
+    if (!selectedTypeId || s.vehicle_type_id !== Number(selectedTypeId)) return false;
     if (zoneId && s.zone_id !== zoneId) return false;
     return true;
   });
@@ -57,16 +60,17 @@ const CheckInCard = ({
             select
             size="small"
             label="Loại xe"
-            value={vehicleTypeId}
+            value={selectedTypeId}
             onChange={(e) => {
               onChangeVehicleType(e.target.value);
               onChangeSlot("");
             }}
             required
-            disabled={submitting}
+            disabled={submitting || !activeTypes.length}
+            helperText={vehicleTypeId && !selectedTypeId ? "Loại xe đã chọn không còn nhận xe. Hãy chọn lại." : ""}
             sx={{ flex: "1 1 160px" }}
           >
-            {vehicleTypes.map((t) => (
+            {activeTypes.map((t) => (
               <MenuItem key={t.id} value={t.id}>
                 {t.name}
               </MenuItem>
@@ -117,7 +121,7 @@ const CheckInCard = ({
             variant="contained"
             color="success"
             startIcon={submitting ? <CircularProgress size={20} color="inherit" /> : <LoginIcon />}
-            disabled={submitting || !licensePlate.trim() || !vehicleTypeId}
+            disabled={submitting || !licensePlate.trim() || !selectedTypeId}
             sx={{ minWidth: 140, fontWeight: "bold" }}
           >
             Check In

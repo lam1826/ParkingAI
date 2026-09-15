@@ -2,7 +2,7 @@
 import uuid
 from datetime import date, datetime
 
-from sqlalchemy import Boolean, CheckConstraint, Date, DateTime, ForeignKey, Index, String, UniqueConstraint
+from sqlalchemy import text, Boolean, CheckConstraint, Date, DateTime, ForeignKey, Index, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from core.clock import business_now
@@ -69,13 +69,15 @@ class SubscriptionPlan(Base):
     __tablename__ = "subscription_plans"
     __table_args__ = (
         CheckConstraint("price > 0 AND price <= 9007199254740991", name="ck_portal_plan_price"),
-        CheckConstraint("duration_days >= 1 AND duration_days <= 366", name="ck_portal_plan_duration"),
+        CheckConstraint("(product_kind='monthly' AND duration_days BETWEEN 1 AND 366 AND duration_minutes IS NULL) OR (product_kind='hourly' AND duration_days IS NULL AND duration_minutes BETWEEN 60 AND 1440 AND duration_minutes % 60=0) OR (product_kind='daily' AND duration_days IS NULL AND duration_minutes=1440)", name="ck_portal_plan_duration"),
     )
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(100))
     site_id: Mapped[int | None] = mapped_column(ForeignKey("parking_sites.id"), index=True)
     vehicle_type_id: Mapped[int] = mapped_column(ForeignKey("vehicle_types.id"))
-    duration_days: Mapped[int] = mapped_column()
+    product_kind: Mapped[str] = mapped_column(String(8), default="monthly", server_default=text("'monthly'"))
+    duration_days: Mapped[int | None] = mapped_column()
+    duration_minutes: Mapped[int | None] = mapped_column()
     price: Mapped[int] = mapped_column(VND_DATABASE_TYPE)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
@@ -86,9 +88,11 @@ class PortalOrder(Base):
         UniqueConstraint("user_id", "idempotency_key", name="uq_portal_order_request"),
         CheckConstraint("amount > 0 AND amount <= 9007199254740991", name="ck_portal_order_amount"),
         CheckConstraint("end_date >= start_date", name="ck_portal_order_dates"),
-        CheckConstraint("payment_mode IN ('demo','manual')", name="ck_portal_order_mode"),
+        CheckConstraint("payment_mode IN ('demo','manual','payos')", name="ck_portal_order_mode"),
         CheckConstraint("status IN ('pending','fulfilled','failed','cancelled','expired','review','refunded')", name="ck_portal_order_state"),
-        CheckConstraint("status NOT IN ('fulfilled','refunded') OR (monthly_pass_id IS NOT NULL AND receipt_id IS NOT NULL)", name="ck_portal_order_fulfilled"),
+        CheckConstraint("status NOT IN ('fulfilled','refunded') OR (receipt_id IS NOT NULL AND ((product_kind='monthly' AND monthly_pass_id IS NOT NULL AND timed_pass_id IS NULL) OR (product_kind IN ('hourly','daily') AND timed_pass_id IS NOT NULL AND monthly_pass_id IS NULL)))", name="ck_portal_order_fulfilled"),
+        CheckConstraint("product_kind IN ('monthly','hourly','daily')", name="ck_portal_order_product"),
+        CheckConstraint("product_kind='monthly' OR (start_at IS NOT NULL AND end_at>start_at AND duration_minutes>0 AND slot_id IS NOT NULL AND arrival_deadline>=start_at AND arrival_deadline<=end_at AND rate_config_id>0 AND rate_ticket_type IN ('HOURLY','DAILY') AND rate_unit_price>=0 AND rate_effective_date IS NOT NULL)", name="ck_portal_order_timed"),
         Index("ix_portal_order_due", "status", "expires_at"),
     )
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
@@ -110,6 +114,22 @@ class PortalOrder(Base):
     monthly_pass_id: Mapped[int | None] = mapped_column(ForeignKey("monthly_passes.id"), unique=True)
     receipt_id: Mapped[str | None] = mapped_column(ForeignKey("payments.id"), unique=True)
     review_reason: Mapped[str | None] = mapped_column(String(100))
+    product_kind: Mapped[str] = mapped_column(String(8), default="monthly", server_default=text("'monthly'"))
+    plan_name: Mapped[str | None] = mapped_column(String(100))
+    duration_days: Mapped[int | None] = mapped_column()
+    duration_minutes: Mapped[int | None] = mapped_column()
+    start_at: Mapped[datetime | None] = mapped_column(DateTime)
+    end_at: Mapped[datetime | None] = mapped_column(DateTime)
+    arrival_deadline: Mapped[datetime | None] = mapped_column(DateTime)
+    zone_id: Mapped[int | None] = mapped_column(ForeignKey("zones.id"))
+    slot_id: Mapped[int | None] = mapped_column(ForeignKey("parking_slots.id"))
+    requested_zone_id: Mapped[int | None] = mapped_column()
+    rate_config_id: Mapped[int | None] = mapped_column()
+    rate_ticket_type: Mapped[str | None] = mapped_column(String(8))
+    rate_unit_price: Mapped[int | None] = mapped_column(VND_DATABASE_TYPE)
+    rate_effective_date: Mapped[date | None] = mapped_column(Date)
+    # Fulfillment guard enforces the reverse link without a DDL dependency cycle.
+    timed_pass_id: Mapped[str | None] = mapped_column(String(36), unique=True)
 
 
 class PortalPaymentEvent(Base):

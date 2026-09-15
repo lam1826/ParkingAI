@@ -6,7 +6,7 @@ Nguyên tắc của bộ test này:
 - Mỗi worker có Session riêng; không share Session giữa các thread.
 - Interleaving được điều phối bằng threading.Barrier gắn vào SQLAlchemy event
   `before_cursor_execute`: mỗi thread dừng ngay TRƯỚC câu ghi đầu tiên của nó
-  (UPDATE parking_slots / INSERT parking_sessions). Nhờ đó cả hai transaction
+  (UPDATE vehicle_types / UPDATE parking_slots / INSERT parking_sessions). Nhờ đó cả hai transaction
   chắc chắn cùng tồn tại trong cửa sổ race, không phụ thuộc sleep() hay timing.
 - Barrier đặt TRƯỚC lệnh ghi (chưa giữ write lock) nên không gây deadlock;
   nếu một thread thoát sớm, barrier được abort để thread còn lại chạy tiếp.
@@ -51,7 +51,9 @@ class ConcurrentEnv:
         đặt TRƯỚC khi write thực thi nên chưa thread nào giữ write lock —
         không deadlock."""
         if sync_on is None:
-            sync_on = ("UPDATE PARKING_SLOTS", "INSERT INTO PARKING_SESSIONS")
+            # Type admission now locks before claiming a slot. Synchronize
+            # before that first write, never while holding SQLite's writer lock.
+            sync_on = ("UPDATE VEHICLE_TYPES", "UPDATE PARKING_SLOTS", "INSERT INTO PARKING_SESSIONS")
         barrier = threading.Barrier(2)
         local = threading.local()
 
@@ -249,6 +251,26 @@ def router_check_in(env, vehicle_id, slot_id):
 
 def _statuses(a, b):
     return sorted([a[1], b[1]], key=str)
+
+
+def test_type_deactivation_and_admission_cannot_both_commit(env):
+    from crud.vehicle_type import update_vehicle_type
+    from schemas.vehicle_type import VehicleTypeUpdate
+
+    env.ensure_vehicle("DEMO-TYPE-RACE")
+    def operation(environment, kind):
+        if kind == "admit":
+            return service_check_in(environment, "DEMO-TYPE-RACE", environment.slot_a)
+        with environment.Session() as db:
+            update_vehicle_type(db, db.get(VehicleType, environment.vt_id), VehicleTypeUpdate(is_active=False))
+            return ("OK", 200, "disabled")
+    admitted, disabled = env.run_pair(operation, ("admit",), ("disable",))
+    assert (admitted[0] == "OK") != (disabled[0] == "OK"), (admitted, disabled)
+    denied = disabled if admitted[0] == "OK" else admitted
+    assert denied[:2] == ("HTTP", 409), (admitted, disabled)
+    with env.Session() as db:
+        type_active = db.get(VehicleType, env.vt_id).is_active
+    assert type_active == (env.audit()["active_total"] == 1)
 
 
 # ===========================================================================

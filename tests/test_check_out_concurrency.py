@@ -21,7 +21,7 @@ from sqlalchemy import create_engine, event, select
 from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import sessionmaker
 
-from core.clock import business_now
+from core.clock import BUSINESS_TZ, business_now
 from crud import parking_session as crud_session_module
 from database import Base, run_sqlite_migrations
 from models.customer import Customer
@@ -141,7 +141,7 @@ def test_server_time_is_authoritative(
 
     assert response.status_code == 200
     data = response.json()
-    assert data["check_out_time"] == frozen.isoformat()
+    assert data["check_out_time"] == frozen.replace(tzinfo=BUSINESS_TZ).isoformat()
     # Đúng 2 giờ (không lệch giây nào) -> phí = 2 x đơn giá theo server clock
     assert data["parking_fee"] == price_config.price * 2
 
@@ -351,7 +351,11 @@ def _put_checkout(env, staff_id):
             user = db.get(User, staff_id)
             res = check_out_vehicle(id=env.session_id, session_in=confirmation,
                                     db=db, current_user=user)
-            return ("OK", 200, res.parking_fee, res.check_out_time, staff_id)
+            # The route presents credits and timezone-aware API values as a
+            # dictionary; persisted business timestamps remain naive local time.
+            assert res["check_out_time"].utcoffset() == datetime.timedelta(hours=7)
+            persisted_time = res["check_out_time"].astimezone(BUSINESS_TZ).replace(tzinfo=None)
+            return ("OK", 200, res["parking_fee"], persisted_time, staff_id)
         finally:
             db.close()
     return run

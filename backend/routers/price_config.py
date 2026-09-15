@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from typing import List
 
 from database import get_db
+from services.auth_service import RoleChecker
 from schemas import price_config as price_config_schema
 from crud import price_config as crud_price_config
 
@@ -23,7 +24,7 @@ def _raise_if_active_rate_is_in_use(
     db_config,
     changed_fields: set[str] | None = None,
 ) -> None:
-    """Protect the fallback rate contract used by every open stay."""
+    """Protect only legacy stays that lack an immutable admission tariff."""
     if changed_fields is not None and not (changed_fields & _RATE_CONTRACT_FIELDS):
         return
     if not db_config.is_active:
@@ -58,7 +59,8 @@ def read_price_config(id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Price config not found")
     return db_config
 
-@router.post("", response_model=price_config_schema.PriceConfigResponse, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=price_config_schema.PriceConfigResponse, status_code=status.HTTP_201_CREATED,
+             dependencies=[Depends(RoleChecker("manager"))])
 def create_price_config(config_in: price_config_schema.PriceConfigCreate, db: Session = Depends(get_db)):
     """Tạo cấu hình giá mới"""
     # Bất biến: mỗi loại xe chỉ có tối đa MỘT bảng giá active tại một thời điểm
@@ -77,7 +79,8 @@ def create_price_config(config_in: price_config_schema.PriceConfigCreate, db: Se
 
     return crud_price_config.create_price_config(db=db, config_in=config_in)
 
-@router.put("/{id}", response_model=price_config_schema.PriceConfigResponse)
+@router.put("/{id}", response_model=price_config_schema.PriceConfigResponse,
+            dependencies=[Depends(RoleChecker("manager"))])
 def update_price_config(id: int, config_in: price_config_schema.PriceConfigUpdate, db: Session = Depends(get_db)):
     """Cập nhật cấu hình giá (thay đổi giá hoặc trạng thái active)"""
     db_config = crud_price_config.get_price_config(db, config_id=id)
@@ -118,7 +121,8 @@ def update_price_config(id: int, config_in: price_config_schema.PriceConfigUpdat
 
     return crud_price_config.update_price_config(db=db, db_config=db_config, config_in=config_in)
 
-@router.delete("/{id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{id}", status_code=status.HTTP_204_NO_CONTENT,
+               dependencies=[Depends(RoleChecker("manager"))])
 def delete_price_config(id: int, db: Session = Depends(get_db)):
     """Xóa cấu hình giá"""
     db_config = crud_price_config.get_price_config(db, config_id=id)

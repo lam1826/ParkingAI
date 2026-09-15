@@ -62,7 +62,7 @@ def test_public_revenue_aggregates_fail_closed_above_exact_vnd_range(
     monkeypatch,
     client: TestClient,
     db_session: Session,
-    test_user,
+    manager_user,
     vehicle,
 ):
     """A JSON number above 2**53-1 would be rounded by every JS client.
@@ -75,20 +75,20 @@ def test_public_revenue_aggregates_fail_closed_above_exact_vnd_range(
     _completed_session(
         db_session,
         vehicle_id=vehicle.id,
-        staff_id=test_user.id,
+        staff_id=manager_user.id,
         check_in_time=datetime(2026, 8, 27, 8, 15),
         parking_fee=MAX_EXACT_VND,
     )
     _completed_session(
         db_session,
         vehicle_id=vehicle.id,
-        staff_id=test_user.id,
+        staff_id=manager_user.id,
         check_in_time=datetime(2026, 8, 27, 10, 15),
         parking_fee=2,
     )
     db_session.commit()
 
-    headers = _headers(test_user)
+    headers = _headers(manager_user)
     for endpoint in (
         "/reports/revenue?period=day",
         "/parking/statistics",
@@ -137,7 +137,7 @@ def test_revenue_aggregates_over_sqlite_int64_fail_with_domain_error(
     monkeypatch,
     client: TestClient,
     db_session: Session,
-    test_user,
+    manager_user,
     vehicle,
 ):
     """A valid row set must never leak SQLite's ``integer overflow``.
@@ -151,14 +151,14 @@ def test_revenue_aggregates_over_sqlite_int64_fail_with_domain_error(
         _completed_session(
             db_session,
             vehicle_id=vehicle.id,
-            staff_id=test_user.id,
+            staff_id=manager_user.id,
             check_in_time=datetime(2026, 8, 27, 8, 0) + timedelta(seconds=index),
             parking_fee=MAX_EXACT_VND,
         )
     db_session.commit()
 
     expected_detail = "Tổng doanh thu vượt phạm vi VND chính xác được hỗ trợ."
-    headers = _headers(test_user)
+    headers = _headers(manager_user)
     for endpoint in (
         "/reports/revenue?period=day",
         "/parking/statistics",
@@ -279,20 +279,20 @@ def test_excel_export_traffic_uses_same_selected_period_as_revenue(
     monkeypatch,
     client: TestClient,
     db_session: Session,
-    test_user,
+    manager_user,
     vehicle,
 ):
     monkeypatch.setattr(clock_module, "datetime", FixedBusinessClock)
     _completed_session(
         db_session,
         vehicle_id=vehicle.id,
-        staff_id=test_user.id,
+        staff_id=manager_user.id,
         check_in_time=datetime(2026, 8, 27, 8, 15),
     )
     _completed_session(
         db_session,
         vehicle_id=vehicle.id,
-        staff_id=test_user.id,
+        staff_id=manager_user.id,
         check_in_time=datetime(2026, 8, 26, 8, 15),
     )
     db_session.commit()
@@ -300,7 +300,7 @@ def test_excel_export_traffic_uses_same_selected_period_as_revenue(
     response = client.get(
         "/reports/export/xlsx",
         params={"period": "day"},
-        headers=_headers(test_user),
+        headers=_headers(manager_user),
     )
 
     assert response.status_code == 200
@@ -315,19 +315,19 @@ def test_excel_export_traffic_uses_same_selected_period_as_revenue(
 def test_report_endpoints_honor_one_explicit_anchor_date(
     client: TestClient,
     db_session: Session,
-    test_user,
+    manager_user,
     vehicle,
 ):
     """Two HTTP calls can cross midnight; anchor_date keeps their period identical."""
     _completed_session(
         db_session,
         vehicle_id=vehicle.id,
-        staff_id=test_user.id,
+        staff_id=manager_user.id,
         check_in_time=datetime(2026, 9, 1, 8, 15),
     )
     db_session.commit()
     params = {"period": "day", "anchor_date": "2026-09-01"}
-    headers = _headers(test_user)
+    headers = _headers(manager_user)
 
     revenue = client.get("/reports/revenue", params=params, headers=headers)
     traffic = client.get("/reports/traffic", params=params, headers=headers)
@@ -344,19 +344,19 @@ def test_report_endpoints_honor_one_explicit_anchor_date(
 def test_export_honors_explicit_anchor_in_content_and_filename(
     client: TestClient,
     db_session: Session,
-    test_user,
+    manager_user,
     vehicle,
 ):
     _completed_session(
         db_session,
         vehicle_id=vehicle.id,
-        staff_id=test_user.id,
+        staff_id=manager_user.id,
         check_in_time=datetime(2026, 8, 31, 8, 15),
     )
     _completed_session(
         db_session,
         vehicle_id=vehicle.id,
-        staff_id=test_user.id,
+        staff_id=manager_user.id,
         check_in_time=datetime(2026, 9, 1, 9, 15),
     )
     db_session.commit()
@@ -364,7 +364,7 @@ def test_export_honors_explicit_anchor_in_content_and_filename(
     response = client.get(
         "/reports/export/xlsx",
         params={"period": "day", "anchor_date": "2026-09-01"},
-        headers=_headers(test_user),
+        headers=_headers(manager_user),
     )
 
     assert response.status_code == 200
@@ -391,14 +391,14 @@ def test_export_honors_explicit_anchor_in_content_and_filename(
 )
 def test_report_endpoints_reject_anchor_dates_that_overflow_period_bounds(
     client: TestClient,
-    test_user,
+    manager_user,
     endpoint: str,
     period: str,
 ):
     response = client.get(
         endpoint,
         params={"period": period, "anchor_date": "9999-12-31"},
-        headers=_headers(test_user),
+        headers=_headers(manager_user),
     )
 
     assert response.status_code == 422
@@ -439,7 +439,7 @@ def test_excel_export_neutralizes_formula_like_vehicle_type_name(
     monkeypatch,
     client: TestClient,
     db_session: Session,
-    test_user,
+    manager_user,
     vehicle,
 ):
     monkeypatch.setattr(clock_module, "datetime", FixedBusinessClock)
@@ -447,7 +447,7 @@ def test_excel_export_neutralizes_formula_like_vehicle_type_name(
     _completed_session(
         db_session,
         vehicle_id=vehicle.id,
-        staff_id=test_user.id,
+        staff_id=manager_user.id,
         check_in_time=datetime(2026, 8, 27, 8, 15),
     )
     db_session.commit()
@@ -455,7 +455,7 @@ def test_excel_export_neutralizes_formula_like_vehicle_type_name(
     response = client.get(
         "/reports/export/xlsx",
         params={"period": "day"},
-        headers=_headers(test_user),
+        headers=_headers(manager_user),
     )
 
     assert response.status_code == 200
@@ -469,7 +469,7 @@ def test_excel_export_removes_xml_illegal_vehicle_type_characters(
     monkeypatch,
     client: TestClient,
     db_session: Session,
-    test_user,
+    manager_user,
     vehicle,
 ):
     monkeypatch.setattr(clock_module, "datetime", FixedBusinessClock)
@@ -477,7 +477,7 @@ def test_excel_export_removes_xml_illegal_vehicle_type_characters(
     _completed_session(
         db_session,
         vehicle_id=vehicle.id,
-        staff_id=test_user.id,
+        staff_id=manager_user.id,
         check_in_time=datetime(2026, 8, 27, 8, 15),
     )
     db_session.commit()
@@ -485,7 +485,7 @@ def test_excel_export_removes_xml_illegal_vehicle_type_characters(
     response = client.get(
         "/reports/export/xlsx",
         params={"period": "day", "anchor_date": "2026-08-27"},
-        headers=_headers(test_user),
+        headers=_headers(manager_user),
     )
 
     assert response.status_code == 200
@@ -497,7 +497,7 @@ def test_excel_export_writes_large_exact_vnd_as_text(
     monkeypatch,
     client: TestClient,
     db_session: Session,
-    test_user,
+    manager_user,
     vehicle,
 ):
     """Excel numeric cells only preserve 15 significant decimal digits."""
@@ -505,7 +505,7 @@ def test_excel_export_writes_large_exact_vnd_as_text(
     _completed_session(
         db_session,
         vehicle_id=vehicle.id,
-        staff_id=test_user.id,
+        staff_id=manager_user.id,
         check_in_time=datetime(2026, 8, 27, 8, 15),
         parking_fee=MAX_EXACT_VND,
     )
@@ -514,7 +514,7 @@ def test_excel_export_writes_large_exact_vnd_as_text(
     response = client.get(
         "/reports/export/xlsx",
         params={"period": "day", "anchor_date": "2026-08-27"},
-        headers=_headers(test_user),
+        headers=_headers(manager_user),
     )
 
     assert response.status_code == 200
@@ -528,7 +528,7 @@ def test_revenue_totals_keep_exact_integer_vnd_across_report_and_dashboard(
     monkeypatch,
     client: TestClient,
     db_session: Session,
-    test_user,
+    manager_user,
     vehicle,
 ):
     """Giá trị đúng tại biên 2**53-1 vẫn phải được công bố chính xác."""
@@ -536,13 +536,13 @@ def test_revenue_totals_keep_exact_integer_vnd_across_report_and_dashboard(
     first = _completed_session(
         db_session,
         vehicle_id=vehicle.id,
-        staff_id=test_user.id,
+        staff_id=manager_user.id,
         check_in_time=datetime(2026, 8, 27, 8, 15),
     )
     second = _completed_session(
         db_session,
         vehicle_id=vehicle.id,
-        staff_id=test_user.id,
+        staff_id=manager_user.id,
         check_in_time=datetime(2026, 8, 27, 10, 15),
     )
     first.parking_fee = MAX_EXACT_VND - 1
@@ -553,9 +553,9 @@ def test_revenue_totals_keep_exact_integer_vnd_across_report_and_dashboard(
     report = client.get(
         "/reports/revenue",
         params={"period": "day"},
-        headers=_headers(test_user),
+        headers=_headers(manager_user),
     )
-    dashboard = client.get("/dashboard", headers=_headers(test_user))
+    dashboard = client.get("/dashboard", headers=_headers(manager_user))
 
     assert report.status_code == 200
     assert dashboard.status_code == 200

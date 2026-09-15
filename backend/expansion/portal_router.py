@@ -122,8 +122,14 @@ def sessions(limit: int = Query(50, ge=1, le=100), offset: int = Query(0, ge=0),
     customer = service.get_linked_customer(db, user)
     rows = db.scalars(select(ParkingSession).join(PortalSessionGrant,
         PortalSessionGrant.parking_session_id == ParkingSession.id).where(PortalSessionGrant.customer_id == customer.id)
-        .order_by(ParkingSession.check_in_time.desc(), ParkingSession.id).offset(offset).limit(limit))
+        .order_by(ParkingSession.check_in_time.desc(), ParkingSession.id).offset(offset).limit(limit)).all()
+    from expansion.timed_parking_service import prepaid_many
+    prepaid_values = prepaid_many(db, rows)
+    from services.session_credit_presentation import credit_details_many
+    credit_values = credit_details_many(db, rows)
     return {"items": [{**fields(row, "id", "vehicle_id", "parking_slot_id", "check_in_time", "check_out_time", "parking_fee", "status"),
+        "prepaid": prepaid_values.get(row.id), "billing_basis": row.billing_basis, "monthly_coverage_end": row.monthly_coverage_end,
+        **credit_values[row.id],
         "license_plate": db.get(Vehicle, row.vehicle_id).license_plate, **location(db, row)} for row in rows],
         "history_note": "Chỉ hiển thị lượt được xác nhận quyền sở hữu tại thời điểm xe vào; không tự cấp quyền cho lịch sử cũ."}
 
@@ -138,11 +144,40 @@ def passes(limit: int = Query(50, ge=1, le=100), offset: int = Query(0, ge=0), d
 
 @router.get("/plans")
 def plans(db=Depends(get_db), user=Depends(get_current_user)):
-    rows = db.execute(select(SubscriptionPlan, ParkingSite.name, VehicleType.name).join(ParkingSite,
+    from expansion.online_payment_service import available_payment_modes
+    from expansion.gateway import DemoGateway
+    demo_enabled = DemoGateway().settings.DEMO_PAYMENTS_ENABLED
+    rows = db.execute(select(SubscriptionPlan, ParkingSite.name, VehicleType.name, ParkingSite.customer_booking_mode).join(ParkingSite,
         ParkingSite.id == SubscriptionPlan.site_id).join(VehicleType, VehicleType.id == SubscriptionPlan.vehicle_type_id)
         .where(SubscriptionPlan.is_active.is_(True), ParkingSite.is_active.is_(True), VehicleType.is_active.is_(True)).order_by(SubscriptionPlan.id))
-    return {"items": [{**fields(row, "id", "name", "site_id", "vehicle_type_id", "duration_days", "price"),
-        "site_name": site_name, "type_name": type_name} for row, site_name, type_name in rows]}
+    zones = {}
+    for site_id, kind_id, zone_id, name in db.execute(select(Zone.site_id, ParkingSlot.vehicle_type_id, Zone.id, Zone.name)
+            .join(ParkingSlot).where(Zone.is_active.is_(True), ParkingSlot.is_active.is_(True)).distinct()):
+        zones.setdefault((site_id, kind_id), []).append({"id": zone_id, "name": name})
+    return {"items": [{**fields(row, "id", "name", "site_id", "vehicle_type_id", "duration_days", "price", "product_kind", "duration_minutes"),
+        "site_name": site_name, "type_name": type_name, "customer_booking_mode": mode,
+        "payment_modes": available_payment_modes(row.site_id, demo_enabled),
+        "eligible_zones": zones.get((row.site_id, row.vehicle_type_id), []) if row.product_kind != "monthly" else []}
+        for row, site_name, type_name, mode in rows]}
+
+
+@router.get("/me/timed-passes")
+def timed_passes(limit: int = Query(50, ge=1, le=100), offset: int = Query(0, ge=0), db=Depends(get_db), user=Depends(get_current_user)):
+    from expansion.timed_parking_models import TimedParkingPass
+    from expansion.timed_parking_service import aware, order_details_many, ticket_status
+    customer = service.get_linked_customer(db, user)
+    rows = db.execute(select(TimedParkingPass, PortalOrder, Vehicle.license_plate).join(PortalOrder,
+        PortalOrder.id == TimedParkingPass.order_id).join(Vehicle, Vehicle.id == TimedParkingPass.vehicle_id)
+        .where(PortalOrder.user_id == user.id, PortalOrder.customer_id == customer.id,
+            TimedParkingPass.customer_id == customer.id).order_by(TimedParkingPass.start_at.desc(), TimedParkingPass.id)
+        .offset(offset).limit(limit)).all()
+    details = order_details_many(db, [row[1] for row in rows])
+    now = business_now()
+    return {"items": [{**details[order.id], "id": ticket.id, "order_id": order.id,
+        "vehicle_id": ticket.vehicle_id, "site_id": ticket.site_id, "status": ticket_status(ticket, now),
+        "license_plate": plate, "session_id": ticket.session_id, "amount": ticket.amount,
+        "payment_mode": order.payment_mode, "receipt_id": order.receipt_id}
+        for ticket, order, plate in rows], "server_now": aware(now)}
 
 
 @router.post("/me/orders")
@@ -154,9 +189,11 @@ def order_create(data: OrderCreate, db=Depends(get_db), user=Depends(get_current
 def orders(limit: int = Query(50, ge=1, le=100), offset: int = Query(0, ge=0), db=Depends(get_db), user=Depends(get_current_user)):
     customer = service.get_linked_customer(db, user)
     rows = db.scalars(select(PortalOrder).where(PortalOrder.user_id == user.id, PortalOrder.customer_id == customer.id)
-        .order_by(PortalOrder.created_at.desc(), PortalOrder.id).offset(offset).limit(limit))
+        .order_by(PortalOrder.created_at.desc(), PortalOrder.id).offset(offset).limit(limit)).all()
+    from expansion.timed_parking_service import order_details_many
+    details = order_details_many(db, rows)
     # QR generation is only necessary for the selected order detail.
-    return {"items": [service.serialize_order(row) for row in rows]}
+    return {"items": [service.serialize_order(row, details=details[row.id]) for row in rows]}
 
 
 @router.get("/me/orders/{identity}")
@@ -200,7 +237,12 @@ def receipts(limit: int = Query(50, ge=1, le=100), offset: int = Query(0, ge=0),
     customer = service.get_linked_customer(db, user)
     own_periods = select(cast(MonthlyPass.id, String)).where(MonthlyPass.customer_id == customer.id)
     own_sessions = select(PortalSessionGrant.parking_session_id).where(PortalSessionGrant.customer_id == customer.id)
+    from expansion.session_payment_models import SessionFeeCredit
+    own_credits = select(SessionFeeCredit.id).where(SessionFeeCredit.session_id.in_(own_sessions))
+    own_orders = select(PortalOrder.id).where(PortalOrder.user_id == user.id, PortalOrder.customer_id == customer.id)
     rows = db.scalars(select(Payment).where(or_(
+        (Payment.source_type == "session_credit") & Payment.source_id.in_(own_credits),
+        (Payment.source_type == "portal_order") & Payment.source_id.in_(own_orders),
         (Payment.source_type == "monthly_pass") & Payment.source_id.in_(own_periods),
         (Payment.source_type == "parking_session") & Payment.source_id.in_(own_sessions)))
         .order_by(Payment.created_at.desc(), Payment.id).offset(offset).limit(limit))
@@ -213,7 +255,12 @@ def receipt_pdf(identity: str, db=Depends(get_db), user=Depends(get_current_user
     customer = service.get_linked_customer(db, user)
     own_periods = select(cast(MonthlyPass.id, String)).where(MonthlyPass.customer_id == customer.id)
     own_sessions = select(PortalSessionGrant.parking_session_id).where(PortalSessionGrant.customer_id == customer.id)
+    from expansion.session_payment_models import SessionFeeCredit
+    own_credits = select(SessionFeeCredit.id).where(SessionFeeCredit.session_id.in_(own_sessions))
+    own_orders = select(PortalOrder.id).where(PortalOrder.user_id == user.id, PortalOrder.customer_id == customer.id)
     receipt = db.scalar(select(Payment).where(Payment.id == identity, or_(
+        (Payment.source_type == "session_credit") & Payment.source_id.in_(own_credits),
+        (Payment.source_type == "portal_order") & Payment.source_id.in_(own_orders),
         (Payment.source_type == "monthly_pass") & Payment.source_id.in_(own_periods),
         (Payment.source_type == "parking_session") & Payment.source_id.in_(own_sessions))))
     if receipt is None:
@@ -301,7 +348,7 @@ def admin_account_unlink(user_id: int, db=Depends(get_db), actor=Depends(admin))
 @router.post("/portal/admin/plans")
 def admin_plan_create(data: PlanCreate, db=Depends(get_db), actor=Depends(manager)):
     row = write(db, lambda: service.create_plan(db, actor, data))
-    return fields(row, "id", "name", "site_id", "vehicle_type_id", "duration_days", "price", "is_active")
+    return fields(row, "id", "name", "site_id", "vehicle_type_id", "duration_days", "price", "is_active", "product_kind", "duration_minutes")
 
 
 @router.get("/portal/admin/plans")
@@ -311,7 +358,7 @@ def admin_plans(db=Depends(get_db), actor=Depends(manager)):
     if not is_global_admin(actor):
         query = query.where(SubscriptionPlan.site_id.in_(allowed_site_ids(db, actor)))
     rows = db.scalars(query)
-    return {"items": [{**fields(row, "id", "name", "site_id", "vehicle_type_id", "duration_days", "price", "is_active"),
+    return {"items": [{**fields(row, "id", "name", "site_id", "vehicle_type_id", "duration_days", "price", "is_active", "product_kind", "duration_minutes"),
         "site_name": db.get(ParkingSite, row.site_id).name if row.site_id else None,
         "type_name": db.get(VehicleType, row.vehicle_type_id).name} for row in rows]}
 
@@ -319,14 +366,16 @@ def admin_plans(db=Depends(get_db), actor=Depends(manager)):
 @router.patch("/portal/admin/plans/{identity}")
 def admin_plan_update(identity: int, data: PlanUpdate, db=Depends(get_db), actor=Depends(manager)):
     row = write(db, lambda: service.update_plan(db, actor, identity, data))
-    return fields(row, "id", "name", "site_id", "vehicle_type_id", "duration_days", "price", "is_active")
+    return fields(row, "id", "name", "site_id", "vehicle_type_id", "duration_days", "price", "is_active", "product_kind", "duration_minutes")
 
 
 @router.get("/portal/admin/orders")
 def admin_orders(limit: int = Query(50, ge=1, le=100), offset: int = Query(0, ge=0), db=Depends(get_db), actor=Depends(manager)):
     rows = db.scalars(select(PortalOrder).where(PortalOrder.site_id.in_(allowed_site_ids(db, actor)))
-        .order_by(PortalOrder.created_at.desc(), PortalOrder.id).offset(offset).limit(limit))
-    return {"items": [{**service.serialize_order(row), "customer_name": db.get(Customer, row.customer_id).full_name,
+        .order_by(PortalOrder.created_at.desc(), PortalOrder.id).offset(offset).limit(limit)).all()
+    from expansion.timed_parking_service import order_details_many
+    details = order_details_many(db, rows)
+    return {"items": [{**service.serialize_order(row, details=details[row.id]), "customer_name": db.get(Customer, row.customer_id).full_name,
         "username": db.get(User, row.user_id).username, "license_plate": db.get(Vehicle, row.vehicle_id).license_plate,
         "site_name": db.get(ParkingSite, row.site_id).name} for row in rows]}
 

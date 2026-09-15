@@ -6,6 +6,7 @@ from sqlalchemy import create_engine, event
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker, DeclarativeBase
 from core.money import MAX_EXACT_VND
+from core.billing_guards import BILLING_SQLITE_GUARDS, SNAPSHOT_COLUMN_TYPES, validate_sqlite_billing_snapshots
 
 # 1. Định nghĩa đường dẫn tới file database SQLite
 # ĐỔI TÊN THƯ MỤC: Đổi từ "./database" thành "./db_data" để tránh xung đột với tên file database.py
@@ -494,15 +495,18 @@ def _sqlite_checkout_confirmation_invalid(prefix: str = "") -> str:
     digest = prefix + "checkout_quote_hash"
     method = prefix + "checkout_payment_method"
     fee = prefix + "parking_fee"
+    identity = prefix + "id" if prefix else "parking_sessions.id"
+    credits = f"COALESCE((SELECT SUM(c.amount) FROM session_fee_credits c WHERE c.session_id={identity} AND c.receipt_id IS NOT NULL), 0)"
+    due = f"({fee} - {credits})"
     return (
         f"({digest} IS NULL AND {method} IS NOT NULL) OR "
         f"({digest} IS NOT NULL AND (typeof({digest}) != 'text' "
         f"OR length({digest}) != 64 OR length(CAST({digest} AS BLOB)) != 64 "
         f"OR {digest} GLOB '*[^0-9a-f]*' "
         f"OR {prefix}status IS NOT 'completed' OR {prefix}staff_out_id IS NULL "
-        f"OR {fee} IS NULL OR {fee} < 0 "
-        f"OR ({fee} = 0 AND {method} IS NOT NULL) "
-        f"OR ({fee} > 0 AND COALESCE({method}, '') NOT IN ('cash', 'transfer'))))"
+        f"OR {fee} IS NULL OR {fee} < 0 OR {due} < 0 "
+        f"OR ({due} = 0 AND {method} IS NOT NULL) "
+        f"OR ({due} > 0 AND COALESCE({method}, '') NOT IN ('cash', 'transfer'))))"
     )
 
 
@@ -529,7 +533,10 @@ CHECKOUT_CONFIRMATION_UPDATE_TRIGGER_SQL = (
 # PostgreSQL databases and upgrades equivalent; the test compares both copies.
 CHECKOUT_CONFIRMATION_POSTGRES_GUARD_SQL = """
 CREATE OR REPLACE FUNCTION parking_checkout_confirmation_guard() RETURNS trigger AS $$
+DECLARE balance_due bigint;
 BEGIN
+    SELECT NEW.parking_fee - COALESCE(SUM(amount), 0) INTO balance_due
+        FROM session_fee_credits WHERE session_id=NEW.id AND receipt_id IS NOT NULL;
     IF TG_OP = 'INSERT' THEN
         IF NEW.checkout_quote_hash IS NOT NULL OR NEW.checkout_payment_method IS NOT NULL THEN
             RAISE EXCEPTION 'checkout confirmation requires completion' USING ERRCODE = '23514';
@@ -544,9 +551,9 @@ BEGIN
        (NEW.checkout_quote_hash IS NOT NULL AND (
            length(NEW.checkout_quote_hash) != 64 OR NEW.checkout_quote_hash !~ '^[0-9a-f]{64}$'
            OR NEW.status IS DISTINCT FROM 'completed'
-           OR NEW.staff_out_id IS NULL OR NEW.parking_fee IS NULL OR NEW.parking_fee < 0
-           OR (NEW.parking_fee = 0 AND NEW.checkout_payment_method IS NOT NULL)
-           OR (NEW.parking_fee > 0 AND COALESCE(NEW.checkout_payment_method, '') NOT IN ('cash', 'transfer')))) THEN
+           OR NEW.staff_out_id IS NULL OR NEW.parking_fee IS NULL OR NEW.parking_fee < 0 OR balance_due < 0
+           OR (balance_due = 0 AND NEW.checkout_payment_method IS NOT NULL)
+           OR (balance_due > 0 AND COALESCE(NEW.checkout_payment_method, '') NOT IN ('cash', 'transfer')))) THEN
         RAISE EXCEPTION 'checkout confirmation invalid or immutable' USING ERRCODE = '23514';
     END IF;
     RETURN NEW;
@@ -587,6 +594,51 @@ SESSION_RATE_ACTIVATION_VALIDATION_TRIGGER_SQL = (
     "BEGIN SELECT RAISE(ABORT, "
     "'active parking session requires effective price config'); END"
 )
+
+# Preserve exact prior definitions for safe, explicit rollout of existing DBs.
+PRE_SNAPSHOT_TRIGGER_SQL = {
+    TRG_PRICE_ACTIVE_SESSION_UPDATE_GUARD: PRICE_ACTIVE_SESSION_UPDATE_GUARD_TRIGGER_SQL,
+    TRG_PRICE_ACTIVE_SESSION_DELETE_GUARD: PRICE_ACTIVE_SESSION_DELETE_GUARD_TRIGGER_SQL,
+    TRG_PRICE_ACTIVE_SESSION_REPLACE_GUARD: PRICE_ACTIVE_SESSION_REPLACE_GUARD_TRIGGER_SQL,
+    TRG_SESSION_RATE_INSERT_VALIDATION: SESSION_RATE_INSERT_VALIDATION_TRIGGER_SQL,
+    TRG_SESSION_RATE_ACTIVATION_VALIDATION: SESSION_RATE_ACTIVATION_VALIDATION_TRIGGER_SQL,
+}
+PRICE_ACTIVE_SESSION_UPDATE_GUARD_TRIGGER_SQL = PRICE_ACTIVE_SESSION_UPDATE_GUARD_TRIGGER_SQL.replace(
+    "ps.status = 'active'", "ps.status IN ('active', 'checking_out') AND ps.billing_policy_version IS NULL"
+)
+PRICE_ACTIVE_SESSION_DELETE_GUARD_TRIGGER_SQL = PRICE_ACTIVE_SESSION_DELETE_GUARD_TRIGGER_SQL.replace(
+    "ps.status = 'active'", "ps.status IN ('active', 'checking_out') AND ps.billing_policy_version IS NULL"
+)
+PRICE_ACTIVE_SESSION_REPLACE_GUARD_TRIGGER_SQL = PRICE_ACTIVE_SESSION_REPLACE_GUARD_TRIGGER_SQL.replace(
+    "ps.status = 'active'", "ps.status IN ('active', 'checking_out') AND ps.billing_policy_version IS NULL"
+)
+SESSION_RATE_INSERT_VALIDATION_TRIGGER_SQL = SESSION_RATE_INSERT_VALIDATION_TRIGGER_SQL.replace(
+    "WHEN NEW.status = 'active'", "WHEN NEW.status = 'active' AND NEW.billing_policy_version IS NULL"
+)
+SESSION_RATE_ACTIVATION_VALIDATION_TRIGGER_SQL = SESSION_RATE_ACTIVATION_VALIDATION_TRIGGER_SQL.replace(
+    "WHEN NEW.status = 'active'", "WHEN NEW.status = 'active' AND NEW.billing_policy_version IS NULL"
+)
+SNAPSHOT_REVISED_TRIGGER_SQL = {
+    TRG_PRICE_ACTIVE_SESSION_UPDATE_GUARD: PRICE_ACTIVE_SESSION_UPDATE_GUARD_TRIGGER_SQL,
+    TRG_PRICE_ACTIVE_SESSION_DELETE_GUARD: PRICE_ACTIVE_SESSION_DELETE_GUARD_TRIGGER_SQL,
+    TRG_PRICE_ACTIVE_SESSION_REPLACE_GUARD: PRICE_ACTIVE_SESSION_REPLACE_GUARD_TRIGGER_SQL,
+    TRG_SESSION_RATE_INSERT_VALIDATION: SESSION_RATE_INSERT_VALIDATION_TRIGGER_SQL,
+    TRG_SESSION_RATE_ACTIVATION_VALIDATION: SESSION_RATE_ACTIVATION_VALIDATION_TRIGGER_SQL,
+}
+
+
+def upgrade_snapshot_triggers(connection):
+    """Only replace an exact known predecessor; never adopt an unknown guard."""
+    def signature(sql):
+        return " ".join(sql.replace("IF NOT EXISTS ", "").split()).strip().rstrip(";").lower()
+    existing = dict(connection.exec_driver_sql("SELECT name, sql FROM sqlite_master WHERE type = 'trigger'").all())
+    for name, old_sql in PRE_SNAPSHOT_TRIGGER_SQL.items():
+        if name in existing:
+            if signature(existing[name]) not in (signature(old_sql), signature(SNAPSHOT_REVISED_TRIGGER_SQL[name])):
+                raise RuntimeError(f"Trigger {name} tồn tại nhưng sai định nghĩa")
+            if signature(existing[name]) == signature(old_sql):
+                connection.exec_driver_sql(f"DROP TRIGGER {name}")
+
 
 TRG_SESSION_SLOT_ADMISSION_INSERT_VALIDATION = (
     "trg_parking_sessions_slot_admission_insert_validation"
@@ -882,6 +934,8 @@ def run_sqlite_migrations(target_engine=engine) -> None:
     """
     if not str(target_engine.url).startswith("sqlite"):
         return
+    from expansion.session_credit_rollout import ensure_credit_tables
+    ensure_credit_tables(target_engine)
     with target_engine.begin() as conn:
         # Add nullable attribution only: legacy rows must not acquire guessed sites.
         additions = {
@@ -1085,6 +1139,13 @@ def run_sqlite_migrations(target_engine=engine) -> None:
                     conn.exec_driver_sql(
                         f"ALTER TABLE parking_sessions ADD COLUMN {confirmation_column} {sql_type}"
                     )
+            for snapshot_column, sql_type in SNAPSHOT_COLUMN_TYPES.items():
+                if snapshot_column not in vehicle_session_columns:
+                    conn.exec_driver_sql(f"ALTER TABLE parking_sessions ADD COLUMN {snapshot_column} {sql_type}")
+            upgrade_snapshot_triggers(conn)
+            validate_sqlite_billing_snapshots(conn)
+            for statement in BILLING_SQLITE_GUARDS.values():
+                conn.exec_driver_sql(statement)
         vehicle_pass_columns = {
             row[1]
             for row in conn.exec_driver_sql("PRAGMA table_info(monthly_passes)")
@@ -1404,6 +1465,7 @@ def run_sqlite_migrations(target_engine=engine) -> None:
                     "FROM parking_sessions AS ps "
                     "JOIN vehicles AS v ON v.id = ps.vehicle_id "
                     "WHERE ps.status = 'active' "
+                    "AND ps.billing_policy_version IS NULL "
                     "AND NOT EXISTS ("
                     "SELECT 1 FROM price_configs AS pc "
                     "WHERE pc.vehicle_type_id = v.vehicle_type_id "

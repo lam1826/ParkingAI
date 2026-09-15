@@ -85,7 +85,7 @@ def test_user_api_returns_role_and_supports_create(
     assert all("role" in item for item in listed.json())
 
 
-def test_manager_can_view_users_but_cannot_modify(
+def test_manager_can_view_self_but_cannot_create_manager(
     client: TestClient,
     manager_user: User,
 ):

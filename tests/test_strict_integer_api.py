@@ -24,11 +24,11 @@ def make_headers(user: User) -> dict[str, str]:
 def test_zone_capacity_rejects_boolean_on_create_and_update(
     client: TestClient,
     db_session: Session,
-    test_user: User,
+    manager_user: User,
     zone: Zone,
     boolean_value: bool,
 ):
-    headers = make_headers(test_user)
+    headers = make_headers(manager_user)
     original_count = db_session.query(Zone).count()
     original_capacity = zone.capacity
 
@@ -54,12 +54,12 @@ def test_zone_capacity_rejects_boolean_on_create_and_update(
 def test_price_config_price_rejects_boolean_on_create_and_update(
     client: TestClient,
     db_session: Session,
-    test_user: User,
+    manager_user: User,
     vehicle_type,
     price_config: PriceConfig,
     boolean_value: bool,
 ):
-    headers = make_headers(test_user)
+    headers = make_headers(manager_user)
     original_count = db_session.query(PriceConfig).count()
     original_price = price_config.price
 
@@ -91,13 +91,13 @@ def test_price_config_price_rejects_boolean_on_create_and_update(
 def test_monthly_pass_price_rejects_boolean_on_create_and_update(
     client: TestClient,
     db_session: Session,
-    test_user: User,
+    manager_user: User,
     vehicle,
     customer,
     business_reference_now,
     boolean_value: bool,
 ):
-    headers = make_headers(test_user)
+    headers = make_headers(manager_user)
     start_date = business_reference_now.date()
     monthly_pass = MonthlyPass(
         customer_id=customer.id,

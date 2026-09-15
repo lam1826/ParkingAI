@@ -24,14 +24,18 @@ MONTHLY_CARD_SQLITE_TRIGGERS = (
 
 def validate_finance_invariants(connection) -> None:
     """Read-only checks shared by both database deployment gates."""
+    credited = "COALESCE((SELECT SUM(c.amount) FROM session_fee_credits c WHERE c.session_id=session.id AND c.receipt_id IS NOT NULL),0)"
+    due = f"(session.parking_fee - {credited})"
     invalid_confirmation_receipt = connection.execute(text(
         "SELECT session.id FROM parking_sessions session LEFT JOIN payments receipt "
         "ON receipt.source_type = 'parking_session' AND receipt.source_id = session.id AND receipt.kind = 'receipt' "
         "WHERE session.checkout_quote_hash IS NOT NULL AND ("
-        "(session.parking_fee = 0 AND receipt.id IS NOT NULL) OR "
-        "(session.parking_fee > 0 AND (receipt.id IS NULL OR receipt.amount != session.parking_fee "
-        "OR receipt.method != session.checkout_payment_method OR receipt.collected_by_id IS NULL "
-        "OR receipt.collected_by_id != session.staff_out_id))) ORDER BY session.id LIMIT 1"
+        f"{due}<0 OR (session.parking_fee=0 AND receipt.id IS NOT NULL) OR "
+        f"(session.parking_fee>0 AND (receipt.id IS NULL OR receipt.amount!={due} "
+        f"OR ({due}>0 AND (receipt.method!=session.checkout_payment_method OR receipt.collected_by_id IS NULL "
+        "OR receipt.collected_by_id!=session.staff_out_id)) "
+        f"OR ({due}=0 AND (receipt.method!='transfer' OR receipt.collected_by_id IS NOT NULL OR receipt.shift_id IS NOT NULL))))) "
+        "ORDER BY session.id LIMIT 1"
     )).first()
     if invalid_confirmation_receipt:
         raise RuntimeError(
@@ -59,11 +63,22 @@ def validate_finance_invariants(connection) -> None:
         "LEFT JOIN monthly_passes period ON receipt.source_type = 'monthly_pass' AND receipt.source_id = CAST(period.id AS TEXT) "
         "LEFT JOIN parking_sessions session ON receipt.source_type = 'parking_session' AND receipt.source_id = session.id "
         "WHERE receipt.kind = 'receipt' AND ((receipt.source_type = 'monthly_pass' AND (period.id IS NULL OR receipt.amount != period.price)) "
-        "OR (receipt.source_type = 'parking_session' AND (session.id IS NULL OR session.status != 'completed' OR session.parking_fee IS NULL OR receipt.amount != session.parking_fee))) "
+        f"OR (receipt.source_type = 'parking_session' AND (session.id IS NULL OR session.status != 'completed' OR session.parking_fee IS NULL OR receipt.amount != {due}))) "
         "ORDER BY receipt.id LIMIT 1"
     )).first()
     if invalid_receipt:
         raise RuntimeError(f"Bất biến phiếu thu/nguồn thu không hợp lệ: {tuple(invalid_receipt)}")
+    invalid_credit = connection.execute(text(
+        "SELECT c.id FROM session_fee_credits c LEFT JOIN session_fee_quotes q ON q.id=c.quote_id "
+        "LEFT JOIN payments p ON p.id=c.receipt_id WHERE c.receipt_id IS NULL OR q.id IS NULL "
+        "OR q.status!='fulfilled' OR q.credit_id!=c.id OR q.receipt_id!=c.receipt_id "
+        "OR p.id IS NULL OR p.source_type!='session_credit' OR p.source_id!=c.id OR p.kind!='receipt' "
+        "OR p.amount!=c.amount OR p.amount!=q.amount OR p.method!='transfer' "
+        "OR p.collected_by_id IS NOT NULL OR p.shift_id IS NOT NULL OR p.site_id!=q.site_id "
+        "ORDER BY c.id LIMIT 1"
+    )).first()
+    if invalid_credit:
+        raise RuntimeError(f"Khoản trả online thiếu chứng từ hoặc đề nghị đã hoàn tất: {tuple(invalid_credit)}")
     invalid_refund = connection.execute(text(
         "SELECT refund.id FROM payments refund LEFT JOIN payments original ON original.id = refund.original_payment_id "
         "WHERE refund.kind = 'refund' AND (original.id IS NULL OR original.kind != 'receipt' "

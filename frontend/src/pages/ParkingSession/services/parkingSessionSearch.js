@@ -25,6 +25,7 @@ export function buildParkingSearchParams(filters = {}) {
 
   if (filters.status) params.status = filters.status;
   if (filters.licensePlate?.trim()) params.license_plate = filters.licensePlate.trim();
+  if (filters.sessionId?.trim()) params.session_id = filters.sessionId.trim();
   if (dateFrom) params.date_from = `${dateFrom}T00:00:00`;
   if (dateTo) params.date_to = `${dateTo}T23:59:59.999999`;
   if (filters.zoneId) params.zone_id = filters.zoneId;
@@ -46,6 +47,9 @@ function mapSession(item) {
     checkOutTime: item.check_out_time,
     durationMinutes: item.duration_minutes,
     parkingFee: item.parking_fee,
+    billing_basis: item.billing_basis ?? null,
+    prepaid: item.prepaid ?? null,
+    monthly_coverage_end: item.monthly_coverage_end ?? null,
     status: item.status,
   };
 }

@@ -56,6 +56,7 @@ class ParkingService:
                 Zone, ParkingSlot.zone_id == Zone.id
             ).where(
                 ParkingSlot.vehicle_type_id == vehicle_type_id,
+                ParkingSlot.vehicle_type_id.in_(select(VehicleType.id).where(VehicleType.is_active.is_(True))),
                 ParkingSlot.is_occupied == False,
                 ParkingSlot.is_active == True,
                 Zone.is_active == True,
@@ -91,9 +92,14 @@ class ParkingService:
         time_out: datetime,
         monthly_pass_id: int | None = None,
         monthly_coverage_end: date | None = None,
+        billing_session: ParkingSession | None = None,
     ) -> int:
 
         try:
+            if billing_session is not None and billing_session.billing_policy_version is not None:
+                from core.billing import snapshot_basis
+                basis = snapshot_basis(billing_session, time_out)
+                return basis["billable_blocks"] * basis["unit_price"]
             seconds = (time_out - time_in).total_seconds()
 
             if seconds < 0:
@@ -213,6 +219,8 @@ class ParkingService:
                     status_code=400,
                     detail="Loại xe không hợp lệ."
                 )
+            if not vehicle_type.is_active:
+                raise HTTPException(409, "Loại xe đã ngừng sử dụng. Không thể nhận thêm xe thuộc loại này.")
 
             vehicle = self.db.execute(
                 select(Vehicle).where(
@@ -318,6 +326,14 @@ class ParkingService:
                 self.db, monthly_pass_id=monthly_pass_id, check_in_time=check_in_time,
                 site_id=admission_site_id,
             )
+            from expansion.timed_parking_service import admission_snapshot
+            billing_snapshot = admission_snapshot(self.db, vehicle, slot.id, check_in_time)
+            if billing_snapshot is not None:
+                monthly_pass_id = monthly_coverage_end = None
+            else:
+                billing_snapshot = crud_parking_session.resolve_check_in_billing_snapshot(
+                    self.db, vehicle_type_id, check_in_time,
+                )
 
             if parking_slot_id is not None:
                 if not claim_parking_slot(
@@ -390,7 +406,8 @@ class ParkingService:
                 monthly_coverage_end=monthly_coverage_end,
                 check_in_time=check_in_time,
                 status="active",
-                staff_in_id=staff_id
+                staff_in_id=staff_id,
+                **billing_snapshot,
             )
 
             self.db.add(session)
@@ -490,7 +507,9 @@ class ParkingService:
         confirmed = CheckoutConfirmation.model_validate(confirmation)
         session = CheckoutService(self.db).confirm(confirmed, staff_id, license_plate=license_plate)
         vehicle = self.db.get(Vehicle, session.vehicle_id)
+        from services.session_credit_presentation import credit_details_one
         return {
+            **credit_details_one(self.db, session),
             "session_id": session.id, "license_plate": vehicle.license_plate,
             "check_in_time": session.check_in_time, "check_out_time": session.check_out_time,
             "duration_minutes": int((session.check_out_time - session.check_in_time).total_seconds() / 60),
@@ -510,6 +529,7 @@ class ParkingService:
 
             total_vehicles = self.db.execute(
                 select(func.count(ParkingSession.id)).where(
+                    ParkingSession.status != "cancelled",
                     ParkingSession.check_in_time >= start_day,
                     ParkingSession.check_in_time < end_day
                 )
@@ -524,6 +544,7 @@ class ParkingService:
                     func.count(ParkingSession.id).label("count")
                 )
                 .where(
+                    ParkingSession.status != "cancelled",
                     ParkingSession.check_in_time >= start_day,
                     ParkingSession.check_in_time < end_day
                 )
@@ -555,6 +576,7 @@ class ParkingService:
                     .join(Zone, ParkingSlot.zone_id == Zone.id)
                     .where(
                         ParkingSlot.is_active == True,
+                        ParkingSlot.vehicle_type_id.in_(select(VehicleType.id).where(VehicleType.is_active.is_(True))),
                         Zone.is_active == True,
                     )
                     .group_by(ParkingSlot.is_occupied)
@@ -607,6 +629,7 @@ class ParkingService:
                     func.count(ParkingSession.id).label("entries"),
                 )
                 .where(
+                    ParkingSession.status != "cancelled",
                     ParkingSession.check_in_time >= range_start,
                     ParkingSession.check_in_time < range_end,
                 )
@@ -679,6 +702,7 @@ class ParkingService:
                 Zone, ParkingSlot.zone_id == Zone.id
             ).where(
                 ParkingSlot.is_active == True,
+                ParkingSlot.vehicle_type_id.in_(select(VehicleType.id).where(VehicleType.is_active.is_(True))),
                 Zone.is_active == True,
             )
             slots = self.db.execute(stmt_slots).scalars().all()
@@ -776,7 +800,8 @@ class ParkingService:
         page: int = 1,
         size: int = 10,
         sort_by: str = "check_in_time",
-        sort_order: str = "desc"
+        sort_order: str = "desc",
+        session_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Tìm kiếm, lọc, sắp xếp và phân trang lịch sử gửi xe.
@@ -788,6 +813,8 @@ class ParkingService:
             )
 
             # Filter
+            if session_id:
+                stmt = stmt.where(ParkingSession.id == session_id.strip())
             if license_plate:
                 stmt = stmt.where(
                     Vehicle.license_plate.ilike(f"%{license_plate.strip()}%")
@@ -845,6 +872,10 @@ class ParkingService:
             stmt = stmt.offset(offset).limit(size)
 
             sessions = self.db.execute(stmt).scalars().all()
+            from expansion.timed_parking_service import prepaid_many
+            prepaid_values = prepaid_many(self.db, sessions)
+            from services.session_credit_presentation import credit_details_many
+            credit_values = credit_details_many(self.db, sessions)
 
             items = []
 
@@ -876,6 +907,7 @@ class ParkingService:
                             zone_name = zone_info.name
 
                 items.append({
+                    **credit_values[session.id],
                     "session_id": session.id,
                     "vehicle": vehicle_info,
                     "slot_id": session.parking_slot_id,
@@ -893,6 +925,9 @@ class ParkingService:
                         else None
                     ),
                     "parking_fee": session.parking_fee or 0,
+                    "monthly_coverage_end": session.monthly_coverage_end,
+                    "billing_basis": session.billing_basis,
+                    "prepaid": prepaid_values.get(session.id),
                     "status": session.status,
                     "handled_by_staff": staff_info
                 })
@@ -925,6 +960,7 @@ class ParkingService:
         # 1. Tổng số xe vào bãi hôm nay
         total_vehicles_today = self.db.execute(
             select(func.count(ParkingSession.id)).where(
+                ParkingSession.status != "cancelled",
                 ParkingSession.check_in_time >= start_of_day,
                 ParkingSession.check_in_time < end_of_day
             )
@@ -956,6 +992,7 @@ class ParkingService:
             .join(Zone, Zone.id == ParkingSlot.zone_id)
             .where(
                 ParkingSlot.is_active == True,
+                ParkingSlot.vehicle_type_id.in_(select(VehicleType.id).where(VehicleType.is_active.is_(True))),
                 Zone.is_active == True,
             )
         ).scalar() or 0
@@ -965,6 +1002,7 @@ class ParkingService:
             .join(Zone, Zone.id == ParkingSlot.zone_id)
             .where(
                 ParkingSlot.is_active == True,
+                ParkingSlot.vehicle_type_id.in_(select(VehicleType.id).where(VehicleType.is_active.is_(True))),
                 ParkingSlot.is_occupied == True,
                 Zone.is_active == True,
             )
@@ -982,6 +1020,7 @@ class ParkingService:
                 func.count(ParkingSession.id).label("count_val")
             )
             .where(
+                ParkingSession.status != "cancelled",
                 ParkingSession.check_in_time >= start_of_day,
                 ParkingSession.check_in_time < end_of_day
             )
@@ -1029,6 +1068,7 @@ class ParkingService:
                 .join(Zone, Zone.id == ParkingSlot.zone_id)
                 .where(
                     ParkingSlot.is_active == True,
+                    ParkingSlot.vehicle_type_id.in_(select(VehicleType.id).where(VehicleType.is_active.is_(True))),
                     Zone.is_active == True,
                 )
             ).scalar() or 1
@@ -1084,7 +1124,8 @@ class ParkingService:
                     "plate": r.license_plate,
                     "vehicleType": r.vehicle_type_name,
                     "timeIn": r.check_in_time.isoformat() if r.check_in_time else None,
-                    "status": "Đang đỗ" if r.status == "active" else "Đã rời bãi",
+                    "status": {"active": "Đang đỗ", "checking_out": "Đang xử lý ra",
+                               "completed": "Đã rời bãi", "cancelled": "Đã hủy"}.get(r.status, r.status),
                 }
                 for r in rows
             ]

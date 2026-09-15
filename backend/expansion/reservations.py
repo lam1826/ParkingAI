@@ -25,7 +25,7 @@ def local_time(value):
 _API_FIELDS = {
     "parking_reservations": (
         "id", "site_id", "slot_id", "customer_id", "vehicle_id", "start_at", "end_at",
-        "arrival_deadline", "status", "request_id", "session_id", "created_at",
+        "arrival_deadline", "status", "request_id", "session_id", "created_at", "order_id",
     ),
     "guaranteed_allocations": (
         "id", "site_id", "slot_id", "customer_id", "vehicle_id", "start_at", "end_at",
@@ -43,7 +43,7 @@ _API_FIELDS = {
 _UTC_METADATA_COLUMNS = {"created_at", "updated_at"}
 
 
-def serialize(row):
+def serialize(row, *, prepaid_values=None, credit_values=None):
     result = {}
     selected = _API_FIELDS.get(row.__table__.name)
     columns = (row.__table__.columns[name] for name in selected) if selected else row.__table__.columns
@@ -55,6 +55,14 @@ def serialize(row):
             elif value.tzinfo is None:
                 value = value.replace(tzinfo=BUSINESS_TZ)
         result[column.name] = value
+    if row.__table__.name == "parking_sessions":
+        result["billing_basis"] = row.billing_basis
+        result["monthly_coverage_end"] = row.monthly_coverage_end
+        from expansion.timed_parking_service import prepaid
+        result["prepaid"] = prepaid(row) if prepaid_values is None else prepaid_values.get(row.id)
+        from sqlalchemy.orm import object_session
+        from services.session_credit_presentation import credit_details_one
+        result.update(credit_details_one(object_session(row), row) if credit_values is None else credit_values[row.id])
     return result
 
 
@@ -67,18 +75,37 @@ def lock_slot(db, slot_id):
 
 def expire_slot(db, slot_id, now):
     """Caller holds the slot lock. Repeating expiry never changes arrived/cancelled rows."""
+    from expansion.timed_parking_models import TimedParkingPass
+    db.execute(update(TimedParkingPass).where(TimedParkingPass.slot_id == slot_id,
+        TimedParkingPass.status == "ready", TimedParkingPass.arrival_deadline <= now).values(status="expired"))
     return db.execute(update(ParkingReservation).where(
         ParkingReservation.slot_id == slot_id, ParkingReservation.status == "confirmed",
         ParkingReservation.arrival_deadline <= now,
     ).values(status="expired")).rowcount
 
 
+def unconsumed_reservation():
+    """Arrived reservations stop holding capacity once their linked stay ends."""
+    active_stay = exists(select(ParkingSession.id).where(
+        ParkingSession.id == ParkingReservation.session_id,
+        ParkingSession.status.in_(["active", "checking_out"]),
+    ).correlate(ParkingReservation))
+    return or_(
+        ParkingReservation.status == "confirmed",
+        and_(ParkingReservation.status == "arrived", active_stay),
+    )
+
+
+def live_reservation(now):
+    return and_(unconsumed_reservation(),
+        or_(ParkingReservation.status == "arrived", ParkingReservation.arrival_deadline > now))
+
+
 def _reservation_commitment(slot_id, now):
     return and_(
         ParkingReservation.slot_id == slot_id,
-        ParkingReservation.status.in_(["confirmed", "arrived"]),
+        live_reservation(now),
         ParkingReservation.end_at > now,
-        or_(ParkingReservation.status == "arrived", ParkingReservation.arrival_deadline > now),
     )
 
 
@@ -95,7 +122,8 @@ def has_slot_commitment(slot_id, now):
     Read-only availability shares the admission predicates without taking locks.
     Actual admission still locks and rechecks the slot and the driver's rights.
     """
-    return or_(exists().where(_reservation_commitment(slot_id, now)),
+    from expansion.timed_parking_service import live_hold
+    return or_(exists().where(live_hold(slot_id, now)), exists().where(_reservation_commitment(slot_id, now)),
                exists().where(_allocation_commitment(slot_id, now)))
 
 
@@ -131,6 +159,13 @@ def admission_allowed(db, slot_id, *, vehicle_id=None, at=None, lock=True):
                        and owner_id is not None and r.start_at <= now < r.end_at]
     entitlement = eligible + own_allocations
     end = max((r.end_at for r in entitlement), default=None)
+    from expansion.timed_parking_service import live_hold
+    from expansion.timed_parking_models import ParkingCapacityHold
+    holds = select(ParkingCapacityHold.id).where(live_hold(slot_id, now))
+    if end is not None:
+        holds = holds.where(ParkingCapacityHold.start_at < end)
+    if db.scalar(holds.limit(1)):
+        return False
     for row in reservations + allocations:
         if row in entitlement:
             continue
@@ -145,6 +180,8 @@ def record_admission(db, session):
     """Called before the existing check-in commit; session and arrival stay atomic."""
     if session.parking_slot_id is None:
         return
+    from expansion.timed_parking_service import consume
+    consume(db, session)
     now = session.check_in_time
     actual_site_id = db.scalar(select(Zone.site_id).join(
         ParkingSlot, ParkingSlot.zone_id == Zone.id,
@@ -223,6 +260,9 @@ def _overlaps(db, slot, start, end, vehicle_id, now, *, customer_id, allocation=
     )))
     if occupied:
         return True
+    from expansion.timed_parking_service import hold_overlaps
+    if hold_overlaps(db, slot.id, start, end, now):
+        return True
     reservations, allocations = _slot_rows(db, slot.id, now)
     for row in reservations + allocations:
         if row.start_at < end and row.end_at > start:
@@ -263,19 +303,20 @@ def reserve(db, actor, data, *, customer=False, allocation=False, _now=None):
             raise HTTPException(409, "Chủ sở hữu xe vừa thay đổi. Hãy tải lại hồ sơ trước khi đặt chỗ.")
         # Ownership may have changed while the request waited for either lock.
         vehicle = _vehicle(db, actor, data.vehicle_id, data.site_id, customer=True)
+    from crud.vehicle_type import require_active_vehicle_type
+    require_active_vehicle_type(db, vehicle.vehicle_type_id)
     old = _existing(db, model, data, actor, start, end)
     if old is not None:
         return old
+    if customer:
+        from expansion.timed_parking_service import require_paid_booking_policy
+        require_paid_booking_policy(db, data.site_id, vehicle, start, end, data.slot_id)
     _check_window(data, now, customer=customer)
     if customer:
         active_count = db.scalar(select(func.count()).select_from(ParkingReservation).where(
             ParkingReservation.customer_id == vehicle.customer_id,
-            ParkingReservation.status.in_(["confirmed", "arrived"]),
+            live_reservation(now),
             ParkingReservation.end_at > now,
-            or_(
-                ParkingReservation.status == "arrived",
-                ParkingReservation.arrival_deadline > now,
-            ),
         ))
         if active_count >= MAX_ACTIVE_CUSTOMER_RESERVATIONS:
             raise HTTPException(409, "Mỗi khách hàng chỉ được có tối đa 5 đặt chỗ đang hoạt động.")
@@ -284,9 +325,8 @@ def reserve(db, actor, data, *, customer=False, allocation=False, _now=None):
     overlapping_reservation = db.scalar(select(ParkingReservation.id).where(
         ParkingReservation.vehicle_id == vehicle.id,
         ParkingReservation.customer_id == vehicle.customer_id,
-        ParkingReservation.status.in_(["confirmed", "arrived"]),
+        live_reservation(now),
         ParkingReservation.start_at < end, ParkingReservation.end_at > start,
-        or_(ParkingReservation.status == "arrived", ParkingReservation.arrival_deadline > now),
     ).limit(1))
     if overlapping_reservation:
         raise HTTPException(409, "Xe đã có đặt chỗ trong khoảng thời gian này.")
@@ -351,6 +391,8 @@ def cancel(db, actor, row, *, customer=False):
     else:
         require_site_access(db, actor, row.site_id,
                             "manager" if isinstance(row, GuaranteedAllocation) else "staff")
+    if getattr(row, "order_id", None) is not None:
+        raise HTTPException(409, "Đặt chỗ thuộc đơn trả trước. Hãy xử lý hủy/hoàn từ đơn để giữ đúng quyền vé.")
     if row.status == "arrived":
         raise HTTPException(409, "Xe đã vào bãi; hãy sử dụng nghiệp vụ xe ra.")
     if row.status in {"cancelled", "expired"}:
@@ -362,6 +404,14 @@ def cancel(db, actor, row, *, customer=False):
 
 def arrive(db, actor, row):
     require_site_access(db, actor, row.site_id)
+    from services.payment_service import lock_cash_operator
+    from services.monthly_subscription_service import _lock_vehicle
+    from crud.vehicle_type import require_active_vehicle_type
+    lock_cash_operator(db, actor.id)
+    _lock_vehicle(db, row.vehicle_id)
+    vehicle = db.get(Vehicle, row.vehicle_id)
+    db.refresh(vehicle)
+    require_active_vehicle_type(db, vehicle.vehicle_type_id)
     lock_slot(db, row.slot_id)
     db.refresh(row)
     if row.status == "arrived":
@@ -391,6 +441,9 @@ def join_waitlist(db, actor, data, *, customer=False):
     old = _existing(db, SiteWaitlist, data, actor, start, end)
     if old:
         return old
+    if customer:
+        from expansion.timed_parking_service import require_paid_booking_policy
+        require_paid_booking_policy(db, data.site_id, vehicle, start, end)
     _check_window(data, now, customer=customer)
     row = SiteWaitlist(site_id=data.site_id, customer_id=vehicle.customer_id, vehicle_id=vehicle.id,
                        start_at=start, end_at=end, request_id=data.request_id, created_by_id=actor.id)

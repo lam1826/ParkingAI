@@ -17,9 +17,14 @@ from expansion_demo_guards import validate_demo_ledger
 from expansion_rollout import validate_zone_site_assignment
 
 
-POSTGRES_SCHEMA_REVISION = "20260908_03"
+POSTGRES_SCHEMA_REVISION = "20260915_06"
 
 REQUIRED_COLUMN_CONTRACTS = frozenset({
+    "parking_sessions.billing_policy_version:character varying:32:YES",
+    "parking_sessions.rate_config_id:integer::YES",
+    "parking_sessions.rate_ticket_type:character varying:8:YES",
+    "parking_sessions.rate_unit_price:bigint::YES",
+    "parking_sessions.rate_effective_date:date::YES",
     "site_ai_analyses.site_id:integer::NO",
     "site_ai_analyses.context:json::NO",
     "payments.site_id:integer::YES",
@@ -114,9 +119,36 @@ REQUIRED_TRIGGERS = frozenset(
         "trg_paid_parking_session_delete",
         "trg_monthly_coverage_guard",
         "trg_parking_sessions_checkout_confirmation_guard",
+        "trg_parking_sessions_billing_snapshot_guard",
     }
 )
 
+
+# Exception evidence is additive and cannot disappear on application rollback.
+REQUIRED_TABLES = REQUIRED_TABLES | frozenset({"parking_session_events"})
+REQUIRED_COLUMN_CONTRACTS = REQUIRED_COLUMN_CONTRACTS | frozenset({
+    "parking_session_events.id:character varying:36:NO",
+    "parking_session_events.session_id:character varying:36:NO",
+    "parking_session_events.site_id:integer::YES",
+    "parking_session_events.action:character varying:20:NO",
+    "parking_session_events.reason:character varying:500:NO",
+    "parking_session_events.request_id:character varying:64:NO",
+    "parking_session_events.actor_id:integer::NO",
+    "parking_session_events.actor_username:character varying:50:NO",
+    "parking_session_events.created_at:timestamp without time zone::NO",
+    "parking_session_events.before_state:json::NO",
+    "parking_session_events.after_state:json::NO",
+    "parking_session_events.replacement_session_id:character varying:36:YES",
+})
+REQUIRED_CONSTRAINTS = REQUIRED_CONSTRAINTS | frozenset({
+    "uq_session_event_request", "ck_session_event_action", "ck_session_event_reason",
+    "ck_session_event_request", "ck_session_event_actor", "ck_session_event_replacement",
+})
+REQUIRED_TRIGGERS = REQUIRED_TRIGGERS | frozenset({"trg_session_event_guard", "trg_session_event_session_delete"})
+REQUIRED_INDEXES = REQUIRED_INDEXES | frozenset({
+    "ix_parking_session_events_session_id", "ix_parking_session_events_site_id",
+    "ix_parking_session_events_replacement_session_id",
+})
 
 # Expansion revision 20260907_02; explicit catalog contracts stay read-only.
 REQUIRED_TABLES = REQUIRED_TABLES | frozenset(['fleet_vehicles',
@@ -378,6 +410,206 @@ REQUIRED_TRIGGERS = REQUIRED_TRIGGERS | frozenset({"trg_payment_demo_boundary"})
 REQUIRED_TRIGGERS = REQUIRED_TRIGGERS | frozenset({"trg_payment_site_guard", "trg_cash_shift_site_immutable"})
 REQUIRED_INDEXES = REQUIRED_INDEXES | frozenset({"ix_payments_site_id", "ix_cash_shifts_site_id", "ix_audit_logs_request_id", "ix_audit_logs_site_id"})
 
+# Prepaid windows revision 20260915_03.
+REQUIRED_TABLES |= frozenset({"parking_capacity_holds", "timed_parking_passes"})
+REQUIRED_COLUMN_CONTRACTS -= frozenset({"subscription_plans.duration_days:integer::NO"})
+REQUIRED_COLUMN_CONTRACTS |= frozenset(['parking_sites.customer_booking_mode:character varying:16:NO', 'subscription_plans.product_kind:character varying:8:NO', 'subscription_plans.duration_minutes:integer::YES', 'portal_orders.product_kind:character varying:8:NO', 'portal_orders.plan_name:character varying:100:YES', 'portal_orders.duration_days:integer::YES', 'portal_orders.duration_minutes:integer::YES', 'portal_orders.start_at:timestamp without time zone::YES', 'portal_orders.end_at:timestamp without time zone::YES', 'portal_orders.arrival_deadline:timestamp without time zone::YES', 'portal_orders.zone_id:integer::YES', 'portal_orders.slot_id:integer::YES', 'portal_orders.requested_zone_id:integer::YES', 'portal_orders.rate_config_id:integer::YES', 'portal_orders.rate_ticket_type:character varying:8:YES', 'portal_orders.rate_unit_price:bigint::YES', 'portal_orders.rate_effective_date:date::YES', 'portal_orders.timed_pass_id:character varying:36:YES', 'parking_reservations.order_id:character varying:36:YES', 'parking_sessions.timed_pass_id:character varying:36:YES', 'parking_sessions.prepaid_start_at:timestamp without time zone::YES', 'parking_sessions.prepaid_end_at:timestamp without time zone::YES', 'parking_capacity_holds.id:character varying:36:NO', 'parking_capacity_holds.order_id:character varying:36:NO', 'parking_capacity_holds.site_id:integer::NO', 'parking_capacity_holds.slot_id:integer::NO', 'parking_capacity_holds.customer_id:integer::NO', 'parking_capacity_holds.vehicle_id:integer::NO', 'parking_capacity_holds.start_at:timestamp without time zone::NO', 'parking_capacity_holds.end_at:timestamp without time zone::NO', 'parking_capacity_holds.expires_at:timestamp without time zone::NO', 'parking_capacity_holds.status:character varying:12:NO', 'parking_capacity_holds.reservation_id:character varying:36:YES', 'parking_capacity_holds.created_at:timestamp without time zone::NO', 'timed_parking_passes.id:character varying:36:NO', 'timed_parking_passes.order_id:character varying:36:NO', 'timed_parking_passes.reservation_id:character varying:36:NO', 'timed_parking_passes.site_id:integer::NO', 'timed_parking_passes.slot_id:integer::NO', 'timed_parking_passes.customer_id:integer::NO', 'timed_parking_passes.vehicle_id:integer::NO', 'timed_parking_passes.vehicle_type_id:integer::NO', 'timed_parking_passes.start_at:timestamp without time zone::NO', 'timed_parking_passes.end_at:timestamp without time zone::NO', 'timed_parking_passes.arrival_deadline:timestamp without time zone::NO', 'timed_parking_passes.amount:bigint::NO', 'timed_parking_passes.rate_config_id:integer::NO', 'timed_parking_passes.rate_ticket_type:character varying:8:NO', 'timed_parking_passes.rate_unit_price:bigint::NO', 'timed_parking_passes.rate_effective_date:date::NO', 'timed_parking_passes.status:character varying:12:NO', 'timed_parking_passes.session_id:character varying:36:YES', 'timed_parking_passes.created_at:timestamp without time zone::NO', 'subscription_plans.duration_days:integer::YES'])
+REQUIRED_TRIGGERS |= frozenset(['trg_site_booking_mode_insert', 'trg_site_booking_mode_update', 'trg_timed_order_insert', 'trg_timed_order_price_source', 'trg_timed_order_immutable', 'trg_timed_order_delete', 'trg_timed_order_replace', 'trg_timed_order_fulfilled', 'trg_capacity_hold_insert', 'trg_capacity_hold_update', 'trg_parking_capacity_holds_delete', 'trg_parking_capacity_holds_replace', 'trg_timed_parking_passes_delete', 'trg_timed_parking_passes_replace', 'trg_timed_pass_insert', 'trg_timed_pass_update', 'trg_parking_reservations_capacity_hold', 'trg_guaranteed_allocations_capacity_hold', 'trg_reservation_order_identity', 'trg_reservation_paid_source', 'trg_parking_reservations_paid_booking_mode', 'trg_site_waitlist_paid_booking_mode', 'trg_session_prepaid_immutable', 'trg_session_prepaid_source', 'trg_session_capacity_hold', 'trg_payment_prepaid_source', 'trg_parking_slots_hold_operational', 'trg_zones_hold_operational', 'trg_vehicle_types_hold_operational', 'trg_parking_sites_hold_operational'])
+REQUIRED_INDEXES |= frozenset(['ix_capacity_hold_slot_window', 'ix_capacity_hold_due', 'ix_timed_pass_vehicle', 'ix_timed_pass_customer', 'uq_portal_orders_timed_pass_id', 'uq_parking_sessions_timed_pass_id', 'uq_parking_reservations_order_id'])
+REQUIRED_CONSTRAINTS |= frozenset(['ck_capacity_hold_window', 'ck_capacity_hold_status', 'ck_timed_pass_status', 'ck_timed_pass_money', 'ck_timed_pass_window', 'ck_portal_order_product', 'ck_portal_order_timed'])
+
+# Additive online_payments revision 20260915_04.
+REQUIRED_TABLES |= frozenset(['online_payment_links',
+ 'online_payment_inbox',
+ 'online_payment_processing',
+ 'online_payment_review_decisions'])
+REQUIRED_COLUMN_CONTRACTS |= frozenset(['online_payment_links.id:bigint::NO',
+ 'online_payment_links.order_id:character varying:36:NO',
+ 'online_payment_links.site_id:integer::NO',
+ 'online_payment_links.channel:character varying:64:NO',
+ 'online_payment_links.receiver_digest:character varying:64:NO',
+ 'online_payment_links.amount:bigint::NO',
+ 'online_payment_links.currency:character varying:3:NO',
+ 'online_payment_links.description:character varying:9:NO',
+ 'online_payment_links.return_url:character varying:2048:NO',
+ 'online_payment_links.cancel_url:character varying:2048:NO',
+ 'online_payment_links.expires_at:timestamp without time zone::NO',
+ 'online_payment_links.created_at:timestamp without time zone::NO',
+ 'online_payment_links.state:character varying:12:NO',
+ 'online_payment_links.provider_status:character varying:12:YES',
+ 'online_payment_links.payment_link_id:character varying:64:YES',
+ 'online_payment_links.checkout_url:character varying:2048:YES',
+ 'online_payment_links.qr_code:text::YES',
+ 'online_payment_links.settled_reference:character varying:64:YES',
+ 'online_payment_links.receipt_id:character varying:36:YES',
+ 'online_payment_links.review_reason:character varying:100:YES',
+ 'online_payment_links.last_error:character varying:100:YES',
+ 'online_payment_links.operation_token:character varying:36:YES',
+ 'online_payment_links.operation_until:timestamp without time zone::YES',
+ 'online_payment_links.last_checked_at:timestamp without time zone::YES',
+ 'online_payment_inbox.id:character varying:36:NO',
+ 'online_payment_inbox.link_id:bigint::YES',
+ 'online_payment_inbox.site_id:integer::NO',
+ 'online_payment_inbox.channel:character varying:64:NO',
+ 'online_payment_inbox.source:character varying:12:NO',
+ 'online_payment_inbox.order_code:bigint::NO',
+ 'online_payment_inbox.payment_link_id:character varying:64:NO',
+ 'online_payment_inbox.reference:character varying:64:NO',
+ 'online_payment_inbox.amount:bigint::NO',
+ 'online_payment_inbox.currency:character varying:3:NO',
+ 'online_payment_inbox.receiver_digest:character varying:64:NO',
+ 'online_payment_inbox.transaction_time:character varying:64:NO',
+ 'online_payment_inbox.payload_digest:character varying:64:NO',
+ 'online_payment_inbox.received_at:timestamp without time zone::NO',
+ 'online_payment_inbox.verification_issue:character varying:100:YES',
+ 'online_payment_processing.id:character varying:36:NO',
+ 'online_payment_processing.status:character varying:12:NO',
+ 'online_payment_processing.reason:character varying:100:YES',
+ 'online_payment_processing.attempts:integer::NO',
+ 'online_payment_processing.next_attempt_at:timestamp without time zone::YES',
+ 'online_payment_processing.receipt_id:character varying:36:YES',
+ 'online_payment_processing.processed_at:timestamp without time zone::YES',
+ 'online_payment_review_decisions.id:character varying:36:NO',
+ 'online_payment_review_decisions.inbox_id:character varying:36:NO',
+ 'online_payment_review_decisions.channel:character varying:64:NO',
+ 'online_payment_review_decisions.payment_reference:character varying:64:NO',
+ 'online_payment_review_decisions.action:character varying:32:NO',
+ 'online_payment_review_decisions.request_id:character varying:64:NO',
+ 'online_payment_review_decisions.reason:character varying:500:NO',
+ 'online_payment_review_decisions.actor_id:integer::NO',
+ 'online_payment_review_decisions.actor_username:character varying:50:NO',
+ 'online_payment_review_decisions.refund_amount:bigint::YES',
+ 'online_payment_review_decisions.external_reference:character varying:120:YES',
+ 'online_payment_review_decisions.created_at:timestamp without time zone::NO'])
+REQUIRED_INDEXES |= frozenset(['ix_online_payment_links_channel',
+ 'ix_online_payment_links_site_id',
+ 'ix_online_payment_inbox_channel',
+ 'ix_online_payment_inbox_link_id',
+ 'ix_online_payment_inbox_reference',
+ 'ix_online_payment_inbox_site_id',
+ 'ix_online_payment_processing_next_attempt_at',
+ 'ix_online_payment_processing_status',
+ 'ix_online_payment_review_decisions_inbox_id',
+ 'uq_online_review_final_reference'])
+REQUIRED_CONSTRAINTS |= frozenset(['ck_online_link_amount',
+ 'ck_online_link_code',
+ 'ck_online_link_state',
+ 'ck_online_inbox_amount',
+ 'ck_online_inbox_code',
+ 'ck_online_inbox_source',
+ 'uq_online_inbox_evidence',
+ 'ck_online_processing_attempts',
+ 'ck_online_processing_receipt',
+ 'ck_online_processing_status',
+ 'ck_online_processing_time',
+ 'ck_online_review_action',
+ 'ck_online_review_reason',
+ 'ck_online_review_refund',
+ 'uq_online_review_request'])
+REQUIRED_TRIGGERS |= frozenset(['trg_online_link_guard',
+ 'trg_online_inbox_guard',
+ 'trg_online_processing_guard',
+ 'trg_online_order_delete',
+ 'trg_online_review_guard'])
+
+# Additive occupancy_observations revision 20260915_05.
+REQUIRED_TABLES |= frozenset(['occupancy_calibrations', 'occupancy_calibration_slots', 'occupancy_observations'])
+REQUIRED_COLUMN_CONTRACTS |= frozenset(['occupancy_calibrations.id:character varying:36:NO',
+ 'occupancy_calibrations.site_id:integer::NO',
+ 'occupancy_calibrations.camera_id:integer::NO',
+ 'occupancy_calibrations.version:integer::NO',
+ 'occupancy_calibrations.reference_observation_id:character varying:36:YES',
+ 'occupancy_calibrations.reference_id_snapshot:character varying:36:NO',
+ 'occupancy_calibrations.reference_image_hash:character varying:64:NO',
+ 'occupancy_calibrations.reference_width:integer::NO',
+ 'occupancy_calibrations.reference_height:integer::NO',
+ 'occupancy_calibrations.reference_observed_at:timestamp without time zone::NO',
+ 'occupancy_calibrations.reference_expires_at:timestamp without time zone::NO',
+ 'occupancy_calibrations.engine:character varying:40:NO',
+ 'occupancy_calibrations.settings_schema_version:integer::NO',
+ 'occupancy_calibrations.regions:json::NO',
+ 'occupancy_calibrations.settings:json::NO',
+ 'occupancy_calibrations.request_id:character varying:64:NO',
+ 'occupancy_calibrations.payload_hash:character varying:64:NO',
+ 'occupancy_calibrations.created_by_id:integer::NO',
+ 'occupancy_calibrations.created_at:timestamp without time zone::NO',
+ 'occupancy_calibration_slots.calibration_id:character varying:36:NO',
+ 'occupancy_calibration_slots.slot_id:integer::NO',
+ 'occupancy_observations.id:character varying:36:NO',
+ 'occupancy_observations.calibration_id:character varying:36:NO',
+ 'occupancy_observations.source_observation_id:character varying:36:YES',
+ 'occupancy_observations.source_id_snapshot:character varying:36:NO',
+ 'occupancy_observations.source_image_hash:character varying:64:NO',
+ 'occupancy_observations.measured_at:timestamp without time zone::NO',
+ 'occupancy_observations.received_at:timestamp without time zone::NO',
+ 'occupancy_observations.expires_at:timestamp without time zone::NO',
+ 'occupancy_observations.analyzed_at:timestamp without time zone::NO',
+ 'occupancy_observations.analyzed_by_id:integer::NO',
+ 'occupancy_observations.engine:character varying:40:NO',
+ 'occupancy_observations.quality:json::NO',
+ 'occupancy_observations.readings:json::NO'])
+REQUIRED_INDEXES |= frozenset(['ix_occupancy_calibrations_camera_id',
+ 'ix_occupancy_calibrations_site_id',
+ 'ix_occupancy_calibration_slots_slot_id',
+ 'ix_occupancy_observations_calibration_id',
+ 'ix_occupancy_observations_measured_at'])
+REQUIRED_CONSTRAINTS |= frozenset(['ck_occupancy_calibration_engine',
+ 'ck_occupancy_calibration_version',
+ 'ck_occupancy_settings_version',
+ 'uq_occupancy_calibration_request',
+ 'uq_occupancy_camera_version',
+ 'ck_occupancy_observation_engine',
+ 'uq_occupancy_calibration_source'])
+
+
+
+# Additive session credits revision 20260915_06.
+REQUIRED_COLUMN_CONTRACTS -= frozenset({"online_payment_links.order_id:character varying:36:NO"})
+REQUIRED_TABLES |= frozenset(['session_fee_quotes', 'session_fee_credits'])
+REQUIRED_COLUMN_CONTRACTS |= frozenset(['session_fee_quotes.id:character varying:36:NO',
+ 'session_fee_quotes.session_id:character varying:36:NO',
+ 'session_fee_quotes.site_id:integer::NO',
+ 'session_fee_quotes.created_by_id:integer::NO',
+ 'session_fee_quotes.owner_customer_id:integer::YES',
+ 'session_fee_quotes.request_id:character varying:64:NO',
+ 'session_fee_quotes.session_state_hash:character varying:64:NO',
+ 'session_fee_quotes.credit_snapshot_hash:character varying:64:NO',
+ 'session_fee_quotes.gross_fee:bigint::NO',
+ 'session_fee_quotes.credited_amount:bigint::NO',
+ 'session_fee_quotes.amount:bigint::NO',
+ 'session_fee_quotes.quoted_at:timestamp without time zone::NO',
+ 'session_fee_quotes.paid_through:timestamp without time zone::NO',
+ 'session_fee_quotes.expires_at:timestamp without time zone::NO',
+ 'session_fee_quotes.billing_basis:json::NO',
+ 'session_fee_quotes.status:character varying:12:NO',
+ 'session_fee_quotes.review_reason:character varying:100:YES',
+ 'session_fee_quotes.credit_id:character varying:36:YES',
+ 'session_fee_quotes.receipt_id:character varying:36:YES',
+ 'session_fee_credits.id:character varying:36:NO',
+ 'session_fee_credits.session_id:character varying:36:NO',
+ 'session_fee_credits.quote_id:character varying:36:NO',
+ 'session_fee_credits.amount:bigint::NO',
+ 'session_fee_credits.paid_through:timestamp without time zone::NO',
+ 'session_fee_credits.created_at:timestamp without time zone::NO',
+ 'session_fee_credits.receipt_id:character varying:36:YES',
+ 'online_payment_links.order_id:character varying:36:YES',
+ 'online_payment_links.session_quote_id:character varying:36:YES'])
+REQUIRED_INDEXES |= frozenset(['ix_session_fee_quotes_session_id',
+ 'ix_session_fee_quotes_site_id',
+ 'uq_session_fee_pending',
+ 'ix_session_fee_credits_session_id',
+ 'uq_online_payment_links_session_quote_id'])
+REQUIRED_CONSTRAINTS |= frozenset(['ck_session_fee_quote_fulfilled',
+ 'ck_session_fee_quote_money',
+ 'ck_session_fee_quote_status',
+ 'ck_session_fee_quote_time',
+ 'uq_session_fee_quote_request',
+ 'ck_session_fee_credit_money',
+ 'ck_online_link_target'])
+REQUIRED_TRIGGERS |= frozenset(['trg_session_fee_quote_guard',
+ 'trg_session_fee_credit_guard',
+ 'trg_session_fee_payment_source',
+ 'trg_session_fee_session_guard'])
 
 def _require_all(kind: str, actual: Iterable[str], expected: frozenset[str]) -> None:
     missing = sorted(expected - set(actual))
@@ -466,8 +698,9 @@ def _validate_business_invariants(connection) -> None:
                length(checkout_quote_hash) != 64 OR checkout_quote_hash !~ '^[0-9a-f]{64}$'
                OR status IS DISTINCT FROM 'completed' OR staff_out_id IS NULL
                OR parking_fee IS NULL OR parking_fee < 0
-               OR (parking_fee = 0 AND checkout_payment_method IS NOT NULL)
-               OR (parking_fee > 0 AND COALESCE(checkout_payment_method, '') NOT IN ('cash', 'transfer'))))
+               OR parking_fee < COALESCE((SELECT SUM(c.amount) FROM session_fee_credits c WHERE c.session_id=parking_sessions.id AND c.receipt_id IS NOT NULL),0)
+               OR (parking_fee = COALESCE((SELECT SUM(c.amount) FROM session_fee_credits c WHERE c.session_id=parking_sessions.id AND c.receipt_id IS NOT NULL),0) AND checkout_payment_method IS NOT NULL)
+               OR (parking_fee > COALESCE((SELECT SUM(c.amount) FROM session_fee_credits c WHERE c.session_id=parking_sessions.id AND c.receipt_id IS NOT NULL),0) AND COALESCE(checkout_payment_method, '') NOT IN ('cash', 'transfer'))))
         ORDER BY id LIMIT 1
     """)
     if invalid_confirmation:
@@ -547,6 +780,7 @@ def _validate_business_invariants(connection) -> None:
         FROM parking_sessions session
         JOIN vehicles vehicle ON vehicle.id = session.vehicle_id
         WHERE session.status IN ('active', 'checking_out')
+          AND session.billing_policy_version IS NULL
           AND NOT EXISTS (
               SELECT 1 FROM price_configs rate
               WHERE rate.vehicle_type_id = vehicle.vehicle_type_id

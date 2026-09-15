@@ -6,7 +6,7 @@ import formatDate from "../../../utils/formatDate";
 import { getTicketPresentation } from "../ticketPresentation";
 import "./ticketPrint.css";
 
-export default function TicketDialog({ sessionId, onClose, onCheckOut }) {
+export default function TicketDialog({ sessionId, siteId, onClose, onCheckOut }) {
   const [loadedTicket, setTicket] = useState(null);
   // A dialog can still be animating out when a new scan arrives. Never expose
   // the previous session's actions while the next ticket is loading.
@@ -18,11 +18,13 @@ export default function TicketDialog({ sessionId, onClose, onCheckOut }) {
     let ignore = false;
     setTicket(null);
     setError("");
-    api.get(`/api/v1/parking-sessions/${encodeURIComponent(sessionId)}/ticket`).then(({ data }) => {
+    const path = siteId ? `/api/v2/sites/${encodeURIComponent(siteId)}/sessions/${encodeURIComponent(sessionId)}/ticket`
+      : `/api/v1/parking-sessions/${encodeURIComponent(sessionId)}/ticket`;
+    api.get(path).then(({ data }) => {
       if (!ignore) setTicket(data);
     }).catch(() => { if (!ignore) setError("Không tải được vé. Hãy đóng và thử lại."); });
     return () => { ignore = true; };
-  }, [sessionId]);
+  }, [sessionId, siteId]);
 
   return <Dialog open={Boolean(sessionId)} onClose={onClose} maxWidth="xs" fullWidth className="parking-ticket-dialog">
     <DialogTitle>{presentation.title}</DialogTitle>

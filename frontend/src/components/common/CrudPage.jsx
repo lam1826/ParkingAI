@@ -29,7 +29,7 @@ export function extractErrorMessage(error, fallback = "Đã xảy ra lỗi.") {
   return fallback;
 }
 
-export default function CrudPage({ title, fields, service, canEdit = true }) {
+export default function CrudPage({ title, fields, service, canEdit = true, canDelete = canEdit, readOnlyMessage }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
@@ -54,16 +54,19 @@ export default function CrudPage({ title, fields, service, canEdit = true }) {
   useEffect(() => { load(); }, [load]);
 
   const startCreate = () => {
+    if (!canEdit) return;
     setEditing(null);
     setForm(Object.fromEntries(fields.map((field) => [field.name, field.defaultValue ?? (field.type === "boolean" ? true : "")])));
     setOpen(true);
   };
   const startEdit = (row) => {
+    if (!canEdit) return;
     setEditing(row);
-    setForm(Object.fromEntries(fields.map((field) => [field.name, row[field.name] ?? ""])));
+    setForm(Object.fromEntries(fields.map((field) => [field.name, row[field.name] ?? field.defaultValue ?? ""])));
     setOpen(true);
   };
   const save = async () => {
+    if (!canEdit) return;
     // Nút Lưu không chạy qua native <form onSubmit> nên thuộc tính required của
     // TextField không tự chặn — phải kiểm tra required tường minh trước khi gọi API.
     const missing = fields.filter(
@@ -91,6 +94,7 @@ export default function CrudPage({ title, fields, service, canEdit = true }) {
     }
   };
   const remove = async (row) => {
+    if (!canDelete) return;
     if (!window.confirm(`Xóa bản ghi #${row.id}?`)) return;
     try {
       await service.delete(row.id);
@@ -113,12 +117,12 @@ export default function CrudPage({ title, fields, service, canEdit = true }) {
       minWidth: field.minWidth ?? 130,
       valueFormatter: field.formatter,
     })),
-    ...(canEdit ? [{
+    ...(canEdit || canDelete ? [{
       field: "actions", headerName: "Thao tác", width: 160, sortable: false,
       renderCell: ({ row }) => (
         <Stack direction="row" spacing={1} sx={{ alignItems: "center", height: "100%" }}>
-          <Button size="small" startIcon={<EditIcon />} onClick={() => startEdit(row)}>Sửa</Button>
-          <Button size="small" color="error" startIcon={<DeleteIcon />} onClick={() => remove(row)}>Xóa</Button>
+          {canEdit && <Button size="small" startIcon={<EditIcon />} onClick={() => startEdit(row)}>Sửa</Button>}
+          {canDelete && <Button size="small" color="error" startIcon={<DeleteIcon />} onClick={() => remove(row)}>Xóa</Button>}
         </Stack>
       ),
     }] : []),
@@ -140,12 +144,13 @@ export default function CrudPage({ title, fields, service, canEdit = true }) {
           {canEdit && <Button variant="contained" startIcon={<AddIcon />} onClick={startCreate}>Thêm mới</Button>}
         </Stack>
       </Stack>
+      {!canEdit && readOnlyMessage && <Alert severity="info">{readOnlyMessage}</Alert>}
       <Box sx={{ height: { xs: 460, md: 560 }, width: "100%" }}>
         <DataGrid rows={rows} columns={columns} loading={loading} disableRowSelectionOnClick
           pageSizeOptions={[10, 25, 50, 100]} slots={{ toolbar: GridToolbar }} />
       </Box>
 
-      <Dialog open={open} onClose={() => setOpen(false)} fullWidth maxWidth="sm">
+      <Dialog open={open && canEdit} onClose={() => setOpen(false)} fullWidth maxWidth="sm">
         <DialogTitle>{editing ? "Cập nhật" : "Thêm mới"}</DialogTitle>
         <DialogContent sx={{ display: "flex", flexDirection: "column", gap: 2, pt: "16px !important" }}>
           {fields.map((field) => field.type === "boolean" ? (

@@ -45,6 +45,25 @@ test("zero fee uses the explicit free exit action and never sends a payment meth
   assert.deepEqual(writes[0].body, { quote_token: "quote-1", payment_confirmed: true, payment_method: null });
 });
 
+test("fully verified online credit closes with no new collection even when gross fee is positive", async () => {
+  const { flow, writes } = setup({ loadQuote: async () => quote({ online_paid: 25000, balance_due: 0 }) });
+  await flow.start(); await flow.submit();
+  assert.equal(writes.length, 1);
+  assert.equal(writes[0].body.payment_method, null);
+});
+
+test("remaining fee requires a new explicit collection and rejects inconsistent balance DTOs", async () => {
+  const { flow, writes } = setup({ loadQuote: async () => quote({ online_paid: 20000, balance_due: 5000 }) });
+  await flow.start(); await flow.submit(); assert.equal(writes.length, 0);
+  approve(flow); await flow.submit(); assert.equal(writes[0].body.payment_method, "cash");
+  for (const invalid of [ { online_paid: 25000 }, { online_paid: 20000, balance_due: 0 },
+    { online_paid: -1, balance_due: 25001 }, { online_paid: 0, balance_due: null } ]) {
+    const candidate = setup({ loadQuote: async () => quote(invalid) });
+    await candidate.flow.start(); approve(candidate.flow); await candidate.flow.submit();
+    assert.equal(candidate.flow.getSnapshot().phase, "error"); assert.equal(candidate.writes.length, 0);
+  }
+});
+
 test("expiry before the first write loads a fresh fee and clears approval without charging", async () => {
   let loads = 0;
   const { flow, writes, setTime } = setup({ loadQuote: async () => quote({ quote_token: `Q${++loads}` }) });

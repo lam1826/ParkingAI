@@ -1,7 +1,7 @@
 from pydantic import BaseModel, ConfigDict
 from typing import Optional
 from datetime import date, datetime
-from schemas.checkout import CheckoutConfirmation
+from schemas.checkout import CheckoutConfirmation, BillingBasis
 
 # Schema gốc (khớp với models/parking_session.py)
 class ParkingSessionBase(BaseModel):
@@ -34,5 +34,10 @@ class CheckOutBody(CheckoutConfirmation):
 class ParkingSessionResponse(ParkingSessionBase):
     id: str
     monthly_coverage_end: Optional[date] = None
+    billing_basis: BillingBasis | None = None
+    prepaid: dict | None = None
+    online_paid: int = 0
+    balance_due: int | None = None
+    paid_through: datetime | None = None
 
     model_config = ConfigDict(from_attributes=True)

@@ -54,6 +54,7 @@ def get_traffic_report_endpoint(
 @router.get(
     "/revenue",
     response_model=RevenueReportResponse,
+    dependencies=[Depends(RoleChecker("manager"))],
     status_code=status.HTTP_200_OK,
     summary="Lấy báo cáo doanh thu theo ngày, tuần, tháng hoặc năm"
 )
@@ -84,6 +85,7 @@ def get_revenue_report_endpoint(
 
 @router.get(
     "/export/{file_format}",
+    dependencies=[Depends(RoleChecker("manager"))],
     summary="Xuất báo cáo doanh thu và lưu lượng ra Excel hoặc PDF",
 )
 def export_report_endpoint(

@@ -48,7 +48,8 @@ export function BookingForm({ siteId, slots = [], vehicles, action, onSubmit, ki
 export function Availability({ data }) {
   if (!data) return <Typography color="text.secondary">Chọn bãi để xem vị trí.</Typography>;
   return <Stack spacing={2}>
-    <Typography>Tổng {data.total} chỗ · Đang đỗ {data.occupied} · Có thể nhận xe vãng lai {data.available_now} · Đã dành chỗ {data.reserved_slots}</Typography>
+    {data.capacity_total != null && <Typography>Tổng vị trí {data.capacity_total} · Tạm ngừng {data.inactive_slots ?? 0}</Typography>}
+    <Typography>Đang phục vụ {data.total} chỗ · Đang đỗ {data.occupied} · Có thể nhận xe vãng lai {data.available_now} · Đã dành chỗ {data.reserved_slots}</Typography>
     <Alert severity="info">Chỗ đang trống có thể đã được giữ cho thời điểm sau. Hệ thống kiểm tra chính xác khung giờ khi bạn đặt chỗ.</Alert>
     <Records rows={data.slots || []} columns={[
       { key: "slot_name", label: "Vị trí" }, { key: "zone_name", label: "Khu vực" },
@@ -58,7 +59,7 @@ export function Availability({ data }) {
   </Stack>;
 }
 
-export function BookingRecords({ rows, onCancel, onArrive, busy, slots = [], vehicles = [] }) {
+export function BookingRecords({ rows, onCancel, onArrive, onOpenOrder, busy, slots = [], vehicles = [] }) {
   return <Records rows={rows} columns={[
     { key: "vehicle_id", label: "Xe", render: (r) => vehicles.find((v) => v.id === r.vehicle_id)?.license_plate || `Xe #${r.vehicle_id}` },
     { key: "slot_id", label: "Vị trí", render: (r) => slots.find((s) => s.id === r.slot_id)?.slot_name || `Chỗ #${r.slot_id}` },
@@ -68,7 +69,8 @@ export function BookingRecords({ rows, onCancel, onArrive, busy, slots = [], veh
     { key: "status", label: "Trạng thái", render: (r) => <StateChip value={r.status} /> },
     { key: "actions", label: "Thao tác", render: (r) => <Stack direction="row" spacing={1} useFlexGap>
       {onArrive && r.status === "confirmed" && <Button disabled={busy} onClick={() => onArrive(r)} aria-label={`Xác nhận xe ${r.vehicle_id} đã đến`}>Xe đã đến</Button>}
-      {onCancel && ["confirmed", "active"].includes(r.status) && <Button color="error" disabled={busy} onClick={() => onCancel(r)} aria-label={`Hủy giữ chỗ xe ${r.vehicle_id}`}>Hủy</Button>}
+      {onOpenOrder && r.order_id && <Button disabled={busy} onClick={() => onOpenOrder(r)}>Xem đơn vé</Button>}
+      {onCancel && !r.order_id && ["confirmed", "active"].includes(r.status) && <Button color="error" disabled={busy} onClick={() => onCancel(r)} aria-label={`Hủy giữ chỗ xe ${r.vehicle_id}`}>Hủy</Button>}
     </Stack> },
   ]} />;
 }

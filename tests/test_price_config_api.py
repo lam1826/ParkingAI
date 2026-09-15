@@ -103,13 +103,13 @@ def _count_active(db: Session, vehicle_type_id: int) -> int:
 
 
 def test_post_second_active_same_type_returns_409(
-    client: TestClient, db_session: Session, test_user: User,
+    client: TestClient, db_session: Session, manager_user: User,
     vehicle_type: VehicleType, price_config: PriceConfig,
 ):
     response = client.post(
         "/api/v1/price-configs",
         json=_payload(vehicle_type.id),
-        headers=make_headers(test_user),
+        headers=make_headers(manager_user),
     )
 
     assert response.status_code == 409
@@ -118,10 +118,10 @@ def test_post_second_active_same_type_returns_409(
 
 
 def test_post_inactive_same_type_allowed_multiple(
-    client: TestClient, db_session: Session, test_user: User,
+    client: TestClient, db_session: Session, manager_user: User,
     vehicle_type: VehicleType, price_config: PriceConfig,
 ):
-    headers = make_headers(test_user)
+    headers = make_headers(manager_user)
     for _ in range(2):
         response = client.post(
             "/api/v1/price-configs",
@@ -134,7 +134,7 @@ def test_post_inactive_same_type_allowed_multiple(
 
 
 def test_post_active_for_other_type_ok(
-    client: TestClient, db_session: Session, test_user: User,
+    client: TestClient, db_session: Session, manager_user: User,
     vehicle_type: VehicleType, price_config: PriceConfig,
 ):
     other_type = _make_vehicle_type(db_session, "Xe máy")
@@ -142,7 +142,7 @@ def test_post_active_for_other_type_ok(
     response = client.post(
         "/api/v1/price-configs",
         json=_payload(other_type.id),
-        headers=make_headers(test_user),
+        headers=make_headers(manager_user),
     )
 
     assert response.status_code == 201
@@ -152,7 +152,7 @@ def test_post_active_for_other_type_ok(
 
 
 def test_post_rejects_fractional_vnd_without_creating_config(
-    client: TestClient, db_session: Session, test_user: User,
+    client: TestClient, db_session: Session, manager_user: User,
 ):
     """VND không có đơn vị nhỏ hơn đồng: API phải từ chối số thập phân
     thay vì lưu Float rồi để logic tính phí phát sinh số tiền lẻ."""
@@ -164,7 +164,7 @@ def test_post_rejects_fractional_vnd_without_creating_config(
     response = client.post(
         "/api/v1/price-configs",
         json=payload,
-        headers=make_headers(test_user),
+        headers=make_headers(manager_user),
     )
 
     assert response.status_code == 422
@@ -179,7 +179,7 @@ def test_post_rejects_fractional_vnd_without_creating_config(
 
 
 def test_post_rejects_negative_vnd_without_creating_config(
-    client: TestClient, db_session: Session, test_user: User,
+    client: TestClient, db_session: Session, manager_user: User,
 ):
     vehicle_type = _make_vehicle_type(db_session, "Xe giá âm")
     before_count = db_session.query(PriceConfig).count()
@@ -189,7 +189,7 @@ def test_post_rejects_negative_vnd_without_creating_config(
     response = client.post(
         "/api/v1/price-configs",
         json=payload,
-        headers=make_headers(test_user),
+        headers=make_headers(manager_user),
     )
 
     assert response.status_code == 422
@@ -203,7 +203,7 @@ def test_post_rejects_negative_vnd_without_creating_config(
 
 
 def test_put_move_active_config_without_is_active_returns_409(
-    client: TestClient, db_session: Session, test_user: User,
+    client: TestClient, db_session: Session, manager_user: User,
     vehicle_type: VehicleType, price_config: PriceConfig,
 ):
     """Lỗ hổng gốc: payload không gửi is_active nên guard transition cũ bị
@@ -215,7 +215,7 @@ def test_put_move_active_config_without_is_active_returns_409(
     response = client.put(
         f"/api/v1/price-configs/{price_config.id}",
         json={"vehicle_type_id": other_type.id},
-        headers=make_headers(test_user),
+        headers=make_headers(manager_user),
     )
 
     assert response.status_code == 409
@@ -226,7 +226,7 @@ def test_put_move_active_config_without_is_active_returns_409(
 
 
 def test_put_move_active_config_with_unchanged_is_active_returns_409(
-    client: TestClient, db_session: Session, test_user: User,
+    client: TestClient, db_session: Session, manager_user: User,
     vehicle_type: VehicleType, price_config: PriceConfig,
 ):
     """Biến thể UI thật: CrudPage luôn gửi đủ field, is_active=true không đổi
@@ -244,7 +244,7 @@ def test_put_move_active_config_with_unchanged_is_active_returns_409(
             "effective_date": price_config.effective_date.isoformat(),
             "is_active": True,
         },
-        headers=make_headers(test_user),
+        headers=make_headers(manager_user),
     )
 
     assert response.status_code == 409
@@ -253,7 +253,7 @@ def test_put_move_active_config_with_unchanged_is_active_returns_409(
 
 
 def test_put_activate_when_other_active_exists_returns_409(
-    client: TestClient, db_session: Session, test_user: User,
+    client: TestClient, db_session: Session, manager_user: User,
     vehicle_type: VehicleType, price_config: PriceConfig,
 ):
     inactive = _make_config(db_session, vehicle_type.id, is_active=False)
@@ -261,7 +261,7 @@ def test_put_activate_when_other_active_exists_returns_409(
     response = client.put(
         f"/api/v1/price-configs/{inactive.id}",
         json={"is_active": True},
-        headers=make_headers(test_user),
+        headers=make_headers(manager_user),
     )
 
     assert response.status_code == 409
@@ -271,11 +271,11 @@ def test_put_activate_when_other_active_exists_returns_409(
 
 
 def test_put_activate_after_deactivating_old_one_succeeds(
-    client: TestClient, db_session: Session, test_user: User,
+    client: TestClient, db_session: Session, manager_user: User,
     vehicle_type: VehicleType, price_config: PriceConfig,
 ):
     """Luồng nghiệp vụ chuẩn: tắt bảng giá cũ trước, rồi kích hoạt bảng mới."""
-    headers = make_headers(test_user)
+    headers = make_headers(manager_user)
     inactive = _make_config(db_session, vehicle_type.id, is_active=False)
 
     deactivate = client.put(
@@ -295,7 +295,7 @@ def test_put_activate_after_deactivating_old_one_succeeds(
 
 
 def test_put_self_update_while_active_does_not_self_conflict(
-    client: TestClient, db_session: Session, test_user: User,
+    client: TestClient, db_session: Session, manager_user: User,
     vehicle_type: VehicleType, price_config: PriceConfig,
 ):
     """exclude_id: bản ghi active tự sửa giá của chính nó không được coi là
@@ -303,7 +303,7 @@ def test_put_self_update_while_active_does_not_self_conflict(
     response = client.put(
         f"/api/v1/price-configs/{price_config.id}",
         json={"price": 35000},
-        headers=make_headers(test_user),
+        headers=make_headers(manager_user),
     )
 
     assert response.status_code == 200
@@ -317,7 +317,7 @@ def test_put_self_update_while_active_does_not_self_conflict(
 
 
 def test_corrupted_duplicate_actives_return_409_not_500(
-    client: TestClient, db_session: Session, test_user: User,
+    client: TestClient, db_session: Session, manager_user: User,
     vehicle_type: VehicleType, price_config: PriceConfig,
 ):
     """Mô phỏng DB legacy đã hỏng TỪ TRƯỚC khi có unique index (dữ liệu thật
@@ -331,7 +331,7 @@ def test_corrupted_duplicate_actives_return_409_not_500(
 
     _make_config(db_session, vehicle_type.id, is_active=True)
     assert _count_active(db_session, vehicle_type.id) == 2
-    headers = make_headers(test_user)
+    headers = make_headers(manager_user)
 
     post_response = client.post(
         "/api/v1/price-configs",
@@ -571,11 +571,11 @@ def test_migration_fails_loudly_on_fractional_legacy_price_without_rounding(
 )
 def test_update_rejects_explicit_null(
     field_name: str,
-    client: TestClient, db_session: Session, test_user: User,
+    client: TestClient, db_session: Session, manager_user: User,
     vehicle_type: VehicleType, price_config: PriceConfig,
 ):
     before = _snapshot(price_config)
-    headers = make_headers(test_user)
+    headers = make_headers(manager_user)
 
     response = client.put(
         f"/api/v1/price-configs/{price_config.id}",
@@ -593,7 +593,7 @@ def test_update_rejects_explicit_null(
 
 
 def test_update_rejects_unknown_field(
-    client: TestClient, db_session: Session, test_user: User,
+    client: TestClient, db_session: Session, manager_user: User,
     vehicle_type: VehicleType, price_config: PriceConfig,
 ):
     before = _snapshot(price_config)
@@ -601,7 +601,7 @@ def test_update_rejects_unknown_field(
     response = client.put(
         f"/api/v1/price-configs/{price_config.id}",
         json={"bogus_field": 1},
-        headers=make_headers(test_user),
+        headers=make_headers(manager_user),
     )
 
     assert response.status_code == 422
@@ -610,13 +610,13 @@ def test_update_rejects_unknown_field(
 
 
 def test_partial_update_price_only_keeps_other_fields(
-    client: TestClient, db_session: Session, test_user: User,
+    client: TestClient, db_session: Session, manager_user: User,
     vehicle_type: VehicleType, price_config: PriceConfig,
 ):
     response = client.put(
         f"/api/v1/price-configs/{price_config.id}",
         json={"price": 99000},
-        headers=make_headers(test_user),
+        headers=make_headers(manager_user),
     )
 
     assert response.status_code == 200
@@ -631,7 +631,7 @@ def test_partial_update_price_only_keeps_other_fields(
 @pytest.mark.parametrize("invalid_price", [99000.5, -1], ids=["fractional", "negative"])
 def test_put_rejects_invalid_vnd_without_changing_config(
     invalid_price: float,
-    client: TestClient, db_session: Session, test_user: User,
+    client: TestClient, db_session: Session, manager_user: User,
     price_config: PriceConfig,
 ):
     before = _snapshot(price_config)
@@ -639,7 +639,7 @@ def test_put_rejects_invalid_vnd_without_changing_config(
     response = client.put(
         f"/api/v1/price-configs/{price_config.id}",
         json={"price": invalid_price},
-        headers=make_headers(test_user),
+        headers=make_headers(manager_user),
     )
 
     assert response.status_code == 422
@@ -671,7 +671,7 @@ def test_price_contract_and_new_database_column_use_integer_vnd(
 
 def test_api_rejects_price_above_exact_legacy_float_range(
     client: TestClient,
-    test_user: User,
+    manager_user: User,
     vehicle_type: VehicleType,
 ):
     response = client.post(
@@ -683,7 +683,7 @@ def test_api_rejects_price_above_exact_legacy_float_range(
             "effective_date": "2026-08-01",
             "is_active": True,
         },
-        headers=make_headers(test_user),
+        headers=make_headers(manager_user),
     )
     assert response.status_code == 422
 

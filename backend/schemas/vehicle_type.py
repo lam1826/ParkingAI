@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 class VehicleTypeBase(BaseModel):
     name: str = Field(min_length=1, max_length=50)
     description: Optional[str] = Field(default=None, max_length=255)
+    is_active: bool = True
 
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
@@ -23,14 +24,17 @@ class VehicleTypeCreate(VehicleTypeBase):
 class VehicleTypeUpdate(BaseModel):
     name: Optional[str] = Field(default=None, min_length=1, max_length=50)
     description: Optional[str] = Field(default=None, max_length=255)
+    is_active: Optional[bool] = None
 
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     @model_validator(mode="before")
     @classmethod
     def reject_explicit_null_name(cls, data: Any) -> Any:
-        if isinstance(data, dict) and "name" in data and data["name"] is None:
-            raise ValueError("name không được nhận giá trị null")
+        if isinstance(data, dict):
+            for field in ("name", "is_active"):
+                if field in data and data[field] is None:
+                    raise ValueError(f"{field} không được nhận giá trị null")
         return data
 
     @field_validator("name")

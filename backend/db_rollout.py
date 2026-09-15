@@ -19,6 +19,7 @@ import tempfile
 from sqlalchemy import UniqueConstraint, create_engine, inspect as sqlalchemy_inspect
 
 from database import (
+    PRE_SNAPSHOT_TRIGGER_SQL,
     CHECKOUT_CONFIRMATION_INSERT_TRIGGER_SQL,
     CHECKOUT_CONFIRMATION_UPDATE_TRIGGER_SQL,
     TRG_CHECKOUT_CONFIRMATION_INSERT,
@@ -120,6 +121,13 @@ from database import (
     run_sqlite_migrations,
 )
 from models import Base
+from core.billing_guards import BILLING_SQLITE_GUARDS, validate_sqlite_billing_snapshots
+from core.session_event_guards import SESSION_EVENT_SQLITE_GUARDS
+from expansion.timed_parking_guards import TIMED_SQLITE_GUARDS
+from expansion.online_payment_guards import ONLINE_PAYMENT_SQLITE_GUARDS
+from expansion.session_payment_guards import SESSION_PAYMENT_SQLITE_GUARDS
+from expansion.session_credit_rollout import PRE_CREDIT_GUARDS, migrate_session_credit
+from expansion.timed_parking_rollout import PRE_TIMED_TRIGGER_SQL, migrate_timed_parking, validate_timed_parking
 from sqlalchemy.schema import CreateIndex
 from sqlalchemy.dialects import sqlite
 from expansion.site_models import SITE_SQLITE_GUARDS, ZONE_COMMITMENT_SQLITE_GUARDS
@@ -255,6 +263,11 @@ _REQUIRED_TRIGGER_SQL = {
     ),
 }
 _REQUIRED_TRIGGER_SQL.update(BOOLEAN_DOMAIN_TRIGGER_SQL)
+_REQUIRED_TRIGGER_SQL.update(BILLING_SQLITE_GUARDS)
+_REQUIRED_TRIGGER_SQL.update(SESSION_EVENT_SQLITE_GUARDS)
+_REQUIRED_TRIGGER_SQL.update(TIMED_SQLITE_GUARDS)
+_REQUIRED_TRIGGER_SQL.update(SESSION_PAYMENT_SQLITE_GUARDS)
+_REQUIRED_TRIGGER_SQL.update(ONLINE_PAYMENT_SQLITE_GUARDS)
 _REQUIRED_TRIGGER_SQL.update(SITE_FINANCE_SQLITE_GUARDS)
 _REQUIRED_TRIGGER_SQL.update(SITE_SQLITE_GUARDS)
 _REQUIRED_TRIGGER_SQL.update(ZONE_COMMITMENT_SQLITE_GUARDS)
@@ -400,6 +413,12 @@ def _validate_trigger_definitions(definitions: dict[str, str], *, require_all: b
                 raise RuntimeError(f"Thiếu trigger schema bắt buộc: {name}")
             continue
         if _ddl_signature(definition) != _ddl_signature(expected_sql):
+            if not require_all and name in PRE_CREDIT_GUARDS and _ddl_signature(definition) == _ddl_signature(PRE_CREDIT_GUARDS[name]):
+                continue
+            if not require_all and name in PRE_TIMED_TRIGGER_SQL and _ddl_signature(definition) == _ddl_signature(PRE_TIMED_TRIGGER_SQL[name]):
+                continue
+            if not require_all and name in PRE_SNAPSHOT_TRIGGER_SQL and _ddl_signature(definition) == _ddl_signature(PRE_SNAPSHOT_TRIGGER_SQL[name]):
+                continue
             raise RuntimeError(f"Trigger {name} tồn tại nhưng sai định nghĩa")
 
 
@@ -706,6 +725,8 @@ def _validate_business_invariants(connection) -> None:
                 f"{tuple(invalid_boolean)}"
             )
 
+    validate_sqlite_billing_snapshots(connection)
+    validate_timed_parking(connection)
     invalid_session_lifecycle = connection.exec_driver_sql(
         "SELECT id, status, check_in_time, check_out_time, parking_fee, "
         "staff_out_id FROM parking_sessions WHERE "
@@ -807,6 +828,7 @@ def _validate_business_invariants(connection) -> None:
         FROM parking_sessions AS ps
         JOIN vehicles AS v ON v.id = ps.vehicle_id
         WHERE ps.status = 'active'
+          AND ps.billing_policy_version IS NULL
           AND NOT EXISTS (
               SELECT 1
               FROM price_configs AS pc
@@ -942,6 +964,8 @@ def _initialize_candidate(target: Path) -> None:
             _index_definitions(target_engine),
             require_all=False,
         )
+        migrate_session_credit(target_engine)
+        migrate_timed_parking(target_engine)
         run_sqlite_migrations(target_engine)
         migrate_sqlite_payment_demo(target_engine)
         Base.metadata.create_all(bind=target_engine)
@@ -952,6 +976,8 @@ def _initialize_candidate(target: Path) -> None:
             connection.exec_driver_sql(SESSION_MONTHLY_COVERAGE_UPDATE_TRIGGER_SQL)
             connection.exec_driver_sql(CHECKOUT_CONFIRMATION_INSERT_TRIGGER_SQL)
             connection.exec_driver_sql(CHECKOUT_CONFIRMATION_UPDATE_TRIGGER_SQL)
+            for statement in (*BILLING_SQLITE_GUARDS.values(), *SESSION_EVENT_SQLITE_GUARDS.values()):
+                connection.exec_driver_sql(statement)
             for statement in (*SHIFT_SQLITE_TRIGGERS, SHIFT_SQLITE_CLOSE_TRIGGER, *PAYMENT_SQLITE_TRIGGERS, *PAYMENT_SQLITE_SOURCE_TRIGGERS, *MONTHLY_CARD_SQLITE_TRIGGERS):
                 connection.exec_driver_sql(statement)
         verify_schema(target_engine)

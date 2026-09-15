@@ -261,13 +261,15 @@ def owned_order(db, user, identity):
 
 def _expire_order_if_due(db, order, now=None):
     now = now or business_now()
-    if order.status != "pending" or order.expires_at >= now:
+    if order.status != "pending" or order.expires_at > now:
         return False
     has_event = db.scalar(select(PortalPaymentEvent.id).where(
         PortalPaymentEvent.order_id == order.id,
     ).limit(1))
-    if has_event is not None:
+    if has_event is not None and order.product_kind == "monthly":
         return False
+    from expansion.timed_parking_service import release_hold
+    release_hold(db, order, expired=True)
     order.status = "expired"
     db.flush()
     return True
@@ -279,6 +281,7 @@ def create_order(db, user, data):
         gateway.require_enabled()
     lock_cash_operator(db, user.id)
     vehicle = require_owned_vehicle(db, user, data.vehicle_id)
+    _locked(db, Customer, vehicle.customer_id)
     _lock_vehicle(db, vehicle.id)
     db.refresh(vehicle)
     customer = get_linked_customer(db, user)
@@ -289,18 +292,42 @@ def create_order(db, user, data):
     if existing:
         if (existing.plan_id, existing.vehicle_id, existing.payment_mode) != (data.plan_id, data.vehicle_id, data.payment_mode):
             raise HTTPException(409, "Mã yêu cầu đã được sử dụng cho đơn khác.")
+        from expansion.reservations import local_time
+        if (existing.start_at, existing.requested_zone_id) != (local_time(data.start_at) if data.start_at else None, data.zone_id):
+            raise HTTPException(409, "Mã yêu cầu đã được sử dụng với giờ hoặc khu khác.")
         return existing
-    plan = db.get(SubscriptionPlan, data.plan_id)
+    plan = db.scalar(select(SubscriptionPlan).where(SubscriptionPlan.id == data.plan_id)
+        .with_for_update(read=True).execution_options(populate_existing=True))
     if plan is None or not plan.is_active or plan.site_id is None or plan.vehicle_type_id != vehicle.vehicle_type_id:
         raise HTTPException(409, "Gói không hoạt động, chưa gán bãi hoặc không phù hợp loại xe.")
     require_public_site(db, plan.site_id)
+    if data.payment_mode == "payos":
+        from expansion.online_payment_service import require_online_order_config
+        require_online_order_config(db, plan.site_id)
     now = business_now()
     pending = db.scalar(select(PortalOrder).where(PortalOrder.vehicle_id == vehicle.id,
         PortalOrder.status.in_(["pending", "review"])).order_by(PortalOrder.created_at, PortalOrder.id))
     if pending is not None and pending.status == "pending":
+        pending = _lock_order_context(db, pending.id)
         _expire_order_if_due(db, pending, now)
     if pending is not None and pending.status in {"pending", "review"}:
         raise HTTPException(409, "Xe còn đơn đang chờ xử lý; hãy hoàn tất hoặc hủy trước khi tạo đơn mới.")
+    if plan.product_kind != "monthly":
+        from expansion.timed_parking_service import prepare_order, add_hold
+        snapshot = prepare_order(db, user, vehicle, plan, data)
+        order = PortalOrder(id=str(uuid.uuid4()), user_id=user.id, customer_id=customer.id,
+            vehicle_id=vehicle.id, plan_id=plan.id, site_id=plan.site_id, amount=plan.price,
+            product_kind=plan.product_kind, plan_name=plan.name, duration_minutes=plan.duration_minutes,
+            payment_mode=data.payment_mode, idempotency_key=data.idempotency_key, **snapshot)
+        if data.payment_mode == "demo":
+            order.demo_token, _ = gateway.issue(order.id)
+        db.add(order)
+        db.flush()
+        add_hold(db, order)
+        db.commit()
+        return order
+    if data.start_at is not None or data.zone_id is not None:
+        raise HTTPException(422, "Vé tháng không nhận giờ hẹn hoặc khu giữ chỗ.")
     latest = db.scalar(select(MonthlyPass).where(MonthlyPass.vehicle_id == vehicle.id,
         MonthlyPass.is_active.is_(True)).order_by(MonthlyPass.end_date.desc()).limit(1))
     if latest and latest.end_date >= now.date() and latest.customer_id != customer.id:
@@ -311,6 +338,7 @@ def create_order(db, user, data):
     order = PortalOrder(id=str(uuid.uuid4()), user_id=user.id, customer_id=customer.id,
         vehicle_id=vehicle.id, plan_id=plan.id, site_id=plan.site_id, card_id=card.id if card else None,
         amount=plan.price, start_date=start, end_date=start + timedelta(days=plan.duration_days - 1),
+        product_kind="monthly", plan_name=plan.name, duration_days=plan.duration_days,
         payment_mode=data.payment_mode, idempotency_key=data.idempotency_key,
         expires_at=now + timedelta(minutes=gateway.settings.PORTAL_ORDER_TTL_MINUTES))
     if data.payment_mode == "demo":
@@ -320,11 +348,14 @@ def create_order(db, user, data):
     return order
 
 
-def serialize_order(order, *, owner=False):
+def serialize_order(order, *, owner=False, details=None):
     fields = ["id", "status", "user_id", "customer_id", "vehicle_id", "plan_id", "site_id", "amount",
         "start_date", "end_date", "payment_mode", "expires_at", "created_at", "monthly_pass_id", "receipt_id", "review_reason"]
     data = {field: getattr(order, field) for field in fields}
-    data["payment_label"] = "DEMO — không chuyển tiền thật" if order.payment_mode == "demo" else "Thu tiền tại bãi"
+    from expansion.timed_parking_service import order_details
+    data.update(order_details(order) if details is None else details)
+    data["payment_label"] = ("DEMO — không chuyển tiền thật" if order.payment_mode == "demo"
+        else "Thanh toán qua payOS" if order.payment_mode == "payos" else "Thu tiền tại bãi")
     if owner and order.demo_token and order.status == "pending":
         data["demo_token"] = order.demo_token
         data["demo_payload"] = DemoGateway.payload(order.id, order.demo_token)
@@ -338,6 +369,15 @@ def _lock_order_context(db, identity):
         raise HTTPException(404, "Không tìm thấy đơn.")
     lock_cash_operator(db, order.user_id)
     _lock_vehicle(db, order.vehicle_id)
+    vehicle = db.get(Vehicle, order.vehicle_id)
+    db.refresh(vehicle)
+    if order.product_kind != "monthly":
+        from crud.vehicle_type import require_active_vehicle_type
+        from expansion.reservations import lock_slot
+        # Cancellation and expiry must still be possible after a type is disabled.
+        kind = vehicle.vehicle_type_id
+        db.scalar(select(VehicleType.id).where(VehicleType.id == kind).with_for_update(read=True))
+        lock_slot(db, order.slot_id)
     return _locked(db, PortalOrder, identity)
 
 
@@ -350,6 +390,9 @@ def _fulfillment_problem(db, order, *, paid_at=None):
         return "vehicle_owner_changed"
     if site is None or not site.is_active:
         return "site_inactive"
+    if order.product_kind != "monthly":
+        from expansion.timed_parking_service import fulfillment_problem
+        return fulfillment_problem(db, order)
     paid_at = paid_at or business_now()
     if paid_at.date() > order.start_date and paid_at > order.expires_at:
         return "start_date_passed"
@@ -359,6 +402,13 @@ def _fulfillment_problem(db, order, *, paid_at=None):
 
 
 def _fulfill(db, order, *, method, collector):
+    if order.product_kind != "monthly":
+        from expansion.timed_parking_service import fulfill
+        fulfill(db, order, method=method, collector=collector)
+        _notify(db, order.customer_id, f"order:{order.id}:fulfilled",
+            "Đã kích hoạt vé giờ/ngày DEMO và giữ chỗ; không có tiền thật được chuyển." if method == "demo"
+            else "Đã nhận thanh toán, kích hoạt vé giờ/ngày và xác nhận chỗ đỗ.")
+        return
     card = db.get(ParkingCard, order.card_id) if order.card_id else None
     if card is None:
         card = ParkingCard(code="PORTAL-" + uuid.uuid4().hex.upper(), customer_id=order.customer_id,
@@ -388,10 +438,14 @@ def process_event(db, event_id):
         db.commit()
         return order
     if order.status in {"fulfilled", "refunded"}:
-        event.status = "processed"
+        event.status = "review" if event.outcome == "success" else "processed"
+        if event.status == "review":
+            event.error_code = "duplicate_payment_reference"
     elif event.outcome != "success":
         order.status = event.outcome
         event.status = "processed"
+        from expansion.timed_parking_service import release_hold
+        release_hold(db, order)
     else:
         problem = "late_payment" if event.received_at > order.expires_at else _fulfillment_problem(db, order, paid_at=event.received_at)
         if event.amount != order.amount:
@@ -399,6 +453,8 @@ def process_event(db, event_id):
         if problem:
             event.status, event.error_code = "review", problem
             order.status, order.review_reason = "review", problem
+            from expansion.timed_parking_service import release_hold
+            release_hold(db, order, expired=True)
             _notify(db, order.customer_id, f"order:{order.id}:review", "Kết quả DEMO cần quản lý kiểm tra; kỳ vé chưa được kích hoạt.")
         else:
             _fulfill(db, order, method="demo", collector=None)
@@ -454,7 +510,7 @@ def collect_manual(db, actor, identity, method):
         if receipt.method != method or receipt.collected_by_id != actor.id:
             raise HTTPException(409, "Đơn đã được thu với thông tin khác.")
         return order
-    if order.status != "pending" or business_now() > order.expires_at:
+    if order.status != "pending" or business_now() >= order.expires_at:
         raise HTTPException(409, "Đơn không còn chờ thu hoặc đã hết hạn.")
     problem = _fulfillment_problem(db, order)
     if problem:
@@ -495,14 +551,18 @@ def resolve_refund(db, actor, identity, data):
     if data.approve:
         if order.payment_mode != "demo" or order.status != "fulfilled":
             raise HTTPException(409, "Đơn không đủ điều kiện hoàn mô phỏng.")
-        if db.scalar(select(ParkingSession.id).where(
+        if order.product_kind != "monthly":
+            from expansion.timed_parking_service import revoke
+            revoke(db, order)
+        elif db.scalar(select(ParkingSession.id).where(
             (ParkingSession.monthly_pass_id == order.monthly_pass_id) |
             ((ParkingSession.vehicle_id == order.vehicle_id) & (ParkingSession.monthly_coverage_end >= order.start_date)),
             ParkingSession.status.in_(["active", "checking_out"]))):
             raise HTTPException(409, "Kỳ vé đang được dùng cho xe trong bãi; hãy hoàn tất lượt gửi trước.")
         refund = PaymentService.refund(db, order.receipt_id, actor, amount=order.amount, method="demo",
             reason="DEMO: " + item.reason[:490], idempotency_key="portal-" + item.id)
-        db.get(MonthlyPass, order.monthly_pass_id).is_active = False
+        if order.monthly_pass_id is not None:
+            db.get(MonthlyPass, order.monthly_pass_id).is_active = False
         order.status = "refunded"
         item.refund_payment_id = refund.id
     item.status = "approved" if data.approve else "rejected"
@@ -526,6 +586,15 @@ def update_plan(db, actor, identity, data):
     changes = data.model_dump(exclude_unset=True)
     if not changes or any(value is None for value in changes.values()):
         raise HTTPException(422, "Cần ít nhất một giá trị cập nhật không rỗng.")
+    from expansion.portal_schemas import PlanCreate
+    from pydantic import ValidationError
+    try:
+        PlanCreate(name=changes.get("name", plan.name), site_id=plan.site_id, vehicle_type_id=plan.vehicle_type_id,
+            product_kind=plan.product_kind, price=changes.get("price", plan.price),
+            duration_days=changes.get("duration_days", plan.duration_days),
+            duration_minutes=changes.get("duration_minutes", plan.duration_minutes))
+    except ValidationError as exc:
+        raise HTTPException(422, "Thời lượng không hợp lệ với loại gói hiện tại.") from exc
     for name, value in changes.items():
         setattr(plan, name, value)
     db.commit()
@@ -535,12 +604,16 @@ def update_plan(db, actor, identity, data):
 def cancel_order(db, user, identity):
     owned_order(db, user, identity)
     order = _lock_order_context(db, identity)
+    from expansion.online_payment_service import portal_cancel_guard
+    portal_cancel_guard(order)
     if order.status == "cancelled":
         db.commit()
         return order
     if order.status not in {"pending", "expired"} or db.scalar(select(PortalPaymentEvent.id).where(PortalPaymentEvent.order_id == identity)):
         raise HTTPException(409, "Đơn đã có kết quả thanh toán; không thể hủy trực tiếp.")
     order.status = "cancelled"
+    from expansion.timed_parking_service import release_hold
+    release_hold(db, order)
     db.commit()
     return order
 

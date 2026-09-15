@@ -27,6 +27,7 @@ const actionLabels = {
   SHIFT_OPEN: "Mở ca", SHIFT_CLOSE: "Chốt ca", PAYMENT_COLLECT: "Thu tiền",
   PAYMENT_DEMO: "Thanh toán mô phỏng", REFUND: "Hoàn tiền",
   VISION_CAPTURE: "Nhận ảnh", VISION_REVIEW: "Duyệt biển số", VISION_DELETE: "Xóa ảnh", RESERVATION_ACTION: "Đặt chỗ / chờ",
+  SESSION_CANCEL: "Hủy lượt gửi", TICKET_LOST: "Xác nhận mất vé", PLATE_CORRECTION: "Sửa biển số",
 };
 
 export default function AuditLogPage() {

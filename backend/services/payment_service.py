@@ -40,6 +40,13 @@ def lock_cash_operator(db: Session, staff_id: int) -> None:
 class PaymentService:
     @staticmethod
     def source_site(db: Session, source_type: str, source_id):
+        if source_type == "session_credit":
+            from expansion.session_payment_models import SessionFeeCredit, SessionFeeQuote
+            return db.scalar(select(SessionFeeQuote.site_id).join(SessionFeeCredit,
+                SessionFeeCredit.quote_id == SessionFeeQuote.id).where(SessionFeeCredit.id == str(source_id)))
+        if source_type == "portal_order":
+            from expansion.portal_models import PortalOrder
+            return db.scalar(select(PortalOrder.site_id).where(PortalOrder.id == str(source_id)))
         if source_type == "monthly_pass":
             from expansion.portal_models import PortalOrder
             # The frozen order owns site scope. During fulfillment its period FK
@@ -58,9 +65,11 @@ class PaymentService:
         collected_by_id: int | None, method: str = "cash", created_at: datetime | None = None,
     ) -> Payment:
         """Idempotently collect once per source; flush only, never commit."""
-        if source_type not in {"parking_session", "monthly_pass"} or method not in {"cash", "transfer", "demo"}:
+        if source_type not in {"parking_session", "monthly_pass", "portal_order", "session_credit"} or method not in {"cash", "transfer", "demo"}:
             raise HTTPException(422, "Nguồn thu hoặc phương thức thanh toán không hợp lệ.")
-        if method == "demo" and (source_type != "monthly_pass" or collected_by_id is not None):
+        if source_type == "session_credit" and (method != "transfer" or collected_by_id is not None):
+            raise HTTPException(422, "Khoản trả online phải được xác minh, không gán người thu hoặc ca tiền mặt.")
+        if method == "demo" and (source_type not in {"monthly_pass", "portal_order"} or collected_by_id is not None):
             raise HTTPException(422, "Thu mô phỏng chỉ áp dụng đơn vé tháng và không gán nhân viên thu tiền.")
         amount = require_exact_vnd(amount)
         source_id = str(source_id)
@@ -116,6 +125,12 @@ class PaymentService:
             require_site_access(db, actor, original.site_id, "manager")
         if original.kind != "receipt":
             raise HTTPException(409, "Chỉ được hoàn tiền từ phiếu thu gốc.")
+        if original.source_type == "session_credit":
+            from expansion.session_payment_models import SessionFeeCredit
+            state = db.scalar(select(ParkingSession.status).join(SessionFeeCredit,
+                SessionFeeCredit.session_id == ParkingSession.id).where(SessionFeeCredit.id == original.source_id))
+            if state != "completed":
+                raise HTTPException(409, "Chỉ xử lý hoàn khoản trả online sau khi lượt gửi đã kết thúc.")
         if (original.method == "demo") != (method == "demo"):
             raise HTTPException(409, "Giao dịch mô phỏng chỉ được hoàn bằng luồng mô phỏng.")
         refund_key = f"refund:{idempotency_key}"
@@ -209,19 +224,22 @@ class PaymentService:
 
     @staticmethod
     def revenue_breakdown(db: Session, start: datetime, end: datetime) -> dict[str, int]:
-        parking = monthly = refunds = 0
+        parking = monthly = prepaid = refunds = 0
         for _, source, kind, amount in PaymentService._revenue_events(db, start, end):
             if kind == "refund":
                 refunds += amount
-            elif source == "parking_session":
+            elif source in {"parking_session", "session_credit"}:
                 parking += amount
-            else:
+            elif source == "monthly_pass":
                 monthly += amount
+            elif source == "portal_order":
+                prepaid += amount
         return {
             "parking_revenue": require_exact_vnd(parking, label="Tổng doanh thu"),
             "monthly_pass_revenue": require_exact_vnd(monthly, label="Doanh thu vé tháng"),
+            "prepaid_revenue": require_exact_vnd(prepaid, label="Doanh thu vé giờ/ngày"),
             "refunds": require_exact_vnd(refunds, label="Tổng hoàn tiền"),
-            "total_revenue": signed_exact_vnd(parking + monthly - refunds, label="Tổng doanh thu"),
+            "total_revenue": signed_exact_vnd(parking + monthly + prepaid - refunds, label="Tổng doanh thu"),
         }
 
     @staticmethod

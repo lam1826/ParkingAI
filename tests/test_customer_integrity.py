@@ -337,7 +337,7 @@ def test_customer_phone_migration_installs_normalized_unique_index(tmp_path):
 def test_customer_delete_with_vehicle_returns_409_and_preserves_relationship(
     client: TestClient,
     db_session: Session,
-    test_user,
+    manager_user,
     customer: Customer,
     vehicle: Vehicle,
 ):
@@ -346,7 +346,7 @@ def test_customer_delete_with_vehicle_returns_409_and_preserves_relationship(
 
     response = client.delete(
         f"/api/v1/customers/{customer.id}",
-        headers=_headers(test_user),
+        headers=_headers(manager_user),
     )
 
     assert response.status_code == 409
@@ -359,7 +359,7 @@ def test_customer_delete_with_vehicle_returns_409_and_preserves_relationship(
 def test_customer_delete_with_monthly_pass_returns_409_and_preserves_history(
     client: TestClient,
     db_session: Session,
-    test_user,
+    manager_user,
     customer: Customer,
     vehicle: Vehicle,
 ):
@@ -377,7 +377,7 @@ def test_customer_delete_with_monthly_pass_returns_409_and_preserves_history(
 
     response = client.delete(
         f"/api/v1/customers/{customer.id}",
-        headers=_headers(test_user),
+        headers=_headers(manager_user),
     )
 
     assert response.status_code == 409
@@ -390,7 +390,7 @@ def test_customer_delete_with_monthly_pass_returns_409_and_preserves_history(
 def test_customer_valid_update_and_delete_without_history_still_work(
     client: TestClient,
     db_session: Session,
-    test_user,
+    manager_user,
 ):
     customer = Customer(
         full_name="Khách có thể xóa",
@@ -402,7 +402,7 @@ def test_customer_valid_update_and_delete_without_history_still_work(
 
     updated = client.put(
         f"/api/v1/customers/{customer.id}",
-        headers=_headers(test_user),
+        headers=_headers(manager_user),
         json={
             "full_name": "  Tên sau cập nhật  ",
             "phone_number": "  0944444444  ",
@@ -416,7 +416,7 @@ def test_customer_valid_update_and_delete_without_history_still_work(
 
     deleted = client.delete(
         f"/api/v1/customers/{customer.id}",
-        headers=_headers(test_user),
+        headers=_headers(manager_user),
     )
     assert deleted.status_code == 204
     assert db_session.get(Customer, customer.id) is None

@@ -39,3 +39,4 @@ ParkingAI-Report-Work/**/*.docx
 # Ban sao/backup nguon khong thuoc version control
 frontend/src.zip
 backend/artifacts/
+*.demo-credentials.json

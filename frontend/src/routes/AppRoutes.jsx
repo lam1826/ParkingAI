@@ -9,6 +9,7 @@ import { AuthContext } from "../context/AuthContext";
 import { ExpansionProvider, useExpansion } from "../context/ExpansionContext";
 import { lazyWithRecovery } from "../utils/chunkRecovery";
 import { singleSiteId } from "../utils/singleSiteMode";
+import { hasMinimumRole } from "../constants/roles";
 
 const lazy = lazyWithRecovery;
 
@@ -41,6 +42,7 @@ const PortalAdminPage = lazy(() => import("../pages/Expansion/PortalAdminPage"))
 const SitesWorkspace = lazy(() => import("../pages/Expansion/SitesWorkspace"));
 const ReservationsPage = lazy(() => import("../pages/Expansion/ReservationsPage"));
 const VisionPage = lazy(() => import("../pages/Expansion/VisionPage"));
+const OccupancyPage = lazy(() => import("../pages/Expansion/OccupancyPage"));
 const InsightsPage = lazy(() => import("../pages/Expansion/InsightsPage"));
 const CoreAnalyticsPage = lazy(() => import("../pages/Expansion/CoreAnalyticsPage"));
 
@@ -48,15 +50,15 @@ function CoreAnalyticsRoute({ mode }) {
   const capabilities = useExpansion();
   return capabilities?.site_analytics_enabled
     ? <PermissionRoute minimumRole="staff" legacy={false}><CoreAnalyticsPage mode={mode} /></PermissionRoute>
-    : <PermissionRoute minimumRole="staff">{mode === "ai" ? <AIPage /> : <ReportPage />}</PermissionRoute>;
+    : <PermissionRoute minimumRole="manager">{mode === "ai" ? <AIPage /> : <ReportPage />}</PermissionRoute>;
 }
 
 function HomePage() {
   const { user } = useContext(AuthContext);
   const capabilities = useExpansion();
   if (user?.role === "customer") return <Navigate to="/portal" replace />;
-  if (singleSiteId() !== null || !capabilities.legacy_workspace_allowed) return <Navigate to="/sites" replace />;
-  return <PermissionRoute minimumRole="staff"><Dashboard /></PermissionRoute>;
+  if (singleSiteId() !== null || !capabilities.legacy_workspace_allowed || !hasMinimumRole(user?.role, "manager")) return <Navigate to="/sites" replace />;
+  return <PermissionRoute minimumRole="manager"><Dashboard /></PermissionRoute>;
 }
 
 const AppRoutes = () => {
@@ -82,6 +84,7 @@ const AppRoutes = () => {
         <Route path="portal-admin" element={<PermissionRoute minimumRole="manager" legacy={false}><PortalAdminPage /></PermissionRoute>} />
         <Route path="sites" element={<PermissionRoute minimumRole="staff" legacy={false}><SitesWorkspace /></PermissionRoute>} />
         <Route path="vision" element={<PermissionRoute minimumRole="staff" legacy={false}><VisionPage /></PermissionRoute>} />
+        <Route path="occupancy" element={<PermissionRoute minimumRole="staff" legacy={false}><OccupancyPage /></PermissionRoute>} />
         <Route path="insights" element={<PermissionRoute minimumRole="staff" legacy={false}><InsightsPage /></PermissionRoute>} />
         <Route path="account" element={<AccountPage />} />
         <Route path="profile" element={<ProfilePage />} />

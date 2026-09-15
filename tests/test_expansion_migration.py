@@ -3,6 +3,7 @@ import ast
 from datetime import date
 import hashlib
 import io
+import json
 from pathlib import Path
 import re
 
@@ -10,10 +11,8 @@ from alembic import command
 from alembic.config import Config
 import pytest
 from sqlalchemy import create_engine, select
-from sqlalchemy.dialects import postgresql
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
-from sqlalchemy.schema import CreateIndex, CreateTable
 
 from db_rollout import check_database_readiness, initialize_database, migrate_copy
 from expansion.site_models import (
@@ -208,16 +207,11 @@ def test_expansion_postgres_revision_is_frozen_and_has_matching_schema(monkeypat
                  if isinstance(node, ast.Assign) and isinstance(node.targets[0], ast.Name)}
     assert constants["revision"] == "20260907_02"
     assert constants["down_revision"] == "20260907_01"
-    assert constants["SITE_POSTGRES_GUARD_SQL"] == SITE_POSTGRES_GUARD_SQL
-    assert constants["SITE_SQLITE_GUARDS"] == SITE_SQLITE_GUARDS
-    assert constants["DEMO_POSTGRES_GUARD_SQL"] == DEMO_POSTGRES_GUARD_SQL
-    dialect = postgresql.dialect()
-    # This snapshot predates the independently migrated scoped AI history table.
-    tables = [table for table in Base.metadata.sorted_tables if table.name in EXPANSION_TABLES - {"site_ai_analyses"}]
-    assert constants["EXPANSION_TABLE_SQL"] == tuple(str(CreateTable(table).compile(dialect=dialect)).strip() for table in tables)
-    indexes = [index for table in tables for index in sorted(table.indexes, key=lambda index: index.name)]
-    indexes.extend(index for index in Base.metadata.tables["zones"].indexes if index.name == "ix_zones_site_id")
-    assert constants["EXPANSION_INDEX_SQL"] == tuple(str(CreateIndex(index).compile(dialect=dialect)).strip() for index in indexes)
+    # This published snapshot predates timed products, online credits and CV.
+    # Pin all literal DDL/guards to the 3ef172e release instead of comparing
+    # historical schema with models intentionally expanded by later revisions.
+    snapshot = json.dumps(constants, sort_keys=True, separators=(",", ":")).encode()
+    assert hashlib.sha256(snapshot).hexdigest() == "a67ff1af3c95d3f05bb2330d90f2c3109890c9526fd521c4f03ea664a847ad05"
     assert all(not isinstance(node, ast.ImportFrom) or not (node.module or "").startswith(("models", "expansion")) for node in tree.body)
     monkeypatch.setenv("DATABASE_URL", "postgresql+psycopg://unused:unused@127.0.0.1/unused")
     buffer = io.StringIO()
@@ -231,7 +225,10 @@ def test_expansion_postgres_revision_is_frozen_and_has_matching_schema(monkeypat
     assert "INSERT INTO portal_account_links" not in sql
     assert "UPDATE parking_sessions" not in sql
     assert "DROP TABLE" not in sql
-    assert sql.count("CREATE TABLE site_ai_analyses") == 1
+    for table in EXPANSION_TABLES:
+        assert sql.count(f"CREATE TABLE {table} (") == 1, table
+    assert SITE_POSTGRES_GUARD_SQL.strip() in sql
+    assert DEMO_POSTGRES_GUARD_SQL.strip() in sql
 
 
 def test_zone_commitment_revision_is_additive_and_offline_renderable(monkeypatch):
@@ -242,7 +239,8 @@ def test_zone_commitment_revision_is_additive_and_offline_renderable(monkeypatch
                  if isinstance(node, ast.Assign) and isinstance(node.targets[0], ast.Name)}
     assert constants["revision"] == "20260908_01"
     assert constants["down_revision"] == "20260907_02"
-    assert constants["ZONE_COMMITMENT_POSTGRES_GUARD_SQL"] == ZONE_COMMITMENT_POSTGRES_GUARD_SQL
+    snapshot = json.dumps(constants, sort_keys=True, separators=(",", ":")).encode()
+    assert hashlib.sha256(snapshot).hexdigest() == "ce668d8bb2c0628a91aa5d6846d589668c064fc1bf12d14cb5c07c728bcc7046"
     monkeypatch.setenv("DATABASE_URL", "postgresql+psycopg://unused:unused@127.0.0.1/unused")
     buffer = io.StringIO()
     config = Config(str(root / "backend/alembic.ini"), output_buffer=buffer)
@@ -251,6 +249,11 @@ def test_zone_commitment_revision_is_additive_and_offline_renderable(monkeypatch
     sql = buffer.getvalue()
     assert "CREATE TRIGGER trg_zone_commitment_guard" in sql
     assert "DROP TABLE" not in sql
+    # Revision06 replaces the original arrived-reservation rule while keeping
+    # this historical migration intact for databases that already applied it.
+    assert ZONE_COMMITMENT_POSTGRES_GUARD_SQL.strip() in sql
+    assert sql.index(ZONE_COMMITMENT_POSTGRES_GUARD_SQL.strip()) > sql.index(
+        constants["ZONE_COMMITMENT_POSTGRES_GUARD_SQL"].strip())
 
 
 def test_readiness_rejects_missing_site_guard(tmp_path):

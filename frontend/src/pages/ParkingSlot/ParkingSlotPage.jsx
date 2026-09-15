@@ -21,6 +21,7 @@ import { getParkingSlotVisualStatus } from "../../utils/parkingSlotStatus";
 import { vehicleTypeService } from "../VehicleType/services/vehicleTypeService";
 import { zoneService } from "../Zone/services/zoneService";
 import { parkingSlotService } from "./parkingSlotService";
+import useCorePermissions from "../../hooks/useCorePermissions";
 
 const slotColors = {
   available: { background: "#e8f5e9", border: "#43a047", text: "#1b5e20", label: "Còn trống" },
@@ -29,6 +30,7 @@ const slotColors = {
 };
 
 export default function ParkingSlotPage() {
+  const { canManageConfiguration } = useCorePermissions();
   const [view, setView] = useState("map");
   const [zones, setZones] = useState([]);
   const [types, setTypes] = useState([]);
@@ -142,7 +144,8 @@ export default function ParkingSlotPage() {
       </Stack>
 
       {view === "table" ? (
-        <CrudPage title="Danh sách vị trí đỗ" service={parkingSlotService} fields={fields} />
+        <CrudPage title="Danh sách vị trí đỗ" service={parkingSlotService} fields={fields} canEdit={canManageConfiguration}
+          readOnlyMessage="Bạn có thể tra cứu chỗ đỗ. Quản lý phụ trách thêm và sửa vị trí." />
       ) : (
         <>
           <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>

@@ -309,7 +309,7 @@ def test_monthly_pass_check_in_snapshots_pass_with_fallback_price(
 def test_price_edit_between_entry_and_exit_is_blocked_and_original_fee_persists(
     client: TestClient,
     db_session: Session,
-    test_user: User,
+    manager_user: User,
     parking_session: ParkingSession,
     price_config: PriceConfig,
     business_reference_now: datetime.datetime,
@@ -320,7 +320,7 @@ def test_price_edit_between_entry_and_exit_is_blocked_and_original_fee_persists(
     blocked = client.put(
         f"/api/v1/price-configs/{price_config.id}",
         json={"price": attempted_price},
-        headers=_headers(test_user),
+        headers=_headers(manager_user),
     )
 
     assert blocked.status_code == 409
@@ -329,11 +329,11 @@ def test_price_edit_between_entry_and_exit_is_blocked_and_original_fee_persists(
     assert price_config.price == 25_000
 
     frozen_clock(business_reference_now + datetime.timedelta(hours=2))
-    confirmation = quote_confirmation(client, _headers(test_user), parking_session.id)
+    confirmation = quote_confirmation(client, _headers(manager_user), parking_session.id)
     checked_out = client.put(
         f"/api/v1/parking-sessions/{parking_session.id}/check-out",
         json=confirmation,
-        headers=_headers(test_user),
+        headers=_headers(manager_user),
     )
 
     assert checked_out.status_code == 200
@@ -354,14 +354,14 @@ def test_price_edit_between_entry_and_exit_is_blocked_and_original_fee_persists(
 def test_active_session_blocks_rate_contract_mutation(
     payload: dict,
     client: TestClient,
-    test_user: User,
+    manager_user: User,
     parking_session: ParkingSession,
     price_config: PriceConfig,
 ):
     response = client.put(
         f"/api/v1/price-configs/{price_config.id}",
         json=payload,
-        headers=_headers(test_user),
+        headers=_headers(manager_user),
     )
 
     assert response.status_code == 409
@@ -371,7 +371,7 @@ def test_active_session_blocks_rate_contract_mutation(
 def test_active_session_blocks_rate_vehicle_type_change(
     client: TestClient,
     db_session: Session,
-    test_user: User,
+    manager_user: User,
     parking_session: ParkingSession,
     price_config: PriceConfig,
 ):
@@ -382,7 +382,7 @@ def test_active_session_blocks_rate_vehicle_type_change(
     response = client.put(
         f"/api/v1/price-configs/{price_config.id}",
         json={"vehicle_type_id": other_type.id},
-        headers=_headers(test_user),
+        headers=_headers(manager_user),
     )
 
     assert response.status_code == 409
@@ -391,13 +391,13 @@ def test_active_session_blocks_rate_vehicle_type_change(
 
 def test_active_session_blocks_active_rate_delete(
     client: TestClient,
-    test_user: User,
+    manager_user: User,
     parking_session: ParkingSession,
     price_config: PriceConfig,
 ):
     response = client.delete(
         f"/api/v1/price-configs/{price_config.id}",
-        headers=_headers(test_user),
+        headers=_headers(manager_user),
     )
 
     assert response.status_code == 409
@@ -406,14 +406,14 @@ def test_active_session_blocks_active_rate_delete(
 
 def test_no_op_update_remains_allowed_while_session_is_active(
     client: TestClient,
-    test_user: User,
+    manager_user: User,
     parking_session: ParkingSession,
     price_config: PriceConfig,
 ):
     response = client.put(
         f"/api/v1/price-configs/{price_config.id}",
         json={"price": price_config.price, "is_active": True},
-        headers=_headers(test_user),
+        headers=_headers(manager_user),
     )
 
     assert response.status_code == 200
@@ -492,7 +492,7 @@ def test_db_rejects_insert_or_replace_rate_bypass_while_session_is_active(
 def test_monthly_pass_session_locks_fallback_price(
     client: TestClient,
     db_session: Session,
-    test_user: User,
+    manager_user: User,
     customer: Customer,
     vehicle: Vehicle,
     parking_slot: ParkingSlot,
@@ -517,7 +517,7 @@ def test_monthly_pass_session_locks_fallback_price(
             monthly_pass_id=monthly_pass.id,
             check_in_time=business_reference_now,
             status="active",
-            staff_in_id=test_user.id,
+            staff_in_id=manager_user.id,
         )
     )
     parking_slot.is_occupied = True
@@ -526,7 +526,7 @@ def test_monthly_pass_session_locks_fallback_price(
     response = client.put(
         f"/api/v1/price-configs/{price_config.id}",
         json={"price": 26_000},
-        headers=_headers(test_user),
+        headers=_headers(manager_user),
     )
 
     assert response.status_code == 409

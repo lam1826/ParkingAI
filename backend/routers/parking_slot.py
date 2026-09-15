@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from typing import List
 
 from database import get_db
+from services.auth_service import RoleChecker
 from schemas import parking_slot as slot_schema
 from crud import parking_slot as crud_slot
 from crud import zone as crud_zone  # Import để kiểm tra zone_id hợp lệ
@@ -30,7 +31,8 @@ def read_parking_slot(id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Parking Slot not found")
     return db_slot
 
-@router.post("", response_model=slot_schema.ParkingSlotResponse, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=slot_schema.ParkingSlotResponse, status_code=status.HTTP_201_CREATED,
+             dependencies=[Depends(RoleChecker("manager"))])
 def create_parking_slot(slot_in: slot_schema.ParkingSlotCreate, db: Session = Depends(get_db)):
     """Tạo vị trí đỗ xe mới"""
     if crud_slot.get_parking_slot_by_name(db, slot_in.slot_name):
@@ -55,7 +57,8 @@ def create_parking_slot(slot_in: slot_schema.ParkingSlotCreate, db: Session = De
         
     return crud_slot.create_parking_slot(db=db, slot_in=slot_in)
 
-@router.put("/{id}", response_model=slot_schema.ParkingSlotResponse)
+@router.put("/{id}", response_model=slot_schema.ParkingSlotResponse,
+            dependencies=[Depends(RoleChecker("manager"))])
 def update_parking_slot(id: int, slot_in: slot_schema.ParkingSlotUpdate, db: Session = Depends(get_db)):
     """Cập nhật thông tin vị trí đỗ xe"""
     db_slot = crud_slot.get_parking_slot(db, slot_id=id)
@@ -119,7 +122,8 @@ def update_parking_slot(id: int, slot_in: slot_schema.ParkingSlotUpdate, db: Ses
             
     return crud_slot.update_parking_slot(db=db, db_slot=db_slot, slot_in=slot_in)
 
-@router.delete("/{id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{id}", status_code=status.HTTP_204_NO_CONTENT,
+               dependencies=[Depends(RoleChecker("manager"))])
 def delete_parking_slot(id: int, db: Session = Depends(get_db)):
     """Xóa một vị trí đỗ xe"""
     db_slot = crud_slot.get_parking_slot(db, slot_id=id)

@@ -72,10 +72,17 @@ def _decode(token: str) -> dict:
             raise ValueError("signature")
         raw = base64.b64decode(body + "=" * (-len(body) % 4), altchars=b"-_", validate=True)
         payload = json.loads(raw)
-        if _encode(raw) != body or set(payload) != {"purpose", "session_id", "actor_id", "state", "fee", "quoted_at", "expires_at", "nonce", "rate"}:
+        required = {"purpose", "session_id", "actor_id", "state", "fee", "quoted_at", "expires_at", "nonce", "rate"}
+        if _encode(raw) != body or set(payload) not in (required, required | {"credits"}):
             raise ValueError("claims")
         if payload["purpose"] != QUOTE_PURPOSE or type(payload["fee"]) is not int or payload["fee"] < 0 or type(payload["actor_id"]) is not int:
             raise ValueError("claims")
+        if "credits" in payload:
+            credit = payload["credits"]
+            if (not isinstance(credit, dict) or set(credit) != {"hash", "total"}
+                    or type(credit["total"]) is not int or not 0 <= credit["total"] <= payload["fee"]
+                    or not isinstance(credit["hash"], str) or len(credit["hash"]) != 64):
+                raise ValueError("credit claims")
         quoted = datetime.fromisoformat(payload["quoted_at"])
         expires = datetime.fromisoformat(payload["expires_at"])
         if quoted.tzinfo is None or expires.tzinfo is None or (expires - quoted).total_seconds() != QUOTE_TTL_SECONDS:
@@ -86,7 +93,7 @@ def _decode(token: str) -> dict:
 
 
 def _state(session: ParkingSession, vehicle: Vehicle) -> dict:
-    return {
+    state = {
         "vehicle_id": session.vehicle_id, "vehicle_type_id": vehicle.vehicle_type_id,
         "license_plate": vehicle.license_plate, "parking_slot_id": session.parking_slot_id,
         "check_in_time": _aware(session.check_in_time).isoformat(),
@@ -94,6 +101,22 @@ def _state(session: ParkingSession, vehicle: Vehicle) -> dict:
         "monthly_coverage_end": session.monthly_coverage_end.isoformat() if session.monthly_coverage_end else None,
         "status": "active",
     }
+    if session.billing_policy_version is not None:
+        from core.billing import SNAPSHOT_FIELDS
+        state["billing_snapshot"] = {
+            key: (getattr(session, key).isoformat() if key == "rate_effective_date" else getattr(session, key))
+            for key in SNAPSHOT_FIELDS
+        }
+    if session.timed_pass_id is not None:
+        state["prepaid"] = dict(timed_pass_id=session.timed_pass_id,
+            start_at=_aware(session.prepaid_start_at).isoformat(), end_at=_aware(session.prepaid_end_at).isoformat())
+    return state
+
+
+def _credit_claim(snapshot):
+    """Bounded token size even when a long stay has many verified payments."""
+    value = {"credit_ids": snapshot["credit_ids"], "total": snapshot["total"]}
+    return {"hash": hashlib.sha256(_canonical(value)).hexdigest(), "total": snapshot["total"]}
 
 
 class CheckoutService:
@@ -108,7 +131,13 @@ class CheckoutService:
             raise _error("checkout_session_not_found", "Không tìm thấy lượt gửi xe.", 404)
         return result
 
-    def _rate(self, vehicle_type_id: int, at: datetime, *, lock: bool = False):
+    def _rate(self, vehicle_type_id: int, at: datetime, *, lock: bool = False, session=None):
+        if session is not None and session.billing_policy_version is not None:
+            return {
+                "id": session.rate_config_id, "price": session.rate_unit_price,
+                "ticket_type": session.rate_ticket_type,
+                "effective_date": session.rate_effective_date.isoformat(),
+            }
         query = select(PriceConfig).where(
             PriceConfig.vehicle_type_id == vehicle_type_id, PriceConfig.is_active.is_(True),
             PriceConfig.effective_date <= at.date(),
@@ -129,6 +158,23 @@ class CheckoutService:
             time_in=session.check_in_time, time_out=at,
             monthly_pass_id=session.monthly_pass_id,
             monthly_coverage_end=session.monthly_coverage_end,
+            billing_session=session,
+        )
+
+    def _basis(self, session, at, rate):
+        from core.billing import billing_basis, snapshot_basis
+        basis = snapshot_basis(session, at)
+        if basis is not None or rate is None:
+            return basis
+        covered = False
+        if session.monthly_pass_id is not None:
+            monthly = self.db.get(MonthlyPass, session.monthly_pass_id)
+            covered = monthly.start_date <= at.date() <= (session.monthly_coverage_end or monthly.end_date)
+        return billing_basis(
+            time_in=session.check_in_time, time_out=session.check_in_time if covered else at, unit_price=int(rate["price"]),
+            ticket_type=rate["ticket_type"], rate_id=rate["id"],
+            effective_date=datetime.fromisoformat(rate["effective_date"]).date(),
+            policy_version="legacy-current-rate",
         )
 
     def quote(self, session_id: str, actor_id: int) -> dict:
@@ -137,25 +183,35 @@ class CheckoutService:
             raise _error("checkout_state_conflict", "Lượt gửi không còn đang hoạt động. Hãy tra lịch sử xe ra.")
         at = session_crud.server_now()
         expires = _aware(at) + timedelta(seconds=QUOTE_TTL_SECONDS)
-        rate = self._rate(vehicle.vehicle_type_id, at)
+        rate = self._rate(vehicle.vehicle_type_id, at, session=session)
         fee = self._fee(session, vehicle, at)
+        from expansion.session_payment_service import credit_snapshot
+        credits = credit_snapshot(self.db, session.id)
+        if credits["total"] > fee:
+            raise _error("checkout_credit_invalid", "Khoản đã trả vượt tổng phí; cần quản lý kiểm tra.")
         token = _sign({
             "purpose": QUOTE_PURPOSE, "session_id": session.id, "actor_id": actor_id,
             "state": _state(session, vehicle), "fee": fee, "rate": rate,
             "quoted_at": _aware(at).isoformat(), "expires_at": expires.isoformat(),
             "nonce": secrets.token_hex(16),
+            "credits": _credit_claim(credits),
         })
         slot = self.db.get(ParkingSlot, session.parking_slot_id) if session.parking_slot_id else None
         zone = self.db.get(Zone, slot.zone_id) if slot else None
         coverage_end = session.monthly_coverage_end
         if coverage_end is None and session.monthly_pass_id is not None:
             coverage_end = self.db.get(MonthlyPass, session.monthly_pass_id).end_date
+        from expansion.timed_parking_service import prepaid
         return {
             "quote_token": token, "session_id": session.id, "license_plate": vehicle.license_plate,
             "check_in_time": _aware(session.check_in_time), "quoted_at": _aware(at), "expires_at": expires,
             "duration_minutes": int((at - session.check_in_time).total_seconds() / 60),
             "parking_fee": fee, "monthly_coverage_end": coverage_end,
             "slot_name": slot.slot_name if slot else None, "zone_name": zone.name if zone else None,
+            "billing_basis": self._basis(session, at, rate),
+            "prepaid": prepaid(session),
+            "online_paid": credits["total"], "balance_due": fee - credits["total"],
+            "paid_through": credits["paid_through"],
         }
 
     @staticmethod
@@ -183,8 +239,6 @@ class CheckoutService:
                 raise _error("checkout_state_conflict", "Lượt gửi không còn đang hoạt động. Hãy tải lại.")
             if _state(session, vehicle) != claims["state"]:
                 raise _error("checkout_quote_changed", "Thông tin lượt gửi đã đổi. Hãy xem lại phí trước khi xác nhận.")
-            if (claims["fee"] > 0 and confirmation.payment_method is None) or (claims["fee"] == 0 and confirmation.payment_method is not None):
-                raise _error("checkout_payment_method_invalid", "Lượt có phí cần phương thức thu; lượt miễn phí phải để trống phương thức.", 422)
             # Serialize the cashier before staff_out_id acquires a foreign-key
             # lock; otherwise different sessions can deadlock on a lock upgrade.
             lock_cash_operator(self.db, actor_id)
@@ -194,13 +248,24 @@ class CheckoutService:
                 if winner.status == "completed":
                     return self._replay(winner, claims, confirmation, actor_id)
                 raise _error("checkout_state_conflict", "Lượt gửi vừa được xử lý. Hãy tải lại.")
+            session, vehicle = self._load(claims["session_id"])
+            from expansion.session_payment_service import credit_snapshot
+            credits = credit_snapshot(self.db, session.id)
+            expected_credits = claims.get("credits", _credit_claim({"credit_ids": [], "total": 0}))
+            if _state(session, vehicle) != claims["state"] or _credit_claim(credits) != expected_credits:
+                raise _error("checkout_quote_changed", "Khoản đã trả hoặc thông tin lượt gửi vừa đổi. Hãy xem lại số tiền còn thu.")
             at = session_crud.server_now()
             if not datetime.fromisoformat(claims["quoted_at"]) <= _aware(at) < datetime.fromisoformat(claims["expires_at"]):
                 raise _error("checkout_quote_expired", "Phiếu xem phí đã hết hạn. Hãy xem lại phí trước khi xác nhận.")
-            rate = self._rate(vehicle.vehicle_type_id, at, lock=True)
+            rate = self._rate(vehicle.vehicle_type_id, at, lock=True, session=session)
             fee = self._fee(session, vehicle, at)
             if rate != claims["rate"] or fee != claims["fee"]:
                 raise _error("checkout_quote_changed", "Phí gửi xe đã đổi. Hãy xem lại phí trước khi xác nhận.")
+            due = fee - credits["total"]
+            if due < 0:
+                raise _error("checkout_credit_invalid", "Khoản đã trả vượt tổng phí; cần quản lý kiểm tra.")
+            if (due > 0 and confirmation.payment_method is None) or (due == 0 and confirmation.payment_method is not None):
+                raise _error("checkout_payment_method_invalid", "Còn tiền cần chọn phương thức thu; đã trả đủ phải để trống phương thức.", 422)
             session.check_out_time = at
             session.parking_fee = fee
             session.status = "completed"
@@ -211,9 +276,9 @@ class CheckoutService:
             if slot is not None:
                 slot.is_occupied = False
             self.db.flush()
-            if fee > 0:
-                PaymentService.record_receipt(self.db, "parking_session", session.id, fee, actor_id,
-                                              method=confirmation.payment_method, created_at=at)
+            if due > 0 or credits["total"] > 0:
+                PaymentService.record_receipt(self.db, "parking_session", session.id, due,
+                    actor_id if due else None, method=confirmation.payment_method if due else "transfer", created_at=at)
             self.db.commit()
             self.db.refresh(session)
             return session

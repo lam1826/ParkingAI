@@ -22,9 +22,9 @@ const UserDialog = ({ isOpen, onClose, onSave, user, roles, submitting }) => {
         is_active: user.is_active !== undefined ? user.is_active : true,
       });
     } else {
-      setForm(initialForm);
+      setForm({ ...initialForm, role_id: roles.length === 1 ? roles[0].id : "" });
     }
-  }, [user, isOpen]);
+  }, [user, isOpen, roles]);
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -85,8 +85,9 @@ const UserDialog = ({ isOpen, onClose, onSave, user, roles, submitting }) => {
             <Grid size={{ xs: 12 }}>
               <TextField
                 fullWidth select required size="small"
-                label="Vai trò (Role)"
+                label="Vai trò"
                 name="role_id"
+                disabled={roles.length === 1 || submitting}
                 value={form.role_id}
                 onChange={handleChange}
               >

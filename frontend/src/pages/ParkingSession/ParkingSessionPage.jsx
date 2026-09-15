@@ -13,14 +13,18 @@ import { useState } from "react";
 import api from "../../services/api";
 import TicketDialog from "./components/TicketDialog";
 import CheckoutDialog from "./components/CheckoutDialog";
+import SessionDetailsDialog from "./components/SessionDetailsDialog";
+import useCorePermissions from "../../hooks/useCorePermissions";
 
 import CheckInCard from "./components/CheckInCard";
 import SessionTable from "./components/SessionTable";
 import useParkingSession from "./hooks/useParkingSession";
 
 export default function ParkingSessionPage() {
+  const { canManageConfiguration } = useCorePermissions();
   const [ticketId, setTicketId] = useState(null);
   const [checkoutId, setCheckoutId] = useState(null);
+  const [detail, setDetail] = useState(null);
   const openCheckout = (sessionId) => { setTicketId(null); setCheckoutId(sessionId); };
   const [scan, setScan] = useState("");
   const [scanError, setScanError] = useState("");
@@ -57,6 +61,8 @@ export default function ParkingSessionPage() {
     setStatusFilter,
     searchPlate,
     setSearchPlate,
+    searchTicket,
+    setSearchTicket,
     dateFrom,
     setDateFrom,
     dateTo,
@@ -67,6 +73,7 @@ export default function ParkingSessionPage() {
     notify,
     handleCheckIn,
     handleCheckoutCompleted,
+    handleExceptionCompleted,
     fetchSessions,
     closeNotify,
   } = useParkingSession();
@@ -120,9 +127,11 @@ export default function ParkingSessionPage() {
         setCheckoutId(null);
         setTicketId(result.id);
       }} />}
+      {detail && <SessionDetailsDialog key={detail.id} session={detail} canManage={canManageConfiguration}
+        onClose={() => setDetail(null)} onChanged={handleExceptionCompleted} onCheckout={openCheckout} onTicket={setTicketId} />}
 
       {/* Bộ lọc lịch sử gửi xe */}
-      <Stack direction={{ xs: "column", sm: "row" }} spacing={2} sx={{ mb: 2 }}>
+      <Stack direction={{ xs: "column", sm: "row" }} spacing={2} useFlexGap sx={{ mb: 2, flexWrap: "wrap" }}>
         <TextField
           select
           size="small"
@@ -141,6 +150,15 @@ export default function ParkingSessionPage() {
           label="Tìm theo biển số"
           value={searchPlate}
           onChange={(e) => setSearchPlate(e.target.value)}
+          sx={{ minWidth: 220 }}
+        />
+        <TextField
+          size="small"
+          label="Mã vé (mã lượt)"
+          value={searchTicket}
+          onChange={(e) => setSearchTicket(e.target.value)}
+          slotProps={{ htmlInput: { maxLength: 36 } }}
+          helperText="Nhập đầy đủ mã lượt trên vé."
           sx={{ minWidth: 220 }}
         />
         <TextField
@@ -176,6 +194,7 @@ export default function ParkingSessionPage() {
         onPaginationModelChange={handlePaginationModelChange}
         onCheckOut={openCheckout}
         onTicket={setTicketId}
+        onDetails={setDetail}
         title={
           statusFilter === "active"
             ? "Danh sách xe đang đỗ trong bãi"

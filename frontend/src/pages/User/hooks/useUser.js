@@ -1,5 +1,7 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useContext, useMemo } from "react";
 import userService from "../services/userService";
+import { AuthContext } from "../../../context/AuthContext";
+import { assignableRoles, canCreateUser, canEditUser as mayEditUser } from "../../../constants/userPermissions";
 
 const useUser = () => {
   const [users, setUsers] = useState([]);
@@ -13,8 +15,11 @@ const useUser = () => {
   const [notify, setNotify] = useState({ open: false, message: "", severity: "info" });
 
   // Đọc thông tin user hiện tại & phân quyền
-  const currentUser = JSON.parse(localStorage.getItem("user")) || { role: "staff" };
-  const canManage = currentUser.role === "admin" || currentUser.is_superuser;
+  const { user: currentUser } = useContext(AuthContext);
+  const canManage = canCreateUser(currentUser);
+  const canDeleteUsers = String(currentUser?.role).toLowerCase() === "admin";
+  const canEditUser = (target) => mayEditUser(currentUser, target);
+  const allowedRoles = useMemo(() => assignableRoles(currentUser, roles), [currentUser, roles]);
 
   const fetchUsers = useCallback(async () => {
     setLoading(true);
@@ -43,7 +48,7 @@ const useUser = () => {
   }, [fetchUsers]);
 
   const handleActionRestricted = () => {
-    showNotify("Bạn không có quyền thực hiện thao tác này! Yêu cầu quyền Admin.", "warning");
+    showNotify("Bạn không có quyền thay đổi tài khoản này.", "warning");
   };
 
   const handleOpenCreate = () => {
@@ -53,13 +58,13 @@ const useUser = () => {
   };
 
   const handleOpenEdit = (user) => {
-    if (!canManage) return handleActionRestricted();
+    if (!canEditUser(user)) return handleActionRestricted();
     setSelectedUser(user);
     setDialogOpen(true);
   };
 
   const handleOpenDelete = (user) => {
-    if (!canManage) return handleActionRestricted();
+    if (!canDeleteUsers) return handleActionRestricted();
     setSelectedUser(user);
     setDeleteDialogOpen(true);
   };
@@ -71,6 +76,8 @@ const useUser = () => {
   };
 
   const handleSave = async (formData) => {
+    if (!canManage || (selectedUser && !canEditUser(selectedUser))) return handleActionRestricted();
+    if (!assignableRoles(currentUser, roles).some((role) => role.id === formData.role_id)) return handleActionRestricted();
     setSubmitting(true);
     try {
       if (selectedUser) {
@@ -91,6 +98,7 @@ const useUser = () => {
   };
 
   const handleDelete = async () => {
+    if (!canDeleteUsers) return handleActionRestricted();
     try {
       await userService.delete(selectedUser.id);
       showNotify("Xóa người dùng thành công!", "success");
@@ -106,7 +114,7 @@ const useUser = () => {
   const closeNotify = () => setNotify((prev) => ({ ...prev, open: false }));
 
   return {
-    users, roles, loading, submitting, canManage,
+    users, roles: allowedRoles, loading, submitting, canManage, canDeleteUsers, canEditUser,
     dialogOpen, deleteDialogOpen, selectedUser, notify,
     handleOpenCreate, handleOpenEdit, handleOpenDelete,
     closeDialogs, handleSave, handleDelete, fetchUsers, closeNotify

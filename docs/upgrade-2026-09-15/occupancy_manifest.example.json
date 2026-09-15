@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "split": "held_out",
+  "synthetic": false,
+  "label_source": "human",
+  "settings": {
+    "pixel_delta": 30,
+    "empty_ratio": 0.06,
+    "occupied_ratio": 0.25,
+    "max_lighting_shift": 35,
+    "min_blur_variance": 15,
+    "stale_after_seconds": 30,
+    "confirmation_frames": 2
+  },
+  "cases": [
+    {
+      "id": "daylight-car-present-001",
+      "reference": "images/empty-reference.png",
+      "source": "images/held-out-001.png",
+      "regions": [
+        { "slot_id": 1, "polygon": [[0.1, 0.1], [0.45, 0.1], [0.45, 0.8], [0.1, 0.8]] }
+      ],
+      "labels": { "1": "occupied" }
+    }
+  ]
+}

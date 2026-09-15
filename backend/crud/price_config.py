@@ -5,6 +5,7 @@ from sqlalchemy import select, and_
 from models.parking_session import ParkingSession
 from models.price_config import PriceConfig 
 from models.vehicle import Vehicle
+from models.vehicle_type import VehicleType
 from schemas import price_config as price_config_schema
 
 def get_price_config(db: Session, config_id: int) -> PriceConfig | None:
@@ -39,6 +40,7 @@ def get_effective_active_price_by_vehicle_type(
     db: Session,
     vehicle_type_id: int,
     effective_on: date,
+    *, lock: bool = False,
 ) -> PriceConfig | None:
     """Return the exact active rate the current checkout algorithm can use.
 
@@ -55,6 +57,8 @@ def get_effective_active_price_by_vehicle_type(
         .order_by(PriceConfig.effective_date.desc(), PriceConfig.id.desc())
         .limit(1)
     )
+    if lock:
+        stmt = stmt.with_for_update(read=True).execution_options(populate_existing=True)
     return db.execute(stmt).scalar_one_or_none()
 
 
@@ -62,17 +66,18 @@ def has_active_session_for_vehicle_type(
     db: Session,
     vehicle_type_id: int,
 ) -> bool:
-    """Whether this vehicle type has any stay still in progress.
+    """Whether a legacy open stay still depends on the mutable tariff.
 
-    Monthly-pass stays also lock the fallback rate: if the pass expires before
-    exit, checkout must still use the rate contract proven at entry.
+    New stays own immutable values. A legacy monthly stay still needs its
+    fallback price if its original entitlement expires before departure.
     """
     stmt = (
         select(ParkingSession.id)
         .join(Vehicle, ParkingSession.vehicle_id == Vehicle.id)
         .where(
             Vehicle.vehicle_type_id == vehicle_type_id,
-            ParkingSession.status == "active",
+            ParkingSession.status.in_(("active", "checking_out")),
+            ParkingSession.billing_policy_version.is_(None),
         )
         .limit(1)
     )
@@ -91,6 +96,7 @@ def create_price_config(db: Session, config_in: price_config_schema.PriceConfigC
 
 def update_price_config(db: Session, db_config: PriceConfig, config_in: price_config_schema.PriceConfigUpdate) -> PriceConfig:
     update_data = config_in.model_dump(exclude_unset=True)
+    _lock_price_types(db, db_config.vehicle_type_id, update_data.get("vehicle_type_id", db_config.vehicle_type_id))
     for field, value in update_data.items():
         setattr(db_config, field, value)
     
@@ -100,6 +106,15 @@ def update_price_config(db: Session, db_config: PriceConfig, config_in: price_co
     return db_config
 
 def delete_price_config(db: Session, db_config: PriceConfig) -> PriceConfig:
+    _lock_price_types(db, db_config.vehicle_type_id)
     db.delete(db_config)
     db.commit()
     return db_config
+
+
+def _lock_price_types(db: Session, *type_ids: int):
+    # Match admission's type -> tariff order before PostgreSQL locks a price
+    # row during UPDATE. SQLite admissions already hold its database write lock.
+    if db.get_bind().dialect.name == "postgresql":
+        for type_id in sorted(set(type_ids)):
+            db.execute(select(VehicleType.id).where(VehicleType.id == type_id).with_for_update())

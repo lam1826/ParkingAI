@@ -152,9 +152,9 @@ export function Section({ title, description, children, actions }) {
 }
 
 const labels = { pending: "Chờ xử lý", approved: "Đã duyệt", rejected: "Từ chối", paid: "Đã thanh toán mô phỏng", fulfilled: "Đã cấp vé", completed: "Hoàn tất", failed: "Thất bại", cancelled: "Đã hủy", expired: "Hết hạn", confirmed: "Đã đặt", arrived: "Đã đến", active: "Đang hiệu lực", waiting: "Đang chờ", offered: "Đã có chỗ", review: "Cần đối soát", needs_review: "Cần đối soát", refunded: "Đã hoàn mô phỏng" };
-export function StateChip({ value }) {
+export function StateChip({ value, label }) {
   const good = ["paid", "fulfilled", "completed", "approved", "active", "arrived"].includes(value);
-  return <Chip size="small" variant="outlined" color={good ? "success" : ["failed", "rejected"].includes(value) ? "error" : "default"} label={labels[value] || value || "—"} />;
+  return <Chip size="small" variant="outlined" color={good ? "success" : ["failed", "rejected"].includes(value) ? "error" : "default"} label={label || labels[value] || value || "—"} />;
 }
 
 export function Records({ rows = [], columns, empty = "Chưa có dữ liệu." }) {

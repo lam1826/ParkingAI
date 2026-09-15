@@ -28,19 +28,19 @@ def create_paid(client, test_user, customer, vehicle, business_reference_now):
     return response.json()
 
 
-def test_renew_used_pass_retains_card_history_and_collects_once(client, db_session, test_user,
+def test_renew_used_pass_retains_card_history_and_collects_once(client, db_session, manager_user,
         customer, vehicle, price_config, parking_slot, business_reference_now):
-    original = create_paid(client, test_user, customer, vehicle, business_reference_now)
-    admission = client.post("/api/v1/parking-sessions/check-in", headers=headers(test_user), json={
+    original = create_paid(client, manager_user, customer, vehicle, business_reference_now)
+    admission = client.post("/api/v1/parking-sessions/check-in", headers=headers(manager_user), json={
         "vehicle_id": vehicle.id, "parking_slot_id": parking_slot.id,
     })
     assert admission.status_code == 201, admission.text
     payload = {"start_date": (business_reference_now.date() + timedelta(days=30)).isoformat(),
         "end_date": (business_reference_now.date() + timedelta(days=59)).isoformat(),
         "price": 600000, "payment_method": "transfer", "request_id": str(uuid4())}
-    first = client.post(f"/api/v1/monthly-passes/{original['id']}/renew", headers=headers(test_user), json=payload)
+    first = client.post(f"/api/v1/monthly-passes/{original['id']}/renew", headers=headers(manager_user), json=payload)
     assert first.status_code == 201, first.text
-    retry = client.post(f"/api/v1/monthly-passes/{original['id']}/renew", headers=headers(test_user), json=payload)
+    retry = client.post(f"/api/v1/monthly-passes/{original['id']}/renew", headers=headers(manager_user), json=payload)
     assert retry.status_code == 201, retry.text
     assert first.json()["id"] == retry.json()["id"] != original["id"]
     assert first.json()["card_code"] == original["card_code"] == "CARD-ROOT-1"
@@ -50,25 +50,25 @@ def test_renew_used_pass_retains_card_history_and_collects_once(client, db_sessi
     receipts = db_session.scalars(select(Payment).where(Payment.source_type == "monthly_pass")).all()
     assert sorted(p.amount for p in receipts) == [500000, 600000]
     assert ParkingService(db_session).get_dashboard_data()["total_revenue_today"] == 1100000
-    conflict = client.post(f"/api/v1/monthly-passes/{original['id']}/renew", headers=headers(test_user), json={**payload, "price": 700000})
+    conflict = client.post(f"/api/v1/monthly-passes/{original['id']}/renew", headers=headers(manager_user), json={**payload, "price": 700000})
     assert conflict.status_code == 409
 
 
-def test_overlap_renewal_and_paid_edit_never_change_receipts(client, db_session, test_user,
+def test_overlap_renewal_and_paid_edit_never_change_receipts(client, db_session, manager_user,
         customer, vehicle, business_reference_now):
-    original = create_paid(client, test_user, customer, vehicle, business_reference_now)
+    original = create_paid(client, manager_user, customer, vehicle, business_reference_now)
     endpoint = f"/api/v1/monthly-passes/{original['id']}"
-    response = client.post(endpoint + "/renew", headers=headers(test_user), json={
+    response = client.post(endpoint + "/renew", headers=headers(manager_user), json={
         "start_date": original["end_date"], "end_date": original["end_date"], "price": 1, "request_id": str(uuid4())})
     assert response.status_code == 409
-    assert client.put(endpoint, headers=headers(test_user), json={"price": 0}).status_code == 409
-    assert client.delete(endpoint, headers=headers(test_user)).status_code == 409
-    assert client.put(endpoint, headers=headers(test_user), json={"is_active": False}).status_code == 200
+    assert client.put(endpoint, headers=headers(manager_user), json={"price": 0}).status_code == 409
+    assert client.delete(endpoint, headers=headers(manager_user)).status_code == 409
+    assert client.put(endpoint, headers=headers(manager_user), json={"is_active": False}).status_code == 200
     assert db_session.query(Payment).count() == 1
     assert db_session.query(MonthlyPass).count() == 1
 
 
-def test_receipt_failure_rolls_back_period_and_card(client, db_session, test_user, customer,
+def test_receipt_failure_rolls_back_period_and_card(client, db_session, manager_user, customer,
         vehicle, business_reference_now, monkeypatch):
     from fastapi import HTTPException
     from models.parking_card import ParkingCard
@@ -77,7 +77,7 @@ def test_receipt_failure_rolls_back_period_and_card(client, db_session, test_use
         raise HTTPException(409, "Collection failed")
     monkeypatch.setattr(PaymentService, "record_receipt", fail)
     day = business_reference_now.date().isoformat()
-    response = client.post("/api/v1/monthly-passes", headers=headers(test_user), json={
+    response = client.post("/api/v1/monthly-passes", headers=headers(manager_user), json={
         "customer_id": customer.id, "vehicle_id": vehicle.id, "pass_code": "ROLLBACK", "price": 1,
         "start_date": day, "end_date": day})
     assert response.status_code == 409

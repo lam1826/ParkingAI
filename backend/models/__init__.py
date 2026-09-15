@@ -16,12 +16,18 @@ from .parking_card import ParkingCard
 from .monthly_pass import MonthlyPass
 from .price_config import PriceConfig
 from .parking_session import ParkingSession
+from .parking_session_event import ParkingSessionEvent
 from .ai_report import AiReport
 from .audit_log import AuditLog
 from .cash_shift import CashShift
 from .payment import Payment
 from expansion import site_models  # noqa: F401 - register optional site/booking tables
 from expansion import portal_models  # noqa: F401 - register verified portal authority
+from expansion import timed_parking_models  # noqa: F401 - prepaid single-entry tickets
+from expansion import timed_parking_guards  # noqa: F401 - capacity and payment bindings
+from expansion import online_payment_models  # noqa: F401 - durable provider evidence
+from expansion import occupancy_models  # noqa: F401 - observational CV, separate from occupancy ledger
+from expansion import session_payment_models  # noqa: F401 - verified parking-fee credits
 from expansion import vision_models  # noqa: F401 - register private camera observations
 from expansion import analytics_models  # noqa: F401 - register scoped AI history
 import expansion_demo_guards  # noqa: F401 - same demo boundary on fresh databases
@@ -57,6 +63,7 @@ __all__ = [
     "MonthlyPass",
     "PriceConfig",
     "ParkingSession",
+    "ParkingSessionEvent",
     "AiReport",
     "AuditLog",
     "CashShift",

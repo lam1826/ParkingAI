@@ -1,5 +1,5 @@
 """Round-two review regressions: ownership change vs. bookings, observation id oracle, midnight DEMO payment."""
-from datetime import timedelta
+from datetime import datetime, timedelta
 from uuid import uuid4
 
 import pytest
@@ -73,29 +73,45 @@ def test_foreign_site_observation_id_is_indistinguishable_from_missing(vision):
     assert db.get(VisionObservation, row.id).review_status == "pending"
 
 
-def test_demo_result_inside_validity_window_survives_midnight(portal):
+def _clock_before_midnight(monkeypatch):
+    """Move the shared clock, never rewrite the purchased order snapshot."""
+    import core.clock as clock
+    instant = {"at": business_now().replace(hour=23, minute=55, second=0, microsecond=0)}
+
+    class TestClock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            value = instant["at"].replace(tzinfo=BUSINESS_TZ)
+            return value.astimezone(tz) if tz else value.replace(tzinfo=None)
+
+    monkeypatch.setattr(clock, "datetime", TestClock)
+    return instant
+
+
+def test_demo_result_inside_validity_window_survives_midnight(portal, monkeypatch):
     client, current, users, site, kind, db = portal
     body = onboard(portal)
+    clock = _clock_before_midnight(monkeypatch)
     order = client.post("/api/v2/me/orders", json=body).json()
     row = db.get(PortalOrder, order["id"])
-    # The order was created before midnight (start_date = yesterday) and is still within its TTL now.
-    row.start_date -= timedelta(days=1)
-    row.end_date -= timedelta(days=1)
-    db.commit()
+    original_terms = (row.start_date, row.end_date, row.expires_at)
+    clock["at"] += timedelta(minutes=6)
+    assert clock["at"].date() > row.start_date and clock["at"] < row.expires_at
     result = client.post(f"/api/v2/me/orders/{order['id']}/simulate", json={"token": order["demo_token"], "outcome": "success"})
     assert result.status_code == 200, result.text
     assert result.json()["status"] == "fulfilled" and result.json()["monthly_pass_id"]
+    db.refresh(row)
+    assert (row.start_date, row.end_date, row.expires_at) == original_terms
 
 
-def test_demo_result_after_expiry_still_goes_to_review_and_manager_can_reject(portal):
+def test_demo_result_after_expiry_still_goes_to_review_and_manager_can_reject(portal, monkeypatch):
     client, current, users, site, kind, db = portal
     body = onboard(portal)
+    clock = _clock_before_midnight(monkeypatch)
     order = client.post("/api/v2/me/orders", json=body).json()
     row = db.get(PortalOrder, order["id"])
-    row.start_date -= timedelta(days=1)
-    row.end_date -= timedelta(days=1)
-    row.expires_at -= timedelta(days=1, minutes=30)
-    db.commit()
+    original_terms = (row.start_date, row.end_date, row.expires_at)
+    clock["at"] = row.expires_at + timedelta(days=1, minutes=30)
     result = client.post(f"/api/v2/me/orders/{order['id']}/simulate", json={"token": order["demo_token"], "outcome": "success"})
     assert result.status_code == 200 and result.json()["status"] == "review" and result.json()["review_reason"] == "late_payment"
     current["user"] = users[0]
@@ -103,25 +119,31 @@ def test_demo_result_after_expiry_still_goes_to_review_and_manager_can_reject(po
     assert approve.status_code == 409
     reject = client.post(f"/api/v2/portal/admin/orders/{order['id']}/review", json={"approve": False, "note": "quá hạn"})
     assert reject.status_code == 200 and reject.json()["status"] == "cancelled"
+    db.refresh(row)
+    assert (row.start_date, row.end_date, row.expires_at) == original_terms
 
 
-def test_review_for_on_time_result_can_be_approved_even_days_later(portal):
+def test_review_for_on_time_result_can_be_approved_even_days_later(portal, monkeypatch):
     """A result received inside the window but flagged for another reason stays approvable after midnight."""
     client, current, users, site, kind, db = portal
     body = onboard(portal)
+    clock = _clock_before_midnight(monkeypatch)
     order = client.post("/api/v2/me/orders", json=body).json()
     row = db.get(PortalOrder, order["id"])
+    original_terms = (row.start_date, row.end_date, row.expires_at)
     original_site = row.site_id
     row_site = db.get(type(site), original_site)
     row_site.is_active = False
     db.commit()
+    clock["at"] += timedelta(minutes=1)
     result = client.post(f"/api/v2/me/orders/{order['id']}/simulate", json={"token": order["demo_token"], "outcome": "success"})
     assert result.json()["status"] == "review" and result.json()["review_reason"] == "site_inactive"
     row_site.is_active = True
-    row.start_date -= timedelta(days=1)
-    row.end_date -= timedelta(days=1)
     db.commit()
+    clock["at"] += timedelta(days=2)
     current["user"] = users[0]
     approve = client.post(f"/api/v2/portal/admin/orders/{order['id']}/review", json={"approve": True, "note": "bãi mở lại"})
     assert approve.status_code == 200, approve.text
     assert approve.json()["status"] == "fulfilled"
+    db.refresh(row)
+    assert (row.start_date, row.end_date, row.expires_at) == original_terms

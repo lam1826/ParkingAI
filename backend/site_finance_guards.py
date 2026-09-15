@@ -6,6 +6,7 @@ SITE_FINANCE_SQLITE_GUARDS = {
     "trg_cash_shift_site_immutable": "CREATE TRIGGER IF NOT EXISTS trg_cash_shift_site_immutable BEFORE UPDATE OF site_id ON cash_shifts WHEN NEW.site_id IS NOT OLD.site_id BEGIN SELECT RAISE(ABORT, 'cash shift site is immutable'); END",
     "trg_payment_site_guard": """CREATE TRIGGER IF NOT EXISTS trg_payment_site_guard BEFORE INSERT ON payments WHEN
         (NEW.site_id IS NOT NULL AND NEW.kind = 'receipt' AND (
+            (NEW.source_type = 'session_credit' AND NEW.site_id IS NOT (SELECT q.site_id FROM session_fee_credits c JOIN session_fee_quotes q ON q.id=c.quote_id WHERE c.id=NEW.source_id)) OR
             (NEW.source_type = 'monthly_pass' AND NEW.site_id IS NOT (SELECT o.site_id FROM monthly_passes p JOIN portal_orders o ON p.renewal_key='portal:' || o.id WHERE CAST(p.id AS TEXT)=NEW.source_id)) OR
             (NEW.source_type = 'parking_session' AND NEW.site_id IS NOT (SELECT z.site_id FROM parking_sessions p JOIN parking_slots s ON s.id=p.parking_slot_id JOIN zones z ON z.id=s.zone_id WHERE p.id=NEW.source_id))))
         OR (NEW.kind = 'refund' AND NEW.site_id IS NOT (SELECT site_id FROM payments WHERE id=NEW.original_payment_id))
@@ -29,6 +30,10 @@ BEGIN
     ELSIF NEW.site_id IS NOT NULL THEN
         IF NEW.source_type='monthly_pass' THEN
             SELECT o.site_id INTO expected_site FROM monthly_passes p JOIN portal_orders o ON p.renewal_key='portal:' || o.id WHERE p.id::text=NEW.source_id;
+        ELSIF NEW.source_type='portal_order' THEN
+            SELECT site_id INTO expected_site FROM portal_orders WHERE id=NEW.source_id;
+        ELSIF NEW.source_type='session_credit' THEN
+            SELECT q.site_id INTO expected_site FROM session_fee_credits c JOIN session_fee_quotes q ON q.id=c.quote_id WHERE c.id=NEW.source_id;
         ELSE
             SELECT z.site_id INTO expected_site FROM parking_sessions p JOIN parking_slots s ON s.id=p.parking_slot_id JOIN zones z ON z.id=s.zone_id WHERE p.id=NEW.source_id;
         END IF;

@@ -72,21 +72,21 @@ def test_renewal_after_admission_does_not_extend_existing_session(
     confirmation = quote_confirmation(client, _headers(test_user), session.id)
     response = client.put(f"/api/v1/parking-sessions/{session.id}/check-out", headers=_headers(test_user), json=confirmation)
     assert response.status_code == 200, response.text
-    assert response.json()["parking_fee"] == 2 * price_config.price
+    assert response.json()["parking_fee"] == price_config.price
 
 
 def test_cancelling_next_period_after_admission_keeps_frozen_coverage(
-    client, db_session, test_user, vehicle, parking_slot, coverage_setup, monkeypatch,
+    client, db_session, manager_user, vehicle, parking_slot, coverage_setup, monkeypatch,
 ):
     original, entered_at, end = coverage_setup
-    renewed = _renew(db_session, original, test_user, end)
+    renewed = _renew(db_session, original, manager_user, end)
     monkeypatch.setattr(session_crud, "server_now", lambda: entered_at)
-    session = _check_in(client, db_session, test_user, vehicle, parking_slot, "/parking/check-in")
-    response = client.put(f"/api/v1/monthly-passes/{renewed.id}", json={"is_active": False}, headers=_headers(test_user))
+    session = _check_in(client, db_session, manager_user, vehicle, parking_slot, "/parking/check-in")
+    response = client.put(f"/api/v1/monthly-passes/{renewed.id}", json={"is_active": False}, headers=_headers(manager_user))
     assert response.status_code == 200, response.text
     monkeypatch.setattr(session_crud, "server_now", lambda: entered_at+timedelta(hours=2))
-    confirmation = quote_confirmation(client, _headers(test_user), session.id)
-    response = client.post("/parking/check-out", json={**{"license_plate": vehicle.license_plate}, **confirmation}, headers=_headers(test_user))
+    confirmation = quote_confirmation(client, _headers(manager_user), session.id)
+    response = client.post("/parking/check-out", json={**{"license_plate": vehicle.license_plate}, **confirmation}, headers=_headers(manager_user))
     assert response.status_code == 200, response.text
     assert response.json()["parking_fee"] == 0
     assert session.monthly_coverage_end == end
@@ -115,7 +115,7 @@ def test_admission_does_not_join_ineligible_periods(
     confirmation = quote_confirmation(client, _headers(test_user), session.id)
     response = client.put(f"/api/v1/parking-sessions/{session.id}/check-out", headers=_headers(test_user), json=confirmation)
     assert response.status_code == 200, response.text
-    assert response.json()["parking_fee"] == 2 * price_config.price
+    assert response.json()["parking_fee"] == price_config.price
 
 
 def test_admission_joins_multiple_contiguous_prepaid_periods(
@@ -129,7 +129,7 @@ def test_admission_joins_multiple_contiguous_prepaid_periods(
     assert session.monthly_coverage_end == third.end_date
 
 
-def test_exit_after_frozen_coverage_keeps_existing_full_stay_rate_policy(
+def test_exit_after_frozen_coverage_only_charges_uncovered_time(
     client, db_session, test_user, vehicle, parking_slot, price_config, coverage_setup, monkeypatch,
 ):
     original, entered_at, end = coverage_setup
@@ -141,7 +141,7 @@ def test_exit_after_frozen_coverage_keeps_existing_full_stay_rate_policy(
     confirmation = quote_confirmation(client, _headers(test_user), session.id)
     response = client.put(f"/api/v1/parking-sessions/{session.id}/check-out", headers=_headers(test_user), json=confirmation)
     assert response.status_code == 200, response.text
-    assert response.json()["parking_fee"] == (30 * 24 + 2) * price_config.price
+    assert response.json()["parking_fee"] == price_config.price
 
 
 @pytest.mark.parametrize("endpoint", ["/api/v1/parking-sessions/check-in", "/parking/check-in"])

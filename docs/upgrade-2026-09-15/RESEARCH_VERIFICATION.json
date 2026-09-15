@@ -1,0 +1,13 @@
+{
+  "checked_at": "2026-09-15T05:35:31.110142+07:00",
+  "scope": "Documentation, traceability and source-diff verification only",
+  "core_requirements": 13,
+  "extension_requirements": 8,
+  "parking_reference_products": 5,
+  "internal_links_checked": 19,
+  "missing_internal_links": [],
+  "application_source_changed": false,
+  "claude_required": false,
+  "product_tests_rerun_this_turn": false,
+  "result": "PASS"
+}

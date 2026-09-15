@@ -26,7 +26,10 @@ from middleware.security_headers import SecurityHeadersMiddleware
 from middleware.request_context import RequestContextMiddleware
 from expansion.site_router import router as site_router
 from expansion.portal_router import router as portal_router
+from expansion.online_payment_router import router as online_payment_router
+from expansion.session_payment_router import router as session_payment_router
 from expansion.vision_router import router as vision_router
+from expansion.occupancy_router import router as occupancy_router
 from expansion.insights_router import router as insights_router
 from expansion.system_router import router as system_router, require_legacy_workspace
 
@@ -199,7 +202,10 @@ app.include_router(report.router, dependencies=[Depends(require_legacy_workspace
 app.include_router(api_router, prefix="/api/v1", dependencies=[Depends(require_legacy_workspace)])
 app.include_router(site_router)
 app.include_router(portal_router, prefix="/api/v2")
+app.include_router(online_payment_router, prefix="/api/v2")
+app.include_router(session_payment_router, prefix="/api/v2")
 app.include_router(vision_router)
+app.include_router(occupancy_router)
 app.include_router(insights_router)
 app.include_router(system_router)
 

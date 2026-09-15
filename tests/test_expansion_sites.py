@@ -427,13 +427,14 @@ def test_v2_session_payload_excludes_internal_confirmation_and_image_fields(env)
     forbidden = {
         "checkout_quote_hash",
         "checkout_payment_method",
-        "monthly_coverage_end",
         "image_in_url",
         "image_out_url",
         "staff_in_id",
         "staff_out_id",
     }
     assert forbidden.isdisjoint(payload)
+    assert payload["monthly_coverage_end"] is None
+    assert payload["billing_basis"] is None  # Active fee basis is supplied by a quote.
 
 
 def test_v2_session_metadata_timestamps_keep_their_utc_meaning():
@@ -447,7 +448,11 @@ def test_v2_session_metadata_timestamps_keep_their_utc_meaning():
         updated_at=datetime(2026, 9, 8, 3, 5),
     )
 
-    payload = service.serialize(session)
+    # This transient row only exercises timestamp presentation. Its explicit
+    # empty-credit fixture avoids requiring a database or guessing ledger data.
+    payload = service.serialize(session, credit_values={session.id: {
+        "online_paid": 0, "balance_due": None, "paid_through": None,
+    }})
 
     assert payload["created_at"].tzinfo == timezone.utc
     assert payload["updated_at"].tzinfo == timezone.utc

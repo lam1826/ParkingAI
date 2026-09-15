@@ -47,13 +47,13 @@ def test_weekly_ai_requires_exactly_seven_inclusive_days_before_work(
     mock_genai_client,
     mock_get_daily_summaries,
     client: TestClient,
-    staff_headers: dict[str, str],
+    manager_headers: dict[str, str],
     start_date: str,
     end_date: str,
 ):
     response = client.post(
         "/ai/weekly-report",
-        headers=staff_headers,
+        headers=manager_headers,
         json={"start_date": start_date, "end_date": end_date},
     )
 
@@ -66,7 +66,7 @@ def test_weekly_ai_requires_exactly_seven_inclusive_days_before_work(
 def test_weekly_ai_accepts_exactly_seven_inclusive_days(
     mock_genai_client,
     client: TestClient,
-    staff_headers: dict[str, str],
+    manager_headers: dict[str, str],
 ):
     provider = MagicMock()
     provider.models.generate_content.return_value.text = "Báo cáo tuần mock"
@@ -74,7 +74,7 @@ def test_weekly_ai_accepts_exactly_seven_inclusive_days(
 
     response = client.post(
         "/ai/weekly-report",
-        headers=staff_headers,
+        headers=manager_headers,
         json={
             "start_date": "2026-08-03",
             "end_date": "2026-08-09",
@@ -91,14 +91,14 @@ def test_weekly_ai_accepts_exactly_seven_inclusive_days(
 def test_ai_question_length_is_bounded_before_provider(
     mock_genai_client,
     client: TestClient,
-    staff_headers: dict[str, str],
+    manager_headers: dict[str, str],
     path: str,
 ):
     payload = {"question": "x" * 1001}
     if path == "/ai/ask":
         payload["parking_stats"] = {"total": 1}
 
-    response = client.post(path, headers=staff_headers, json=payload)
+    response = client.post(path, headers=manager_headers, json=payload)
 
     assert response.status_code == 422
     mock_genai_client.assert_not_called()
@@ -136,11 +136,11 @@ def test_ai_question_length_is_bounded_before_provider(
 def test_ai_custom_collection_item_counts_are_bounded_before_provider(
     mock_genai_client,
     client: TestClient,
-    staff_headers: dict[str, str],
+    manager_headers: dict[str, str],
     path: str,
     payload: dict,
 ):
-    response = client.post(path, headers=staff_headers, json=payload)
+    response = client.post(path, headers=manager_headers, json=payload)
 
     assert response.status_code == 422
     mock_genai_client.assert_not_called()
@@ -150,11 +150,11 @@ def test_ai_custom_collection_item_counts_are_bounded_before_provider(
 def test_ai_custom_payload_serialized_size_is_bounded_before_provider(
     mock_genai_client,
     client: TestClient,
-    staff_headers: dict[str, str],
+    manager_headers: dict[str, str],
 ):
     response = client.post(
         "/ai/daily-report",
-        headers=staff_headers,
+        headers=manager_headers,
         json={
             "target_date": "2026-08-03",
             "parking_stats": {"nested": {"text": "x" * 33_000}},
@@ -169,7 +169,7 @@ def test_ai_custom_payload_serialized_size_is_bounded_before_provider(
 def test_current_daily_ai_stats_keep_slot_state_with_provenance(
     mock_genai_client,
     client: TestClient,
-    staff_headers: dict[str, str],
+    manager_headers: dict[str, str],
     parking_slot,
     business_reference_now: datetime,
     monkeypatch,
@@ -193,7 +193,7 @@ def test_current_daily_ai_stats_keep_slot_state_with_provenance(
 
     response = client.post(
         "/ai/daily-report",
-        headers=staff_headers,
+        headers=manager_headers,
         json={"target_date": target_date},
     )
 
@@ -214,10 +214,10 @@ def test_current_daily_ai_stats_keep_slot_state_with_provenance(
 )
 def test_ai_report_pagination_is_bounded(
     client: TestClient,
-    staff_headers: dict[str, str],
+    manager_headers: dict[str, str],
     params: dict,
 ):
-    response = client.get("/ai/reports", headers=staff_headers, params=params)
+    response = client.get("/ai/reports", headers=manager_headers, params=params)
 
     assert response.status_code == 422
 
@@ -242,13 +242,13 @@ def test_ai_report_pagination_is_bounded(
 def test_ai_request_models_forbid_unknown_fields_before_provider(
     mock_genai_client,
     client: TestClient,
-    staff_headers: dict[str, str],
+    manager_headers: dict[str, str],
     path: str,
     payload: dict,
 ):
     response = client.post(
         path,
-        headers=staff_headers,
+        headers=manager_headers,
         json={**payload, "unexpected_server_controlled_field": True},
     )
 

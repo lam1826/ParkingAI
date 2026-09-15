@@ -46,7 +46,30 @@ def run_portal_maintenance(db, limit=100):
             PortalPaymentEvent.status == "received"))
         if order.status == "pending" and order.expires_at < now and received is None:
             order.status = "expired"
+            from expansion.timed_parking_service import release_hold
+            release_hold(db, order, expired=True)
             result["expired"] += 1
+        db.commit()
+    from expansion.timed_parking_models import TimedParkingPass, ParkingCapacityHold
+    from expansion.timed_parking_service import release_hold
+    from expansion.reservations import expire_slot
+    # Physical occupancy is never expired: only unused rights and unpaid holds.
+    due = list(db.scalars(select(PortalOrder.id).join(ParkingCapacityHold,
+        ParkingCapacityHold.order_id == PortalOrder.id).where(ParkingCapacityHold.status == "held",
+        ParkingCapacityHold.expires_at <= business_now()).order_by(ParkingCapacityHold.expires_at).limit(limit)))
+    for identity in due:
+        order = _lock_order_context(db, identity)
+        if order.expires_at <= business_now():
+            release_hold(db, order, expired=True)
+            if order.status == "pending":
+                order.status = "expired"
+        db.commit()
+    no_shows = list(db.scalars(select(PortalOrder.id).join(TimedParkingPass,
+        TimedParkingPass.order_id == PortalOrder.id).where(TimedParkingPass.status == "ready",
+        TimedParkingPass.arrival_deadline <= business_now()).order_by(TimedParkingPass.arrival_deadline).limit(limit)))
+    for identity in no_shows:
+        order = _lock_order_context(db, identity)
+        expire_slot(db, order.slot_id, business_now())
         db.commit()
     for days in (1, 7):
         remaining = limit - result["reminders"]

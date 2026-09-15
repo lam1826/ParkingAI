@@ -27,7 +27,9 @@ from models.user import User
 router = APIRouter(
     prefix="/ai",
     tags=["AI Analytics"],
-    dependencies=[Depends(RoleChecker("staff"))],
+    # Legacy prompts and saved reports can contain lot-wide financial data.
+    # Staff analytics use the scoped operations-only API instead.
+    dependencies=[Depends(RoleChecker("manager"))],
 )
 
 MAX_AI_QUESTION_CHARS = 1_000

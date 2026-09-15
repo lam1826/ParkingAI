@@ -127,6 +127,9 @@ def test_legacy_session_migration_retains_null_coverage_and_locks_it(tmp_path):
             # Model an actual pre-release table, retaining its historical row.
             connection.exec_driver_sql("DROP TRIGGER trg_parking_sessions_monthly_coverage_insert")
             connection.exec_driver_sql("DROP TRIGGER trg_parking_sessions_monthly_coverage_immutable")
+            # The modern snapshot insertion guard also references coverage;
+            # it did not exist in the pre-coverage database represented here.
+            connection.exec_driver_sql("DROP TRIGGER trg_parking_sessions_billing_snapshot_insert")
             connection.exec_driver_sql("ALTER TABLE parking_sessions DROP COLUMN monthly_coverage_end")
     finally:
         engine.dispose()
@@ -237,7 +240,21 @@ def test_postgres_release_migration_installs_current_financial_guard_contracts()
         if isinstance(node, ast.Assign) and isinstance(node.targets[0], ast.Name)
         and node.targets[0].id.endswith("GUARD_SQL")
     }
-    assert definitions["PAYMENT_GUARD_SQL"] == PAYMENT_POSTGRES_GUARD_SQL.replace("%%", "%")
+    frozen_payment_sql = definitions["PAYMENT_GUARD_SQL"]
+    assert hashlib.sha256(frozen_payment_sql.encode()).hexdigest() == "e2556b297ccd881e965d85c38eac8bb2d64a53dd4ec89182451093f91be44583"
+    prepaid_payment_sql = frozen_payment_sql.replace(
+        "        ELSE\n            SELECT price INTO source_amount",
+        "        ELSIF NEW.source_type = 'portal_order' THEN\n"
+        "            SELECT amount INTO source_amount FROM portal_orders WHERE id = NEW.source_id AND product_kind IN ('hourly','daily') FOR UPDATE;\n"
+        "        ELSE\n            SELECT price INTO source_amount")
+    prepaid_revision = migration.parent / "20260915_03_timed_parking.py"
+    prepaid_statements = next(ast.literal_eval(node.value) for node in ast.parse(prepaid_revision.read_text(encoding="utf-8")).body
+        if isinstance(node, ast.Assign) and getattr(node.targets[0], "id", None) == "UPGRADE_SQL")
+    assert prepaid_payment_sql in prepaid_statements
+    credit_revision = migration.parent / "20260915_06_session_fee_credits.py"
+    credit_statements = next(ast.literal_eval(node.value) for node in ast.parse(credit_revision.read_text(encoding="utf-8")).body
+        if isinstance(node, ast.Assign) and getattr(node.targets[0], "id", None) == "UPGRADE_SQL")
+    assert PAYMENT_POSTGRES_GUARD_SQL.replace("%%", "%") in credit_statements
     assert definitions["SHIFT_GUARD_SQL"] == SHIFT_POSTGRES_GUARD_SQL.replace("%%", "%")
     assert definitions["SOURCE_DELETE_GUARD_SQL"] == PAYMENT_POSTGRES_SOURCE_DELETE_SQL.replace("%%", "%")
 

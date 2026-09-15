@@ -10,11 +10,11 @@ from services.auth_service import AuthService
 
 
 @pytest.fixture
-def ai_auth_headers(test_user: User) -> dict[str, str]:
+def ai_auth_headers(manager_user: User) -> dict[str, str]:
     token = AuthService().create_access_token(
-        user_id=test_user.id,
-        username=test_user.username,
-        role=test_user.role.name,
+        user_id=manager_user.id,
+        username=manager_user.username,
+        role=manager_user.role.name,
     )
     return {"Authorization": f"Bearer {token}"}
 

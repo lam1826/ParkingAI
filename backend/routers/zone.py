@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from typing import List
 
 from database import get_db
+from services.auth_service import RoleChecker
 from schemas import zone as zone_schema
 from crud import zone as crud_zone
 from crud import parking_slot as crud_slot
@@ -26,7 +27,8 @@ def read_zone(id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Zone not found")
     return db_zone
 
-@router.post("", response_model=zone_schema.ZoneResponse, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=zone_schema.ZoneResponse, status_code=status.HTTP_201_CREATED,
+             dependencies=[Depends(RoleChecker("manager"))])
 def create_zone(zone_in: zone_schema.ZoneCreate, db: Session = Depends(get_db)):
     """Tạo khu vực đỗ xe mới"""
     existing_zone = crud_zone.get_zone_by_name(db, name=zone_in.name)
@@ -38,7 +40,8 @@ def create_zone(zone_in: zone_schema.ZoneCreate, db: Session = Depends(get_db)):
     
     return crud_zone.create_zone(db=db, zone_in=zone_in)
 
-@router.put("/{id}", response_model=zone_schema.ZoneResponse)
+@router.put("/{id}", response_model=zone_schema.ZoneResponse,
+            dependencies=[Depends(RoleChecker("manager"))])
 def update_zone(id: int, zone_in: zone_schema.ZoneUpdate, db: Session = Depends(get_db)):
     """Cập nhật thông tin khu vực đỗ xe"""
     db_zone = crud_zone.get_zone(db, zone_id=id)
@@ -78,7 +81,8 @@ def update_zone(id: int, zone_in: zone_schema.ZoneUpdate, db: Session = Depends(
     
     return crud_zone.update_zone(db=db, db_zone=db_zone, zone_in=zone_in)
 
-@router.delete("/{id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{id}", status_code=status.HTTP_204_NO_CONTENT,
+               dependencies=[Depends(RoleChecker("manager"))])
 def delete_zone(id: int, db: Session = Depends(get_db)):
     """Xóa một khu vực đỗ xe"""
     db_zone = crud_zone.get_zone(db, zone_id=id)

@@ -30,6 +30,11 @@ def confirmation_connection():
                 "parking_fee INTEGER, staff_out_id INTEGER, "
                 "checkout_quote_hash VARCHAR(64), checkout_payment_method VARCHAR(8))"
             )
+            # Current confirmation guards subtract verified credits. This
+            # isolated pre-credit fixture intentionally has an empty ledger.
+            connection.exec_driver_sql(
+                "CREATE TABLE session_fee_credits (session_id TEXT, amount INTEGER, receipt_id TEXT)"
+            )
             connection.exec_driver_sql(database.CHECKOUT_CONFIRMATION_INSERT_TRIGGER_SQL)
             connection.exec_driver_sql(database.CHECKOUT_CONFIRMATION_UPDATE_TRIGGER_SQL)
             connection.exec_driver_sql("INSERT INTO parking_sessions (id, status) VALUES ('new', 'checking_out')")
@@ -235,7 +240,12 @@ def test_postgres_confirmation_revision_is_additive_and_frozen(monkeypatch):
         if isinstance(node, ast.Assign) and isinstance(node.targets[0], ast.Name)
     }
     assert values["down_revision"] == "20260906_01"
-    assert values["CHECKOUT_CONFIRMATION_POSTGRES_GUARD_SQL"] == database.CHECKOUT_CONFIRMATION_POSTGRES_GUARD_SQL
+    frozen = values["CHECKOUT_CONFIRMATION_POSTGRES_GUARD_SQL"]
+    assert hashlib.sha256(frozen.encode()).hexdigest() == "8ab35c9d807001f4c64210204d9a68c8737375d4fbd13e64361c9bb6507530a5"
+    credit_revision = migration.parent / "20260915_06_session_fee_credits.py"
+    credit_sql = next(ast.literal_eval(node.value) for node in ast.parse(credit_revision.read_text(encoding="utf-8")).body
+        if isinstance(node, ast.Assign) and getattr(node.targets[0], "id", None) == "UPGRADE_SQL")
+    assert database.CHECKOUT_CONFIRMATION_POSTGRES_GUARD_SQL.replace("%%", "%") in credit_sql
     monkeypatch.setenv("DATABASE_URL", "postgresql+psycopg://unused:unused@127.0.0.1/unused")
     buffer = io.StringIO()
     config = Config(str(root / "backend/alembic.ini"), output_buffer=buffer)

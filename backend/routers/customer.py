@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from typing import List
 
 from database import get_db
+from services.auth_service import RoleChecker
 from schemas import customer as customer_schema
 from crud import customer as crud_customer
 
@@ -59,7 +60,8 @@ def update_customer(id: int, customer_in: customer_schema.CustomerUpdate, db: Se
             
     return crud_customer.update_customer(db=db, db_customer=db_customer, customer_in=customer_in)
 
-@router.delete("/{id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{id}", status_code=status.HTTP_204_NO_CONTENT,
+               dependencies=[Depends(RoleChecker("manager"))])
 def delete_customer(id: int, db: Session = Depends(get_db)):
     """Xóa một khách hàng"""
     db_customer = crud_customer.get_customer(db, customer_id=id)

@@ -3,8 +3,11 @@ import { Alert, Box, Button, MenuItem, Stack, Tab, Tabs, TextField, Typography }
 import { useSearchParams } from "react-router-dom";
 import { AuthContext } from "../../context/AuthContext";
 import { sessionSearchParams } from "../../utils/coreAnalytics";
+import { admissionTypeId, admissionVehicleTypes } from "../../utils/admissionVehicleTypes";
 import api from "../../services/api";
 import CheckoutDialog from "../ParkingSession/components/CheckoutDialog";
+import SessionDetailsDialog from "../ParkingSession/components/SessionDetailsDialog";
+import TicketDialog from "../ParkingSession/components/TicketDialog";
 import FleetSection from "./FleetSection";
 import SiteFinance from "./SiteFinance";
 import { useExpansion } from "../../context/ExpansionContext";
@@ -41,14 +44,20 @@ function usePagedList(path, page, extra = "") {
 
 function SiteOperations({ site, initialPlate, initialAction, onCheckoutChange }) {
   const capabilities = useExpansion();
+  const { user } = useContext(AuthContext);
   const [tab, setTab] = useState("operations");
   const [checkIn, setCheckIn] = useState({ license_plate: initialAction === "check_in" ? initialPlate : "", vehicle_type_id: "", parking_slot_id: "" });
   const [search, setSearch] = useState(initialAction === "checkout_lookup" ? initialPlate : "");
+  const [searchTicket, setSearchTicket] = useState("");
   const [dateRange, setDateRange] = useState({ date_from: "", date_to: "" });
   const invalidDateRange = !!(dateRange.date_from && dateRange.date_to && dateRange.date_from > dateRange.date_to);
   const [checkout, setCheckout] = useState(null);
+  const [detail, setDetail] = useState(null);
+  const [detailBusy, setDetailBusy] = useState(false);
+  const [ticket, setTicket] = useState(null);
   const [organizationName, setOrganizationName] = useState("");
   const canManage = ["manager", "admin"].includes(site.role);
+  const canHandleExceptions = canManage && ["manager", "admin"].includes(user?.role);
   const prefix = `/sites/${site.id}`;
   const adapters = useMemo(() => checkoutAdapters(api, site.id), [site.id]);
   const loadZones = useCallback(() => read(`${prefix}/zones`).then(items), [prefix]);
@@ -77,13 +86,18 @@ function SiteOperations({ site, initialPlate, initialAction, onCheckoutChange })
   const organizationAction = useAction(organizations.reload);
   const everything = combineRemotes(vehicleTypes, zones, organizations, members, availability, sessions, reservations, allocations, waitlist);
   const slots = availability.data?.slots || [];
-  const types = vehicleTypes.data || [];
-  const activeSlots = slots.filter((slot) => slot.available_now && slot.vehicle_type_id === Number(checkIn.vehicle_type_id));
+  const types = admissionVehicleTypes(vehicleTypes.data || []);
+  const selectedTypeId = admissionTypeId(types, checkIn.vehicle_type_id);
+  const activeSlots = slots.filter((slot) => selectedTypeId && slot.available_now && slot.vehicle_type_id === Number(selectedTypeId));
+  const selectedSlotId = activeSlots.some((slot) => slot.id === Number(checkIn.parking_slot_id)) ? checkIn.parking_slot_id : "";
   const canCheckIn = !availability.loading && !availability.error && !vehicleTypes.loading && !vehicleTypes.error
-    && types.some((type) => type.id === Number(checkIn.vehicle_type_id))
-    && activeSlots.some((slot) => slot.id === Number(checkIn.parking_slot_id)) && !!checkIn.license_plate.trim();
-  const closeCheckout = () => { setCheckout(null); onCheckoutChange(false); };
-  useEffect(() => () => onCheckoutChange(false), [onCheckoutChange]);
+    && !!selectedTypeId && !!selectedSlotId && !!checkIn.license_plate.trim();
+  const closeCheckout = () => { setCheckout(null); };
+  const openCheckout = (id) => { setTicket(null); setCheckout(id); };
+  useEffect(() => {
+    onCheckoutChange(Boolean(checkout) || detailBusy);
+    return () => onCheckoutChange(false);
+  }, [checkout, detailBusy, onCheckoutChange]);
   return <Workspace title={site.name} description={site.address || "Vận hành lượt xe, quản lý đặt chỗ và phân công nhân sự tại bãi đang chọn."} remote={everything}
     actions={[checkInAction, reservationAction, allocationAction, waitlistAction, configAction, organizationAction]}>
     {initialPlate && <Alert severity="info">Biển số {initialPlate} được chuyển từ camera. Kiểm tra đúng xe và bãi trước khi xác nhận thao tác.</Alert>}
@@ -105,10 +119,11 @@ function SiteOperations({ site, initialPlate, initialAction, onCheckoutChange })
           void checkInAction.run(() => send(`${prefix}/check-in`, { license_plate: checkIn.license_plate.trim().toUpperCase(), vehicle_type_id: Number(checkIn.vehicle_type_id), parking_slot_id: Number(checkIn.parking_slot_id) }), "Đã ghi nhận xe vào.", () => setCheckIn((old) => ({ ...old, license_plate: "", parking_slot_id: "" })));
         }} sx={formLayout}>
           <TextField label="Biển số xe" value={checkIn.license_plate} required onChange={(event) => setCheckIn((old) => ({ ...old, license_plate: event.target.value }))} slotProps={{ htmlInput: { maxLength: 20 } }} />
-          <TextField select label="Loại xe" value={checkIn.vehicle_type_id} required disabled={vehicleTypes.loading || !!vehicleTypes.error || !types.length || checkInAction.busy} onChange={(event) => setCheckIn((old) => ({ ...old, vehicle_type_id: event.target.value, parking_slot_id: "" }))}>
+          <TextField select label="Loại xe" value={selectedTypeId} required disabled={vehicleTypes.loading || !!vehicleTypes.error || !types.length || checkInAction.busy} onChange={(event) => setCheckIn((old) => ({ ...old, vehicle_type_id: event.target.value, parking_slot_id: "" }))}
+            helperText={checkIn.vehicle_type_id && !selectedTypeId && !vehicleTypes.loading ? "Loại xe đã chọn không còn nhận xe. Hãy chọn lại." : ""}>
             {types.map((type) => <MenuItem key={type.id} value={type.id}>{type.name}</MenuItem>)}
           </TextField>
-          <TextField select label="Vị trí nhận xe" value={checkIn.parking_slot_id} required disabled={availability.loading || vehicleTypes.loading || checkInAction.busy || !activeSlots.length} onChange={(event) => setCheckIn((old) => ({ ...old, parking_slot_id: event.target.value }))} helperText={checkIn.vehicle_type_id && !activeSlots.length ? "Chưa có vị trí nhận xe vãng lai cho loại xe này." : ""}>
+          <TextField select label="Vị trí nhận xe" value={selectedSlotId} required disabled={availability.loading || vehicleTypes.loading || checkInAction.busy || !activeSlots.length} onChange={(event) => setCheckIn((old) => ({ ...old, parking_slot_id: event.target.value }))} helperText={selectedTypeId && !activeSlots.length ? "Chưa có vị trí nhận xe vãng lai cho loại xe này." : ""}>
             {activeSlots.map((slot) => <MenuItem key={slot.id} value={slot.id}>{slot.slot_name} · {slot.zone_name}</MenuItem>)}
           </TextField>
           <Button type="submit" variant="contained" disabled={checkInAction.busy || !canCheckIn}>Xác nhận xe vào</Button>
@@ -116,10 +131,11 @@ function SiteOperations({ site, initialPlate, initialAction, onCheckoutChange })
       </RemoteSection>
       <RemoteSection remote={sessions} title="Tra cứu lượt gửi và cho xe ra" description="Mỗi trang 25 lượt; đổi biển số hoặc trạng thái sẽ về trang đầu.">
         {(rows) => <>
-          <Box component="form" onSubmit={(event) => { event.preventDefault(); if (!invalidDateRange) sessionsPage.setFilters({ license_plate: search.trim().toUpperCase(), ...dateRange }); }} sx={formLayout}>
+          <Box component="form" onSubmit={(event) => { event.preventDefault(); if (!invalidDateRange) sessionsPage.setFilters({ license_plate: search.trim().toUpperCase(), session_id: searchTicket.trim(), ...dateRange }); }} sx={formLayout}>
             <TextField label="Tìm đúng biển số" value={search} onChange={(event) => setSearch(event.target.value)} slotProps={{ htmlInput: { maxLength: 20 } }} />
+            <TextField label="Mã vé (mã lượt)" value={searchTicket} onChange={(event) => setSearchTicket(event.target.value)} slotProps={{ htmlInput: { maxLength: 36 } }} helperText="Nhập đầy đủ mã lượt trên vé để tìm chính xác." />
             <TextField select label="Trạng thái lượt gửi" value={sessionsPage.filters.status} onChange={(event) => sessionsPage.setFilters({ status: event.target.value })}>
-              <MenuItem value="active">Đang đỗ</MenuItem><MenuItem value="completed">Đã ra</MenuItem><MenuItem value="">Tất cả</MenuItem>
+              <MenuItem value="active">Đang đỗ</MenuItem><MenuItem value="completed">Đã ra</MenuItem><MenuItem value="cancelled">Đã hủy</MenuItem><MenuItem value="">Tất cả</MenuItem>
             </TextField>
             {capabilities.site_analytics_enabled && <><TextField type="date" label="Ngày vào từ" value={dateRange.date_from} onChange={(event) => setDateRange((old) => ({ ...old, date_from: event.target.value }))}
               error={invalidDateRange} slotProps={{ inputLabel: { shrink: true }, htmlInput: { max: "9998-12-31" } }} />
@@ -134,7 +150,10 @@ function SiteOperations({ site, initialPlate, initialAction, onCheckoutChange })
             { key: "check_out_time", label: "Giờ ra", render: (row) => dateTime(row.check_out_time) },
             { key: "parking_fee", label: "Phí", render: (row) => row.parking_fee == null ? "Chưa tính phí" : money(row.parking_fee) },
             { key: "status", label: "Trạng thái", render: (row) => <StateChip value={row.status} /> },
-            { key: "checkout", label: "Thao tác", render: (row) => row.status === "active" && <Button variant="outlined" disabled={checkInAction.busy} onClick={() => { setCheckout(row.id); onCheckoutChange(true); }}>Xem phí / xe ra</Button> },
+            { key: "checkout", label: "Thao tác", render: (row) => <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap" }}>
+              <Button disabled={checkInAction.busy} onClick={() => setDetail(row)}>Chi tiết</Button>
+              {row.status === "active" && <Button variant="outlined" disabled={checkInAction.busy} onClick={() => openCheckout(row.id)}>Xem phí / xe ra</Button>}
+            </Stack> },
           ]} />
           <PageControls page={sessionsPage.page} count={rows.length} size={sessionsPage.size} busy={sessions.loading || checkInAction.busy} onChange={sessionsPage.setPage} />
         </>}
@@ -193,8 +212,12 @@ function SiteOperations({ site, initialPlate, initialAction, onCheckoutChange })
       <FleetSection organizations={organizations.data || []} canManage={canManage} siteId={site.id} />
     </>}
     {tab === "configuration" && canManage && <SiteConfiguration siteId={site.id} zones={zones.data || []} types={types} members={members.data || []} isAdmin={site.role === "admin"} action={{ ...configAction, busy: configAction.busy || zones.loading || vehicleTypes.loading || members.loading }} />}
-    {checkout && <CheckoutDialog key={`${site.id}:${checkout}`} sessionId={checkout} {...adapters} onClose={closeCheckout}
+    {checkout && <CheckoutDialog key={`${site.id}:${checkout}`} sessionId={checkout} siteId={site.id} {...adapters} onClose={closeCheckout}
       onCompleted={() => { closeCheckout(); checkInAction.notify("Đã ghi nhận xe ra."); void refreshAll(sessions, availability)(); }} />}
+    {detail && <SessionDetailsDialog key={`${site.id}:${detail.id}`} session={detail} siteId={site.id} canManage={canHandleExceptions}
+      onClose={() => setDetail(null)} onBusy={setDetailBusy} onCheckout={openCheckout} onTicket={setTicket}
+      onChanged={() => void refreshAll(sessions, availability)()} />}
+    <TicketDialog sessionId={ticket} siteId={site.id} onClose={() => setTicket(null)} onCheckOut={openCheckout} />
   </Workspace>;
 }
 

@@ -2,7 +2,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, CheckConstraint, DDL, DateTime, ForeignKey, Index, String, UniqueConstraint, event
+from sqlalchemy import text, Boolean, CheckConstraint, DDL, DateTime, ForeignKey, Index, String, UniqueConstraint, event
 from sqlalchemy.orm import Mapped, mapped_column
 
 from core.clock import business_now
@@ -15,6 +15,7 @@ class ParkingSite(Base):
     name: Mapped[str] = mapped_column(String(100), unique=True)
     address: Mapped[str] = mapped_column(String(250), default="")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    customer_booking_mode: Mapped[str] = mapped_column(String(16), default="legacy", server_default=text("'legacy'"))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=business_now)
 
 
@@ -48,6 +49,7 @@ class ParkingReservation(Base):
     request_id: Mapped[str] = mapped_column(String(64), unique=True)
     created_by_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
     session_id: Mapped[str | None] = mapped_column(ForeignKey("parking_sessions.id"), unique=True)
+    order_id: Mapped[str | None] = mapped_column(ForeignKey("portal_orders.id"), unique=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=business_now)
 
 
@@ -260,6 +262,18 @@ BEGIN
 END; $$ LANGUAGE plpgsql;
 CREATE TRIGGER trg_zone_site_immutable BEFORE UPDATE OF site_id ON zones FOR EACH ROW EXECUTE FUNCTION parking_zone_site_guard();
 """
+
+LIVE_RESERVATION_SQL = ("(r.status='confirmed' OR (r.status='arrived' AND EXISTS ("
+    "SELECT 1 FROM parking_sessions committed_session WHERE committed_session.id=r.session_id "
+    "AND committed_session.status IN ('active','checking_out'))))")
+PRE_COMPLETED_RESERVATION_GUARDS = {}
+for _registry in (SITE_SQLITE_GUARDS, ZONE_COMMITMENT_SQLITE_GUARDS):
+    for _name, _statement in list(_registry.items()):
+        if "r.status IN ('confirmed','arrived')" in _statement:
+            PRE_COMPLETED_RESERVATION_GUARDS[_name] = _statement
+            _registry[_name] = _statement.replace("r.status IN ('confirmed','arrived')", LIVE_RESERVATION_SQL)
+SITE_POSTGRES_GUARD_SQL = SITE_POSTGRES_GUARD_SQL.replace("r.status IN ('confirmed','arrived')", LIVE_RESERVATION_SQL)
+ZONE_COMMITMENT_POSTGRES_GUARD_SQL = ZONE_COMMITMENT_POSTGRES_GUARD_SQL.replace("r.status IN ('confirmed','arrived')", LIVE_RESERVATION_SQL)
 
 for _sql in SITE_SQLITE_GUARDS.values():
     event.listen(Base.metadata, "after_create", DDL(_sql).execute_if(dialect="sqlite"))

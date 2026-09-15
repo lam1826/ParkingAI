@@ -4,8 +4,10 @@ import RefreshIcon from "@mui/icons-material/Refresh";
 import VehicleTable from "./components/VehicleTable";
 import VehicleDialog from "./components/VehicleDialog";
 import useVehicle from "./hooks/useVehicle";
+import useCorePermissions from "../../hooks/useCorePermissions";
 
 export default function VehiclesPage() {
+  const { canDeleteCustomerRecords } = useCorePermissions();
   const {
     vehicles,
     vehicleTypes,
@@ -49,7 +51,7 @@ export default function VehiclesPage() {
         loading={loading}
         onAdd={handleOpenCreate}
         onEdit={handleOpenEdit}
-        onDelete={handleOpenDelete}
+        onDelete={canDeleteCustomerRecords ? handleOpenDelete : undefined}
       />
 
       {/* Modal Thêm/Sửa */}
@@ -64,7 +66,7 @@ export default function VehiclesPage() {
       />
 
       {/* Modal Xóa */}
-      <Dialog open={deleteDialogOpen} onClose={closeDialogs}>
+      <Dialog open={deleteDialogOpen && canDeleteCustomerRecords} onClose={closeDialogs}>
         <DialogTitle fontWeight="bold">Xóa phương tiện</DialogTitle>
         <DialogContent>
           <DialogContentText>

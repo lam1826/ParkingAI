@@ -8,25 +8,46 @@ import logging
 import os
 from pathlib import Path
 import secrets
+import sqlite3
 import sys
 import threading
 
 ROOT = Path(__file__).resolve().parents[1]
 BACKEND = ROOT / "backend"
+DEMO_SITE_ID = None
 
 
-def configure_demo(database: Path, *, vision=True):
+def configure_demo(database: Path, *, vision=True, single_lot=False, enable_ai=False):
+    global DEMO_SITE_ID
     database = database.resolve()
+    if enable_ai and not single_lot:
+        raise ValueError("Bật AI yêu cầu profile một bãi được kiểm chứng (--single-lot).")
     marker = Path(str(database) + ".demo.json")
     if not database.is_file() or not marker.is_file():
         raise ValueError("Chỉ chạy DB demo đã tạo bằng expansion.demo_seed (cần tệp .demo.json bên cạnh).")
     metadata = json.loads(marker.read_text(encoding="utf-8"))
     if metadata.get("parkingai_demo") is not True or metadata.get("synthetic_history") is not True:
         raise ValueError("Tệp này không được đánh dấu là dữ liệu đồ án.")
+    site_id = metadata.get("single_site_id")
+    if single_lot and metadata.get("profile") != "single-lot-academic-v1":
+        raise ValueError("Cần DB một bãi tạo bằng expansion.single_lot_seed; DB cũ không được thay đổi.")
+    if site_id is not None:
+        if type(site_id) is not int or site_id < 1:
+            raise ValueError("Mã bãi trong marker demo không hợp lệ.")
+        with sqlite3.connect(database.as_uri() + "?mode=ro", uri=True) as connection:
+            sites = connection.execute("SELECT id FROM parking_sites LIMIT 2").fetchall()
+        if sites != [(site_id,)]:
+            raise ValueError("DB không còn đúng một bãi như marker. Không khởi động hoặc sửa dữ liệu.")
+    elif single_lot:
+        raise ValueError("Marker demo thiếu mã bãi duy nhất.")
+    DEMO_SITE_ID = site_id
     # Force these before importing any backend module or loading backend/.env.
     os.environ["DATABASE_URL"] = "sqlite:///" + database.as_posix()
     os.environ["DEMO_PAYMENTS_ENABLED"] = "true"
-    os.environ["AI_ENABLED"] = "false"
+    # A synthetic academic database must never create a real bank payment link.
+    os.environ["PAYOS_ENABLED"] = "false"
+    os.environ["AI_ENABLED"] = "true" if enable_ai else "false"
+    os.environ["PARKINGAI_SHOWCASE_MODE"] = "true"
     os.environ["SECRET_KEY"] = secrets.token_hex(32)
     os.environ["MANAGER_REGISTRATION_CODE"] = secrets.token_urlsafe(32)
     os.environ["ADMIN_REGISTRATION_CODE"] = secrets.token_urlsafe(32)
@@ -38,7 +59,7 @@ def configure_demo(database: Path, *, vision=True):
     return database
 
 
-def build_demo_app():
+def build_demo_app(frontend_dist=None):
     from fastapi import FastAPI, Request
     from fastapi.responses import FileResponse, Response
     from fastapi.staticfiles import StaticFiles
@@ -48,7 +69,7 @@ def build_demo_app():
     from expansion.portal_worker import run_portal_maintenance
     from expansion.vision_service import purge_expired
 
-    dist = ROOT / "frontend" / "dist"
+    dist = Path(frontend_dist).resolve() if frontend_dist is not None else ROOT / "frontend" / "dist"
     if not (dist / "index.html").is_file():
         raise ValueError("Chưa build frontend. Chạy npm run build trong frontend trước.")
     check_database_readiness(engine)
@@ -86,12 +107,13 @@ def build_demo_app():
 
     @app.get("/config.js", include_in_schema=False)
     def config():
-        return Response("globalThis.__PARKINGAI_CONFIG__ = {API_URL: globalThis.location.origin, DEMO: true};", media_type="application/javascript", headers={"Cache-Control": "no-store"})
+        site = f", SINGLE_SITE_ID: {DEMO_SITE_ID}" if DEMO_SITE_ID is not None else ""
+        return Response("globalThis.__PARKINGAI_CONFIG__ = {API_URL: globalThis.location.origin, DEMO: true" + site + "};", media_type="application/javascript", headers={"Cache-Control": "no-store"})
 
     def frontend():
         return FileResponse(dist / "index.html", headers={"Cache-Control": "no-store"})
 
-    for route in ("/", "/login", "/register", "/portal", "/portal-admin", "/reservations", "/sites", "/vision", "/insights",
+    for route in ("/", "/login", "/register", "/portal", "/portal-admin", "/reservations", "/sites", "/vision", "/occupancy", "/insights",
                   "/account", "/profile", "/settings", "/sessions", "/parking-sessions", "/customers", "/vehicles",
                   "/monthly-passes", "/users", "/zones", "/parking-slots", "/vehicle-types", "/price-configs", "/reports",
                   "/finance", "/audit-logs", "/ai", "/roles", "/home"):
@@ -114,11 +136,18 @@ def main():
     parser.add_argument("--database", type=Path, required=True)
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8765)
+    parser.add_argument("--frontend-dist", type=Path, help="Use a separately built frontend for an isolated acceptance run")
     parser.add_argument("--no-vision", action="store_true")
+    parser.add_argument("--single-lot", action="store_true", help="Require a verified one-lot academic seed")
+    parser.add_argument("--enable-ai", action="store_true", help="Opt in to Gemini for aggregate synthetic data; requires --single-lot and a configured API key")
     args = parser.parse_args()
-    configure_demo(args.database, vision=not args.no_vision)
+    configure_demo(args.database, vision=not args.no_vision, single_lot=args.single_lot, enable_ai=args.enable_ai)
+    if args.enable_ai:
+        from core.config import settings
+        if not settings.GEMINI_API_KEY.strip():
+            parser.error("--enable-ai requires GEMINI_API_KEY in the environment or backend/.env")
     import uvicorn
-    uvicorn.run(build_demo_app(), host=args.host, port=args.port)
+    uvicorn.run(build_demo_app(args.frontend_dist), host=args.host, port=args.port)
 
 
 if __name__ == "__main__":

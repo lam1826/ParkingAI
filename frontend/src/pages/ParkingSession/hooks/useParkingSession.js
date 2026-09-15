@@ -3,6 +3,7 @@ import parkingSessionService from "../services/parkingSessionService";
 import { vehicleTypeService } from "../../VehicleType/services/vehicleTypeService";
 import { zoneService } from "../../Zone/services/zoneService";
 import { createLatestRequestGate } from "../../../utils/latestRequestGate";
+import { admissionTypeId } from "../../../utils/admissionVehicleTypes";
 
 const useParkingSession = () => {
   const sessionRequestGate = useRef(null);
@@ -30,9 +31,17 @@ const useParkingSession = () => {
   const [zones, setZones] = useState([]);
   const [availableSlots, setAvailableSlots] = useState([]);
 
+  useEffect(() => {
+    if (vehicleTypeId && !admissionTypeId(vehicleTypes, vehicleTypeId)) {
+      setVehicleTypeId("");
+      setSlotId("");
+    }
+  }, [vehicleTypes, vehicleTypeId]);
+
   // Bộ lọc lịch sử: "active" | "completed" | "" (tất cả)
   const [statusFilter, setStatusFilter] = useState("active");
   const [searchPlate, setSearchPlate] = useState("");
+  const [searchTicket, setSearchTicket] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [page, setPage] = useState(0);
@@ -57,6 +66,7 @@ const useParkingSession = () => {
       const data = await parkingSessionService.getAllSessions({
         status: statusFilter,
         licensePlate: searchPlate.trim() || undefined,
+        sessionId: searchTicket.trim() || undefined,
         dateFrom,
         dateTo,
         page,
@@ -77,7 +87,7 @@ const useParkingSession = () => {
     } finally {
       if (requestGate.isCurrent(requestGeneration)) setLoading(false);
     }
-  }, [statusFilter, searchPlate, dateFrom, dateTo, page, pageSize]);
+  }, [statusFilter, searchPlate, searchTicket, dateFrom, dateTo, page, pageSize]);
 
   const changeStatusFilter = useCallback((value) => {
     setPage(0);
@@ -87,6 +97,11 @@ const useParkingSession = () => {
   const changeSearchPlate = useCallback((value) => {
     setPage(0);
     setSearchPlate(value);
+  }, []);
+
+  const changeSearchTicket = useCallback((value) => {
+    setPage(0);
+    setSearchTicket(value);
   }, []);
 
   const changeDateFrom = useCallback((value) => {
@@ -154,8 +169,8 @@ const useParkingSession = () => {
     e.preventDefault();
     const plate = licensePlate.trim();
     if (!plate) return;
-    if (!vehicleTypeId) {
-      showNotify("Vui lòng chọn loại phương tiện.", "warning");
+    if (!admissionTypeId(vehicleTypes, vehicleTypeId)) {
+      showNotify("Vui lòng chọn loại phương tiện đang nhận xe.", "warning");
       return;
     }
 
@@ -191,6 +206,10 @@ const useParkingSession = () => {
     fetchSessions();
     fetchAvailableSlots();
   };
+  const handleExceptionCompleted = () => {
+    fetchSessions();
+    fetchAvailableSlots();
+  };
 
   return {
     sessions,
@@ -212,6 +231,8 @@ const useParkingSession = () => {
     setStatusFilter: changeStatusFilter,
     searchPlate,
     setSearchPlate: changeSearchPlate,
+    searchTicket,
+    setSearchTicket: changeSearchTicket,
     dateFrom,
     setDateFrom: changeDateFrom,
     dateTo,
@@ -222,6 +243,7 @@ const useParkingSession = () => {
     notify,
     handleCheckIn,
     handleCheckoutCompleted,
+    handleExceptionCompleted,
     fetchSessions,
     closeNotify,
   };

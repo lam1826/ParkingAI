@@ -1,0 +1,96 @@
+{
+  "phase": "P1/P2/P3 core SQLite local acceptance",
+  "verified_date": "2026-09-15",
+  "git_base": "3ef172e",
+  "uncommitted": true,
+  "source_manifest": "backend/artifacts/core-p1-source-manifest.json",
+  "source_files": 459,
+  "source_manifest_sha256": "61b92039c2d0278031747f1833b5dffdaa6b16da363a9315e357cbdbb3811d75",
+  "backend_full": {
+    "status": "COMPLETED_WITH_TWO_FIXTURE_FAILURES_THEN_TARGETED_RECHECKS",
+    "collected": 1491,
+    "passed": 1469,
+    "skipped": 20,
+    "failed": 2,
+    "seconds": 970.0,
+    "exit_code": 1,
+    "fixture_fixes": [
+      {
+        "test": "test_importing_database_module_does_not_create_default_directory",
+        "cause": "Isolated fixture omitted new pure billing_guards dependency",
+        "recheck_passed": 3,
+        "seconds": 5.58
+      },
+      {
+        "test": "test_migration_adds_zone_slot_operational_race_backstops",
+        "cause": "Minimal historical fixture omitted lifecycle columns including check_in_time",
+        "recheck_passed": 69,
+        "seconds": 13.9
+      }
+    ],
+    "remaining_known_failure": null,
+    "scope_note": "Do not label original full command green. Product baseline has 1469 successes; both failing fixtures were corrected and rechecked without weakening guards. P2 prompt separately verified."
+  },
+  "frontend": {
+    "passed": 171,
+    "failed": 0,
+    "lint_exit_code": 0,
+    "build_exit_code": 0
+  },
+  "http": {
+    "artifact": "backend/artifacts/demo/p1-core-http-acceptance.json",
+    "result": "PASS",
+    "checks": 79
+  },
+  "migration": {
+    "artifact": "backend/artifacts/demo/p1-upgrade-acceptance.json",
+    "result": "PASS",
+    "checks": 0
+  },
+  "recovery": {
+    "artifact": "backend/artifacts/demo/p1-recovery-acceptance.json",
+    "result": "PASS",
+    "checks": 0
+  },
+  "browser": {
+    "functional_checks": 38,
+    "visual_checks": 16,
+    "functional_artifact": "backend/artifacts/p1-browser/07e42cebe0/result.json",
+    "visual_artifact": "backend/artifacts/p1-browser/f257e345f7/result.json",
+    "http_errors": 0,
+    "runtime_errors": 0,
+    "pdf_pages": 1,
+    "reviewed_desktop_mobile_pdf": true
+  },
+  "live_ai": {
+    "artifact": "backend/artifacts/demo/p2-live-ai-acceptance.json",
+    "analyses": 5,
+    "checks": 30,
+    "result": "TRANSPORT_AND_PERSISTENCE_PASS",
+    "semantic_review": "PASS_WITH_MINOR_WORDING_NOTES",
+    "prior_changes_required_artifact": "backend/artifacts/demo/p1-live-ai-final-acceptance.json"
+  },
+  "limits": [
+    "SQLite local; PostgreSQL runtime not tested",
+    "Full P1 command had two fixture failures; corrected targeted reruns recorded separately",
+    "Semantic pass applies to five real outputs only",
+    "AI text still displays Markdown punctuation in P1 frontend; presentation polish queued",
+    "No real bank payment or physical camera",
+    "P4-P8 implementation ongoing",
+    "No commit/push/deploy"
+  ],
+  "ai_regression": {
+    "passed": 122,
+    "seconds": 34.64,
+    "failed": 0,
+    "prompt_sha256": "996767c692d16d3c549c199b2f9ef8bb6734efc4340fae9110b88e272d368094"
+  },
+  "ai_browser": {
+    "artifact": "backend/artifacts/p2-ai-browser/010b2dc7bd/result.json",
+    "checks": 26,
+    "passed": true,
+    "provider_calls": 0,
+    "writes": "two login audits",
+    "screenshots_viewed": true
+  }
+}

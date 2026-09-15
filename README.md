@@ -2,6 +2,8 @@
 
 Hệ thống quản lý bãi đỗ xe dùng FastAPI, React, SQLite và Gemini. Hệ thống hỗ trợ phân quyền, quản lý dữ liệu nền, xe vào/ra, tính phí, vé tháng, chỗ trống, báo cáo lưu lượng–doanh thu và trợ lý AI.
 
+**Bản nâng cấp một bãi (15/09/2026):** dùng [hướng dẫn demo hiện hành](docs/SINGLE_LOT_DEMO.md). Mã đã có giá chốt lúc vào, ngoại lệ có lịch sử, portal vé giờ/ngày/tháng và đặt chỗ, adapter payOS và trả phí lượt, biên nhận/đối soát, capture webcam và quan sát ô bằng ảnh tham chiếu. [Nghiệm thu tích hợp](docs/upgrade-2026-09-15/FINAL_ACCEPTANCE.md) ghi kết quả và phần cần tài khoản/thiết bị thật; [nhật ký triển khai](docs/upgrade-2026-09-15/IMPLEMENTATION.md) giữ bằng chứng các mốc trước. Chưa đẩy hoặc triển khai bản nâng cấp này lên website.
+
 ## Phạm vi đồ án theo đề bài gốc
 
 Bản nộp tập trung vào **một bãi**, hai vai trò nghiệp vụ quản lý/nhân viên, quản lý khu vực–vị trí–xe–vé, vào/ra, phí, chỗ trống và thống kê. **AI cốt lõi:** báo cáo lưu lượng ngày/tuần, hỏi đáp dữ liệu bãi xe và gợi ý nhân sự theo cao điểm; có test và minh chứng prompt/code/test trong SDLC.
@@ -11,8 +13,8 @@ Bản nộp tập trung vào **một bãi**, hai vai trò nghiệp vụ quản l
 Camera YOLO/OCR, portal khách, QR mô phỏng, đặt chỗ và waitlist là phần bổ sung đã có; không thay ba chức năng AI phân tích. Khả năng nhiều bãi trong mã nền không thuộc phạm vi nộp bài. Giữ [hướng dẫn vận hành website](docs/ROUND3_OPERATIONS.md), [nghiệm thu camera](docs/PHONE_VN_ACCEPTANCE.md), [nghiên cứu tham khảo](docs/RESEARCH_SINGLE_SITE_AI_PARKING.md) và [tối ưu đã phát hành](docs/SINGLE_SITE_OPTIMIZATION.md) làm tài liệu hỗ trợ.
 
 ```powershell
-./scripts/start_demo.ps1       # Máy tính: http://localhost:8765
-./scripts/start_demo.ps1 -Lan  # Điện thoại cùng Wi-Fi
+./scripts/start_single_lot_demo.ps1 -NoVision       # Máy tính: http://localhost:8766
+./scripts/start_single_lot_demo.ps1 -NoVision -Lan  # Điện thoại cùng Wi-Fi
 ```
 
 Xem [hướng dẫn cài và trình diễn](docs/DEMO_GUIDE.md), [trạng thái kiểm chứng](docs/EXPANSION_IMPLEMENTATION_STATUS.md) và [nâng cấp schema](docs/EXPANSION_MIGRATION.md). QR không chuyển tiền thật; kết quả OCR phải được nhân viên kiểm tra. Model, DB demo và ảnh runtime không nằm trong Git. Bản đồ án dùng dữ liệu mẫu có nhãn riêng; chưa thay thế việc nghiệm thu cổng thanh toán hoặc camera ở bãi thực.

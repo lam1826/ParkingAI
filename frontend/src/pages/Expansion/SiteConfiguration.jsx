@@ -3,6 +3,8 @@ import { Alert, Box, Button, Checkbox, Dialog, DialogActions, DialogContent, Dia
 import api from "../../services/api";
 import { endpoint, formLayout, PageControls, read, Records, RemoteSection, Section, send, usePage, useRemote } from "./shared";
 import { useExpansion } from "../../context/ExpansionContext";
+import { Link as RouterLink } from "react-router-dom";
+import useCorePermissions from "../../hooks/useCorePermissions";
 
 export function CreateSiteForm({ action, onCreated }) {
   const [name, setName] = useState("");
@@ -23,6 +25,7 @@ export function CreateSiteForm({ action, onCreated }) {
 
 export default function SiteConfiguration({ siteId, zones, types, members, isAdmin, action }) {
   const capabilities = useExpansion();
+  const { canManageConfiguration } = useCorePermissions();
   const [edit, setEdit] = useState(null);
   const page = usePage();
   const loadSlots = useCallback(() => capabilities?.site_finance_enabled ? read(`/sites/${siteId}/slots`, { offset: page.page * 25, limit: 25 }) : Promise.resolve([]), [siteId, page.page, capabilities?.site_finance_enabled]);
@@ -32,6 +35,16 @@ export default function SiteConfiguration({ siteId, zones, types, members, isAdm
   const [member, setMember] = useState({ user_id: "", role: "staff" });
   const change = (setter, name) => (event) => setter((old) => ({ ...old, [name]: event.target.value }));
   return <Stack spacing={3}>
+    {capabilities?.legacy_workspace_allowed && canManageConfiguration && <Section title="Danh mục và vé" description="Quản lý loại xe, đơn giá và hồ sơ phục vụ hoạt động của bãi.">
+      <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap" }}>
+        <Button component={RouterLink} to="/vehicle-types" variant="outlined">Loại xe</Button>
+        <Button component={RouterLink} to="/price-configs" variant="outlined">Bảng giá</Button>
+        <Button component={RouterLink} to="/customers" variant="outlined">Khách hàng</Button>
+        <Button component={RouterLink} to="/vehicles" variant="outlined">Phương tiện</Button>
+        <Button component={RouterLink} to="/monthly-passes" variant="outlined">Vé tháng</Button>
+        <Button component={RouterLink} to="/users" variant="outlined">Tài khoản nhân viên</Button>
+      </Stack>
+    </Section>}
     <Section title="Khu vực đỗ" description="Tên khu vực và mã vị trí là duy nhất trong toàn hệ thống. Có thể dùng tên bãi làm tiền tố.">
       <Box component="form" sx={formLayout} onSubmit={(event) => {
         event.preventDefault();

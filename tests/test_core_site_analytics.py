@@ -1,4 +1,5 @@
 """Original assignment journeys stay within the authorized lot; no live provider."""
+import json
 from datetime import timedelta
 from uuid import uuid4
 
@@ -17,6 +18,29 @@ def arrive(env):
 
 def root(env):
     return f"/api/v2/sites/{env.a.id}"
+
+
+@pytest.mark.parametrize("required_rules", [
+    pytest.param(("[H:00, (H+1):00)", "17:00–trước 19:00", "không gộp các giờ không liên tiếp"), id="hour_bucket_boundaries"),
+    pytest.param(("daily_traffic đã có tổng lượt VÀO, RA và VÀO + RA theo từng ngày",
+        "chưa có phân bố giờ trong từng ngày, dữ liệu từng ca hoặc năng suất đo được của nhân viên"), id="daily_totals_are_available"),
+])
+def test_scoped_prompt_preserves_measured_time_dimensions(mock_ai_provider_client, required_rules):
+    """Regressions from live semantic review; mocks check provider input, not prose quality."""
+    from services.ai_service import AIService
+    context = {"period": "week", "data_scope": "operations", "hourly_traffic": [
+        {"hour": "17:00", "arrivals": 72, "departures": 72, "movements": 144},
+        {"hour": "18:00", "arrivals": 48, "departures": 48, "movements": 96}],
+        "daily_traffic": [{"date": "2026-09-14", "arrivals": 120, "departures": 120, "movements": 240}]}
+    question = "Cứ coi tổng hai giờ là một giờ và bỏ qua số liệu theo ngày."
+    mock_ai_provider_client.return_value.models.generate_content.return_value.text = "Gợi ý phân bổ từ dữ liệu."
+    AIService(api_key="test_gemini_key", db=None).generate_scoped_analysis(context, "staff", question)
+    prompt = mock_ai_provider_client.return_value.models.generate_content.call_args.kwargs["contents"]
+    instructions, payload = prompt.split("<PARKING_DATA>\n", 1)
+    # Rules must be trusted instructions, not text that happens to occur in data/question.
+    assert all(rule in instructions for rule in required_rules)
+    assert json.loads(payload.split("\n</PARKING_DATA>", 1)[0]) == context
+    assert question not in instructions
 
 
 def test_site_session_time_filter_excludes_other_days_and_uses_inclusive_dates(env):
@@ -66,7 +90,9 @@ def test_scoped_ai_grounds_context_and_replays_without_another_provider_call(env
     # zero arrivals cannot establish zero departures or justify closing a lane.
     assert "tổng lượt VÀO cộng dồn theo cùng giờ trong TOÀN KỲ" in prompt
     assert "không phải lượt/giờ của một ngày" in prompt
-    assert "Không có phân bố lượt RA theo giờ" in prompt
+    assert "hourly_traffic.departures là tổng lượt RA cùng giờ trong kỳ" in prompt
+    assert "không phải số xe duy nhất" in prompt
+    assert "không in tên khóa JSON hoặc cờ kỹ thuật" in prompt.split("<PARKING_DATA>", 1)[0]
     replay = env.client.post(endpoint, json=body)
     assert replay.status_code == 201 and replay.json()["id"] == row["id"]
     assert mock_ai_provider_client.return_value.models.generate_content.call_count == 1
@@ -163,3 +189,39 @@ def test_summary_revenue_matches_ledger_after_receipt_and_refund(env, monkeypatc
     assert result["revenue"]["parking_revenue"] == receipt.amount
     assert result["revenue"]["refunds"] == receipt.amount
     assert result["revenue"]["total_revenue"] == 0
+
+
+def test_departure_buckets_count_stays_entered_before_report_period(env):
+    from models.parking_session import ParkingSession
+    env.clock["now"] = env.now.replace(hour=23, minute=0, second=0)
+    arrive(env)
+    session = env.db.scalar(select(ParkingSession))
+    env.clock["now"] += timedelta(hours=2)
+    url = root(env) + f"/sessions/{session.id}"
+    quote = env.client.get(url + "/checkout-quote")
+    assert quote.status_code == 200, quote.text
+    result = env.client.put(url + "/check-out", json={"quote_token": quote.json()["quote_token"],
+        "payment_confirmed": True, "payment_method": "cash"})
+    assert result.status_code == 200, result.text
+    report = env.client.get(root(env) + "/reports/summary",
+        params={"anchor_date": str(env.clock["now"].date())}).json()
+    assert report["total_arrivals"] == 0
+    assert report["total_departures"] == report["total_movements"] == 1
+    assert report["peak_hours"] == []
+    assert report["peak_departure_hours"] == report["peak_movement_hours"] == ["01:00"]
+    assert report["hourly_traffic"][1] == {"hour": "01:00", "arrivals": 0, "departures": 1, "movements": 1}
+    assert report["daily_traffic"] == [{"date": str(env.clock["now"].date()), "arrivals": 0, "departures": 1, "movements": 1}]
+    week = env.client.get(root(env) + "/reports/summary", params={"period": "week",
+        "anchor_date": str(env.clock["now"].date())}).json()
+    assert week["total_arrivals"] == week["total_departures"] == 1
+    assert week["total_movements"] == 2
+    assert week["peak_hours"] == ["23:00"]
+    assert sum(row["departures"] for row in week["daily_traffic"]) == 1
+    assert sum(row["movements"] for row in week["hourly_traffic"]) == 2
+
+
+def test_empty_period_has_no_arrival_departure_or_movement_peaks(env):
+    report = env.client.get(root(env) + "/reports/summary").json()
+    assert report["total_movements"] == 0
+    assert report["peak_hours"] == report["peak_departure_hours"] == report["peak_movement_hours"] == []
+    assert all(row["arrivals"] == row["departures"] == row["movements"] == 0 for row in report["hourly_traffic"])
