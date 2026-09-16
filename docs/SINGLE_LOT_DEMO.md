@@ -71,6 +71,7 @@ Giá trị `monthly_examples` và khoảng lịch sử tính tương đối theo
 4. Chọn tuần có ngày cuối `empty_period.anchor_date`. Lưu lượng/doanh thu bằng 0; chỗ hiện tại vẫn là trạng thái hiện tại và không phải số đo của tuần rỗng.
 5. Xem ba vé tháng; xe vé còn hạn đang gửi có snapshot quyền lợi. Xe ô tô còn lại không có vé tháng và tính phí theo thời gian gửi.
 6. Đăng nhập khách; chỉ xem hồ sơ/xe và lượt gửi được cấp quyền của mình.
+7. Mở `/gioi-thieu` khi **chưa** đăng nhập (hoặc gõ `/`): trang giới thiệu bãi hiển thị tên, địa chỉ, giờ mở cửa, liên hệ, bảng giá vãng lai và gói vé đang mở, loại xe phục vụ, bản đồ/chỉ đường; ô chưa công bố ghi "Chưa cập nhật". Bấm "Đăng nhập để mua vé" → đăng nhập khách → quay lại đúng tab Mua vé. Quản lý cập nhật thông tin công khai tại Vận hành bãi → Cấu hình bãi → "Trang giới thiệu công khai" (nhân viên chỉ đọc).
 
 Launcher cục bộ mặc định **AI tắt**. Để dùng Gemini với số liệu tổng hợp của DB đồ án, cấu hình `GEMINI_API_KEY` trong môi trường hoặc `backend/.env`, rồi bật rõ ràng:
 
@@ -91,7 +92,8 @@ Các test AI mock/provider kiểm soát là bước riêng; dữ liệu seed và
 3. Nhân viên nhận xe vào trong cửa sổ đã mua. Tới muộn không kéo dài thời điểm kết thúc gói; mỗi vé giờ/ngày dùng một lượt. Khi xe ra, phần đã mua được trừ và chỉ thu tiền quá giờ nếu có. Ra sớm trả lại sức chứa ngay; xe ở quá giờ vẫn chiếm chỗ.
 4. Khách mở chi tiết lượt đang gửi. Bảng phí hiển thị tổng phí, đã trả online và còn thu. Khi payOS chưa bật, giao diện thông báo rõ và vẫn cho nhân viên thu tại quầy. Không có nút mô phỏng nhận tiền ngân hàng cho phí lượt.
 5. Quản lý/nhân viên mở camera: tạo cấu hình, nhận ảnh, xem biển gợi ý và sửa/xác nhận trước khi nhận xe. Dùng nhập biển tay khi OCR không nhận đúng. Việc nhận ảnh/xác nhận biển không tự cho xe vào hoặc ra.
-6. Mở **Chỗ đỗ qua camera**: quản lý chọn ảnh nền đã kiểm tra trống, khoanh ô và lưu cấu hình. Nhân viên phân tích ảnh mới; mặc định cần hai ảnh mới khác nhau cùng kết luận. So sánh quan sát với trạng thái nghiệp vụ. Ảnh cũ, tối/mờ hoặc ánh xạ thay đổi có thể trả “chưa xác định”.
+6. Khách mở tab **Hỗ trợ & hoàn tiền**: gửi yêu cầu hỗ trợ (có thể gắn đơn/lượt/chứng từ của mình), quản lý trả lời tại Khách & đơn vé → **Hỗ trợ khách**, khách nhận thông báo, đọc và đóng. Trên tab Lịch sử & chứng từ, phiếu thu đủ điều kiện có nút **Yêu cầu hoàn** (số có thể hoàn do máy chủ tính; phiếu đã dùng vé/đang gửi/đang đối soát bị chặn kèm lý do). Quản lý xử lý ở tab **Yêu cầu hoàn**: xem xét → duyệt (số tiền ≤ còn có thể hoàn) → với khoản DEMO phiếu hoàn mô phỏng được ghi ngay; với khoản thu quầy/online phải **Ghi nhận đã hoàn** kèm hình thức và mã tham chiếu thì sổ thu mới có phiếu hoàn. Duyệt chưa phải tiền đã về khách. Chi tiết chính sách: [upgrade-2026-09-16/PUBLIC_SITE_AND_SUPPORT.md](upgrade-2026-09-16/PUBLIC_SITE_AND_SUPPORT.md).
+7. Mở **Chỗ đỗ qua camera**: quản lý chọn ảnh nền đã kiểm tra trống, khoanh ô và lưu cấu hình. Nhân viên phân tích ảnh mới; mặc định cần hai ảnh mới khác nhau cùng kết luận. So sánh quan sát với trạng thái nghiệp vụ. Ảnh cũ, tối/mờ hoặc ánh xạ thay đổi có thể trả “chưa xác định”.
 
 Vé giờ theo số giờ được công bố; vé ngày là 24 giờ liên tục. Đề nghị thanh toán phí lượt có hạn 5 phút, khác thời điểm `paid_through`: thời điểm này là cuối khối phí đã trả, không phải tự cộng 10 phút miễn phí. Trả online không tự đánh dấu xe đã ra. Nếu xe ra sau khối đã trả thì báo lại phần phát sinh; lịch sử lượt đã hoàn tất ghi “đã thu khi ra”.
 
@@ -115,6 +117,13 @@ Runner chỉ nhận DB tổng hợp có marker, sao lưu bằng SQLite online ba
 
 ```powershell
 ./.venv/Scripts/python.exe -m pytest -q tests/test_single_lot_demo_seed.py tests/test_demo_server.py tests/test_expansion_demo_seed.py
+```
+
+Trang công khai, hỗ trợ và hoàn tiền có runner HTTP và trình duyệt riêng trên server demo cô lập (thay cổng/DB theo phiên):
+
+```powershell
+./.venv/Scripts/python.exe scripts/verify_single_lot_support.py --base-url http://127.0.0.1:8771 --credentials ./backend/artifacts/demo/<db>.demo-credentials.json --output ./backend/artifacts/demo/<run>/support-http.json
+./.venv/Scripts/python.exe frontend/tests/browser/public_support_uat.py --origin http://127.0.0.1:8771 --credentials ./backend/artifacts/demo/<db>.demo-credentials.json --site 1
 ```
 
 Kiểm tra: tạo mới/migration/readiness; từ chối ghi đè; lỗi giữa chừng không làm mất tệp khác; bộ dữ liệu và vé tháng; không trùng xe/ô trong lịch sử; số chỗ khớp lượt active; phí/phiếu thu/ca khớp; manager/staff được mở workspace một bãi; báo cáo có dữ liệu/kỳ rỗng; runtime config nhận ID thực và từ chối marker sai. Demo hai bãi cũ cũng được kiểm lại.

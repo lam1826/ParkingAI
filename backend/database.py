@@ -914,6 +914,20 @@ ZONE_CAPACITY_INTEGER_UPDATE_TRIGGER_SQL = (
     "BEGIN SELECT RAISE(ABORT, 'zone capacity must be nonnegative integer'); END"
 )
 
+# Cột hồ sơ công khai của bãi (migration 20260916_07). Kiểu phải khớp model
+# ParkingSite để readiness so sánh contract cột trên DB legacy đã ALTER.
+PARKING_SITE_PUBLIC_COLUMNS = {
+    "public_description": "VARCHAR(2000)",
+    "public_opening_hours": "VARCHAR(500)",
+    "public_contact_phone": "VARCHAR(20)",
+    "public_contact_email": "VARCHAR(100)",
+    "latitude": "FLOAT",
+    "longitude": "FLOAT",
+    "public_profile_updated_at": "DATETIME",
+    "public_profile_updated_by_id": "INTEGER REFERENCES users(id)",
+}
+
+
 # Hàm helper (Dependency) để inject database session vào các route của FastAPI
 def get_db():
     db = SessionLocal()
@@ -953,6 +967,12 @@ def run_sqlite_migrations(target_engine=engine) -> None:
                         conn.exec_driver_sql(f"ALTER TABLE {table} ADD COLUMN {column} {sql_type}")
                     if column != "duration_ms":
                         conn.exec_driver_sql(f"CREATE INDEX IF NOT EXISTS ix_{table}_{column} ON {table}({column})")
+        site_columns = {row[1] for row in conn.exec_driver_sql("PRAGMA table_info(parking_sites)")}
+        if site_columns:
+            # Public introduction profile: nullable, no index, never backfilled.
+            for column, sql_type in PARKING_SITE_PUBLIC_COLUMNS.items():
+                if column not in site_columns:
+                    conn.exec_driver_sql(f"ALTER TABLE parking_sites ADD COLUMN {column} {sql_type}")
         zone_columns = {row[1] for row in conn.exec_driver_sql("PRAGMA table_info(zones)")}
         if zone_columns:
             # SQLite resolves even a NULL foreign key's parent table on later

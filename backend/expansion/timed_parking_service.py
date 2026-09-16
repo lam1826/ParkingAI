@@ -270,7 +270,7 @@ def order_details(order, *, related=None):
         actions.append("cancel")
     if order.status == "pending" and order.payment_mode == "demo" and now < order.expires_at:
         actions.append("simulate")
-    if order.status == "fulfilled" and order.payment_mode == "demo" and (ticket is None or ticket.status == "ready" and now < ticket.start_at):
+    if order.status == "fulfilled" and order.receipt_id is not None and (ticket is None or ticket.status == "ready" and now < ticket.start_at):
         actions.append("request_refund")
     return dict(product_kind=order.product_kind, plan_name=order.plan_name, duration_minutes=order.duration_minutes,
         duration_days=order.duration_days, start_at=aware(order.start_at), end_at=aware(order.end_at),

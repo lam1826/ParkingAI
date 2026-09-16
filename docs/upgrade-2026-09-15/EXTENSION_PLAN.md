@@ -21,6 +21,8 @@ F01–F13: đăng nhập/quyền manager–staff; khu/chỗ/loại xe; vào/ra/t
 | Nhân viên | Làn vào/ra, camera và biển đề xuất, quét mã vé, tìm xe, kiểm quyền vé/đặt chỗ, báo phí, thu tiền, chỗ trống, sự cố/mất vé, ca làm việc |
 | Quản lý | Khu/chỗ/loại/giá, tài khoản nhân viên, gói vé, đơn/đặt chỗ, giao dịch/đối soát/hoàn tiền, ca, camera, báo cáo và ba nhóm AI, nhật ký |
 
+Cập nhật 16/09/2026: hai mục còn thiếu của bảng trên — trang giới thiệu công khai (bản đồ, giờ mở cửa, bảng giá) và yêu cầu hỗ trợ/hoàn tiền cho khách với cả khoản ngoài DEMO — đã triển khai và nghiệm thu; xem [upgrade-2026-09-16/PUBLIC_SITE_AND_SUPPORT.md](../upgrade-2026-09-16/PUBLIC_SITE_AND_SUPPORT.md).
+
 Tiếp tục dùng React responsive trong cùng ứng dụng. Khách trên điện thoại có luồng riêng; không cần ứng dụng mobile native để đạt đồ án. Trang giới thiệu chỉ có một bãi, không có tìm kiếm nhiều bãi hay marketplace.
 
 ## 3. Danh mục mở rộng và tiêu chí

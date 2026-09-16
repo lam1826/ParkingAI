@@ -161,4 +161,5 @@ EXPANSION_TABLES = frozenset({
     "portal_account_links", "portal_link_requests", "portal_vehicle_requests", "portal_vehicle_ownerships",
     "portal_session_grants", "subscription_plans", "portal_orders", "portal_payment_events",
     "portal_notifications", "portal_refund_requests", "vision_cameras", "vision_observations", "site_ai_analyses",
+    "customer_support_requests", "customer_support_messages", "payment_refund_requests",
 })

@@ -148,6 +148,7 @@ export default function MainLayout() {
             >
               <MenuItem onClick={() => handleNavigate("/profile")}>Hồ sơ cá nhân</MenuItem>
               <MenuItem onClick={() => handleNavigate("/settings")}>Cài đặt</MenuItem>
+              <MenuItem onClick={() => handleNavigate("/gioi-thieu")}>Trang giới thiệu bãi</MenuItem>
               <Divider />
               <MenuItem onClick={handleLogout} sx={{ color: 'error.main' }}>
                 Đăng xuất

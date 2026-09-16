@@ -21,6 +21,7 @@ const AccountPage = lazy(() => import("../pages/Account/AccountPage"));
 const ProfilePage = lazy(() => import("../pages/Profile/ProfilePage"));
 const SettingsPage = lazy(() => import("../pages/Setting/SettingPage"));
 const NotFoundPage = lazy(() => import("../pages/NotFound/NotFoundPage"));
+const PublicSitePage = lazy(() => import("../pages/Public/PublicSitePage"));
 
 // Các module quản lý (Sprints 3-7)
 const CustomerPage = lazy(() => import("../pages/Customer/CustomerPage"));
@@ -65,7 +66,9 @@ const AppRoutes = () => {
   return (
     <Suspense fallback={<Box sx={{ display: "flex", justifyContent: "center", p: 6 }}><CircularProgress /></Box>}>
     <Routes>
-      {/* Public */}
+      {/* Public: the lot introduction is readable without an account. */}
+      <Route path="/gioi-thieu" element={<PublicSitePage />} />
+      <Route path="/welcome" element={<Navigate to="/gioi-thieu" replace />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
 

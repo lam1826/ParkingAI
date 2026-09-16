@@ -17,7 +17,7 @@ from expansion_demo_guards import validate_demo_ledger
 from expansion_rollout import validate_zone_site_assignment
 
 
-POSTGRES_SCHEMA_REVISION = "20260915_06"
+POSTGRES_SCHEMA_REVISION = "20260916_07"
 
 REQUIRED_COLUMN_CONTRACTS = frozenset({
     "parking_sessions.billing_policy_version:character varying:32:YES",
@@ -610,6 +610,82 @@ REQUIRED_TRIGGERS |= frozenset(['trg_session_fee_quote_guard',
  'trg_session_fee_credit_guard',
  'trg_session_fee_payment_source',
  'trg_session_fee_session_guard'])
+
+
+# Additive public lot profile, customer support and receipt refunds, revision 20260916_07.
+REQUIRED_TABLES |= frozenset(['customer_support_requests', 'customer_support_messages', 'payment_refund_requests'])
+REQUIRED_COLUMN_CONTRACTS |= frozenset(['parking_sites.public_description:character varying:2000:YES',
+ 'parking_sites.public_opening_hours:character varying:500:YES',
+ 'parking_sites.public_contact_phone:character varying:20:YES',
+ 'parking_sites.public_contact_email:character varying:100:YES',
+ 'parking_sites.latitude:double precision::YES',
+ 'parking_sites.longitude:double precision::YES',
+ 'parking_sites.public_profile_updated_at:timestamp without time zone::YES',
+ 'parking_sites.public_profile_updated_by_id:integer::YES',
+ 'customer_support_requests.id:character varying:36:NO',
+ 'customer_support_requests.site_id:integer::NO',
+ 'customer_support_requests.customer_id:integer::NO',
+ 'customer_support_requests.user_id:integer::NO',
+ 'customer_support_requests.subject:character varying:150:NO',
+ 'customer_support_requests.category:character varying:16:NO',
+ 'customer_support_requests.status:character varying:12:NO',
+ 'customer_support_requests.linked_type:character varying:16:YES',
+ 'customer_support_requests.linked_id:character varying:36:YES',
+ 'customer_support_requests.created_at:timestamp without time zone::NO',
+ 'customer_support_requests.updated_at:timestamp without time zone::NO',
+ 'customer_support_requests.last_message_at:timestamp without time zone::NO',
+ 'customer_support_requests.closed_at:timestamp without time zone::YES',
+ 'customer_support_requests.closed_by_id:integer::YES',
+ 'customer_support_messages.id:character varying:36:NO',
+ 'customer_support_messages.request_id:character varying:36:NO',
+ 'customer_support_messages.author_id:integer::NO',
+ 'customer_support_messages.author_role:character varying:12:NO',
+ 'customer_support_messages.body:character varying:2000:NO',
+ 'customer_support_messages.created_at:timestamp without time zone::NO',
+ 'payment_refund_requests.id:character varying:36:NO',
+ 'payment_refund_requests.receipt_id:character varying:36:NO',
+ 'payment_refund_requests.site_id:integer::YES',
+ 'payment_refund_requests.customer_id:integer::NO',
+ 'payment_refund_requests.user_id:integer::NO',
+ 'payment_refund_requests.source_type:character varying:24:NO',
+ 'payment_refund_requests.source_id:character varying:36:NO',
+ 'payment_refund_requests.payment_channel:character varying:8:NO',
+ 'payment_refund_requests.receipt_method:character varying:16:NO',
+ 'payment_refund_requests.reason:character varying:500:NO',
+ 'payment_refund_requests.requested_amount:bigint::NO',
+ 'payment_refund_requests.status:character varying:12:NO',
+ 'payment_refund_requests.approved_amount:bigint::YES',
+ 'payment_refund_requests.decision_note:character varying:500:NO',
+ 'payment_refund_requests.reviewed_by_id:integer::YES',
+ 'payment_refund_requests.reviewed_at:timestamp without time zone::YES',
+ 'payment_refund_requests.refund_payment_id:character varying:36:YES',
+ 'payment_refund_requests.refund_method:character varying:16:YES',
+ 'payment_refund_requests.external_reference:character varying:120:YES',
+ 'payment_refund_requests.refunded_by_id:integer::YES',
+ 'payment_refund_requests.refunded_at:timestamp without time zone::YES',
+ 'payment_refund_requests.created_at:timestamp without time zone::NO',
+ 'payment_refund_requests.updated_at:timestamp without time zone::NO'])
+REQUIRED_INDEXES |= frozenset(['ix_customer_support_requests_customer_id',
+ 'ix_support_request_site_status',
+ 'ix_customer_support_messages_request_id',
+ 'ix_payment_refund_requests_customer_id',
+ 'ix_payment_refund_requests_receipt_id',
+ 'ix_refund_request_site_status',
+ 'uq_payment_refund_open'])
+REQUIRED_CONSTRAINTS |= frozenset(['ck_support_request_category',
+ 'ck_support_request_status',
+ 'ck_support_request_link',
+ 'ck_support_request_subject',
+ 'ck_support_request_closed',
+ 'ck_support_message_role',
+ 'ck_support_message_body',
+ 'ck_refund_request_status',
+ 'ck_refund_request_channel',
+ 'ck_refund_request_amount',
+ 'ck_refund_request_approved',
+ 'ck_refund_request_approved_amount',
+ 'ck_refund_request_reviewed',
+ 'ck_refund_request_refunded'])
 
 def _require_all(kind: str, actual: Iterable[str], expected: frozenset[str]) -> None:
     missing = sorted(expected - set(actual))

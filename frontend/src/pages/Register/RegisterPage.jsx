@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link as RouterLink, useNavigate } from "react-router-dom";
+import { Link as RouterLink, useLocation, useNavigate } from "react-router-dom";
 import {
   Alert,
   Box,
@@ -13,6 +13,7 @@ import {
 } from "@mui/material";
 import authService from "../../services/authService";
 import PasswordField from "../../components/common/PasswordField";
+import { nextFromSearch, withNext } from "../../utils/safeNext";
 
 const initialForm = {
   username: "",
@@ -31,6 +32,7 @@ const roleOptions = [
 
 export default function RegisterPage() {
   const navigate = useNavigate();
+  const next = nextFromSearch(useLocation().search);
   const [form, setForm] = useState(initialForm);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -59,7 +61,7 @@ export default function RegisterPage() {
         registration_code: form.role === "customer" ? null : form.registration_code,
       };
       await authService.register(payload);
-      navigate("/login", {
+      navigate(withNext("/login", next), {
         replace: true,
         state: { message: "Đăng ký thành công. Bạn có thể đăng nhập ngay." },
       });
@@ -120,8 +122,11 @@ export default function RegisterPage() {
             <Button type="submit" fullWidth variant="contained" disabled={loading} sx={{ mt: 3, py: 1.4 }}>
               {loading ? <CircularProgress size={24} color="inherit" /> : "Đăng ký"}
             </Button>
-            <Button component={RouterLink} to="/login" fullWidth sx={{ mt: 1 }}>
+            <Button component={RouterLink} to={withNext("/login", next)} fullWidth sx={{ mt: 1 }}>
               Đã có tài khoản? Đăng nhập
+            </Button>
+            <Button component={RouterLink} to="/gioi-thieu" fullWidth color="inherit">
+              Xem thông tin bãi xe
             </Button>
           </Box>
         </Paper>

@@ -235,34 +235,21 @@ def notification_read(identity: str, db=Depends(get_db), user=Depends(get_curren
 @router.get("/me/receipts")
 def receipts(limit: int = Query(50, ge=1, le=100), offset: int = Query(0, ge=0), db=Depends(get_db), user=Depends(get_current_user)):
     customer = service.get_linked_customer(db, user)
-    own_periods = select(cast(MonthlyPass.id, String)).where(MonthlyPass.customer_id == customer.id)
-    own_sessions = select(PortalSessionGrant.parking_session_id).where(PortalSessionGrant.customer_id == customer.id)
-    from expansion.session_payment_models import SessionFeeCredit
-    own_credits = select(SessionFeeCredit.id).where(SessionFeeCredit.session_id.in_(own_sessions))
-    own_orders = select(PortalOrder.id).where(PortalOrder.user_id == user.id, PortalOrder.customer_id == customer.id)
-    rows = db.scalars(select(Payment).where(or_(
-        (Payment.source_type == "session_credit") & Payment.source_id.in_(own_credits),
-        (Payment.source_type == "portal_order") & Payment.source_id.in_(own_orders),
-        (Payment.source_type == "monthly_pass") & Payment.source_id.in_(own_periods),
-        (Payment.source_type == "parking_session") & Payment.source_id.in_(own_sessions)))
-        .order_by(Payment.created_at.desc(), Payment.id).offset(offset).limit(limit))
-    return {"items": [{key: value for key, value in PaymentService.serialize(db, row).items()
-        if key not in {"collected_by_id", "shift_id"}} for row in rows]}
+    from expansion import refund_service
+    from expansion.customer_ownership import owned_receipt_predicate
+    rows = db.scalars(select(Payment).where(owned_receipt_predicate(user, customer))
+        .order_by(Payment.created_at.desc(), Payment.id).offset(offset).limit(limit)).all()
+    # The refund block is server truth for the customer's "Yêu cầu hoàn" button: amount, eligibility, reason.
+    return {"items": [{**{key: value for key, value in PaymentService.serialize(db, row).items()
+        if key not in {"collected_by_id", "shift_id"}},
+        "refund": refund_service.refund_state(db, row) if row.kind == "receipt" else None} for row in rows]}
 
 
 @router.get("/me/receipts/{identity}/pdf")
 def receipt_pdf(identity: str, db=Depends(get_db), user=Depends(get_current_user)):
     customer = service.get_linked_customer(db, user)
-    own_periods = select(cast(MonthlyPass.id, String)).where(MonthlyPass.customer_id == customer.id)
-    own_sessions = select(PortalSessionGrant.parking_session_id).where(PortalSessionGrant.customer_id == customer.id)
-    from expansion.session_payment_models import SessionFeeCredit
-    own_credits = select(SessionFeeCredit.id).where(SessionFeeCredit.session_id.in_(own_sessions))
-    own_orders = select(PortalOrder.id).where(PortalOrder.user_id == user.id, PortalOrder.customer_id == customer.id)
-    receipt = db.scalar(select(Payment).where(Payment.id == identity, or_(
-        (Payment.source_type == "session_credit") & Payment.source_id.in_(own_credits),
-        (Payment.source_type == "portal_order") & Payment.source_id.in_(own_orders),
-        (Payment.source_type == "monthly_pass") & Payment.source_id.in_(own_periods),
-        (Payment.source_type == "parking_session") & Payment.source_id.in_(own_sessions))))
+    from expansion.customer_ownership import owned_receipt
+    receipt = owned_receipt(db, user, customer, identity)
     if receipt is None:
         raise HTTPException(404, "Không tìm thấy chứng từ của bạn.")
     from expansion.portal_documents import build_receipt_pdf
@@ -274,15 +261,17 @@ def receipt_pdf(identity: str, db=Depends(get_db), user=Depends(get_current_user
 
 @router.post("/me/orders/{identity}/refund-requests")
 def refund_create(identity: str, data: RefundCreate, db=Depends(get_db), user=Depends(get_current_user)):
+    # Compatibility path: the order's receipt is resolved on the server and the
+    # request goes through the receipt-based workflow (DEMO, counter and online).
+    from expansion import refund_service
     row = write(db, lambda: service.request_refund(db, user, identity, data.reason))
-    return fields(row, "id", "order_id", "reason", "status", "created_at")
+    return refund_service.serialize(row, order_id=identity)
 
 
 @router.get("/me/refund-requests")
 def refunds(db=Depends(get_db), user=Depends(get_current_user)):
-    customer = service.get_linked_customer(db, user)
-    rows = db.scalars(select(PortalRefundRequest).where(PortalRefundRequest.customer_id == customer.id).order_by(PortalRefundRequest.created_at.desc()).limit(100))
-    return {"items": [fields(row, "id", "order_id", "reason", "status", "note", "created_at", "refund_payment_id") for row in rows]}
+    from expansion import refund_service
+    return {"items": refund_service.customer_list(db, user)}
 
 
 @router.get("/portal/admin/link-requests")
@@ -393,14 +382,25 @@ def admin_order_review(identity: str, data: Resolution, db=Depends(get_db), acto
 
 @router.get("/portal/admin/refund-requests")
 def admin_refunds(db=Depends(get_db), actor=Depends(manager)):
-    rows = db.scalars(select(PortalRefundRequest).join(PortalOrder, PortalOrder.id == PortalRefundRequest.order_id)
-        .where(PortalOrder.site_id.in_(allowed_site_ids(db, actor)))
-        .order_by(PortalRefundRequest.created_at.desc()).limit(100))
-    return {"items": [{**fields(row, "id", "order_id", "customer_id", "reason", "status", "created_at"),
-        "customer_name": db.get(Customer, row.customer_id).full_name} for row in rows]}
+    """Every site the manager may act on: receipt-based requests plus legacy DEMO rows."""
+    from expansion import refund_service
+    from expansion.support_models import PaymentRefundRequest
+    scoped = allowed_site_ids(db, actor)
+    rows = db.execute(select(PaymentRefundRequest, Customer).join(Customer, Customer.id == PaymentRefundRequest.customer_id)
+        .where(PaymentRefundRequest.site_id.in_(scoped))
+        .order_by(PaymentRefundRequest.created_at.desc(), PaymentRefundRequest.id).limit(100)).all()
+    orders = refund_service._order_ids(db, [item for item, _ in rows])
+    items = [refund_service.serialize(item, order_id=orders.get(item.receipt_id), customer_name=customer.full_name) for item, customer in rows]
+    legacy = db.execute(select(PortalRefundRequest, Customer).join(PortalOrder, PortalOrder.id == PortalRefundRequest.order_id)
+        .join(Customer, Customer.id == PortalRefundRequest.customer_id)
+        .where(PortalOrder.site_id.in_(scoped)).order_by(PortalRefundRequest.created_at.desc()).limit(100)).all()
+    items.extend(refund_service.serialize_legacy(row, customer_name=customer.full_name) for row, customer in legacy)
+    items.sort(key=lambda row: row["created_at"], reverse=True)
+    return {"items": items[:100]}
 
 
 @router.post("/portal/admin/refund-requests/{identity}/resolve")
 def admin_refund_resolve(identity: str, data: Resolution, db=Depends(get_db), actor=Depends(manager)):
     row = write(db, lambda: service.resolve_refund(db, actor, identity, data))
-    return fields(row, "id", "status", "refund_payment_id", "note")
+    note = row.decision_note if hasattr(row, "decision_note") else row.note
+    return {"id": row.id, "status": row.status, "refund_payment_id": row.refund_payment_id, "note": note}

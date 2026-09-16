@@ -521,21 +521,25 @@ def collect_manual(db, actor, identity, method):
 
 
 def request_refund(db, user, identity, reason):
-    owned_order(db, user, identity)
-    order = _lock_order_context(db, identity)
-    if order.status != "fulfilled" or order.payment_mode != "demo":
-        raise HTTPException(409, "Chỉ hỗ trợ yêu cầu hoàn mô phỏng cho đơn DEMO đã kích hoạt.")
-    existing = db.scalar(select(PortalRefundRequest).where(PortalRefundRequest.order_id == identity))
-    if existing:
-        return existing
-    item = PortalRefundRequest(order_id=identity, customer_id=order.customer_id, reason=reason)
-    db.add(item)
-    db.commit()
-    return item
+    """Order-addressed entry point kept for the portal UI; the receipt workflow decides eligibility."""
+    from expansion import refund_service
+    order = owned_order(db, user, identity)
+    if order.status not in {"fulfilled", "refunded"} or order.receipt_id is None:
+        raise HTTPException(409, "Chỉ yêu cầu hoàn cho đơn đã thanh toán và được cấp vé.")
+    return refund_service.create_request(db, user, order.receipt_id, reason)
 
 
 def resolve_refund(db, actor, identity, data):
     check_permission(actor, "manager")
+    from expansion import refund_service
+    from expansion.support_models import PaymentRefundRequest
+    current = db.get(PaymentRefundRequest, identity)
+    if current is not None:
+        if current.site_id is None:
+            raise HTTPException(409, "Chứng từ không gắn bãi; quản trị viên xử lý qua sổ thu.")
+        if data.approve:
+            return refund_service.approve(db, actor, current.site_id, identity, note=data.note)
+        return refund_service.reject(db, actor, current.site_id, identity, data.note or "Từ chối qua màn hình đơn vé.")
     item = db.get(PortalRefundRequest, identity)
     if item is None:
         raise HTTPException(404, "Không tìm thấy yêu cầu.")

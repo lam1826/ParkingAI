@@ -28,6 +28,8 @@ from expansion.site_router import router as site_router
 from expansion.portal_router import router as portal_router
 from expansion.online_payment_router import router as online_payment_router
 from expansion.session_payment_router import router as session_payment_router
+from expansion.support_router import router as support_router
+from expansion.public_profile import router as public_profile_router
 from expansion.vision_router import router as vision_router
 from expansion.occupancy_router import router as occupancy_router
 from expansion.insights_router import router as insights_router
@@ -204,6 +206,8 @@ app.include_router(site_router)
 app.include_router(portal_router, prefix="/api/v2")
 app.include_router(online_payment_router, prefix="/api/v2")
 app.include_router(session_payment_router, prefix="/api/v2")
+app.include_router(support_router, prefix="/api/v2")
+app.include_router(public_profile_router)
 app.include_router(vision_router)
 app.include_router(occupancy_router)
 app.include_router(insights_router)

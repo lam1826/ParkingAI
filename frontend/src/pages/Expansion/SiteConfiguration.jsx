@@ -5,6 +5,7 @@ import { endpoint, formLayout, PageControls, read, Records, RemoteSection, Secti
 import { useExpansion } from "../../context/ExpansionContext";
 import { Link as RouterLink } from "react-router-dom";
 import useCorePermissions from "../../hooks/useCorePermissions";
+import PublicProfileForm from "./PublicProfileForm";
 
 export function CreateSiteForm({ action, onCreated }) {
   const [name, setName] = useState("");
@@ -35,6 +36,7 @@ export default function SiteConfiguration({ siteId, zones, types, members, isAdm
   const [member, setMember] = useState({ user_id: "", role: "staff" });
   const change = (setter, name) => (event) => setter((old) => ({ ...old, [name]: event.target.value }));
   return <Stack spacing={3}>
+    <PublicProfileForm siteId={siteId} action={action} />
     {capabilities?.legacy_workspace_allowed && canManageConfiguration && <Section title="Danh mục và vé" description="Quản lý loại xe, đơn giá và hồ sơ phục vụ hoạt động của bãi.">
       <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap" }}>
         <Button component={RouterLink} to="/vehicle-types" variant="outlined">Loại xe</Button>

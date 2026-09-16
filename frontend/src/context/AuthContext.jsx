@@ -4,6 +4,7 @@ import authService from "../services/authService";
 import { clearAIChat } from "../utils/aiChatStorage";
 import { getErrorMessage } from "../utils/errorMessage";
 import { createAuthSessionBoundary } from "../services/authSessionBoundary";
+import { defaultLanding, sanitizeNextPath } from "../utils/safeNext";
 
 export const AuthContext = createContext();
 
@@ -31,7 +32,7 @@ export const AuthProvider = ({ children }) => {
     return () => session.stop();
   }, [session]);
 
-  const login = async (credentials) => {
+  const login = async (credentials, next = null) => {
     const isCurrentAttempt = session.beginLogin();
     let issuedToken = null;
     try {
@@ -49,7 +50,8 @@ export const AuthProvider = ({ children }) => {
       // Lấy thông tin user hiện tại từ /api/auth/me
       const userData = await refreshUser();
       
-      navigate(userData.role === "customer" ? "/portal" : "/");
+      // A validated same-origin continuation (e.g. buy a ticket from the public page) wins over the role default.
+      navigate(sanitizeNextPath(next) || defaultLanding(userData.role), { replace: true });
       return { success: true };
     } catch (error) {
       if (issuedToken && localStorage.getItem("token") === issuedToken) {

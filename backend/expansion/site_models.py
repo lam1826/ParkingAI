@@ -2,7 +2,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import text, Boolean, CheckConstraint, DDL, DateTime, ForeignKey, Index, String, UniqueConstraint, event
+from sqlalchemy import text, Boolean, CheckConstraint, DDL, DateTime, Float, ForeignKey, Index, String, UniqueConstraint, event
 from sqlalchemy.orm import Mapped, mapped_column
 
 from core.clock import business_now
@@ -17,6 +17,16 @@ class ParkingSite(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     customer_booking_mode: Mapped[str] = mapped_column(String(16), default="legacy", server_default=text("'legacy'"))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=business_now)
+    # Published introduction page. Every field stays NULL ("chưa cập nhật") until
+    # a manager of this site publishes it; nothing is inferred or invented.
+    public_description: Mapped[str | None] = mapped_column(String(2000))
+    public_opening_hours: Mapped[str | None] = mapped_column(String(500))
+    public_contact_phone: Mapped[str | None] = mapped_column(String(20))
+    public_contact_email: Mapped[str | None] = mapped_column(String(100))
+    latitude: Mapped[float | None] = mapped_column(Float)
+    longitude: Mapped[float | None] = mapped_column(Float)
+    public_profile_updated_at: Mapped[datetime | None] = mapped_column(DateTime)
+    public_profile_updated_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
 
 
 class SiteMembership(Base):

@@ -13,10 +13,12 @@ import { Link as RouterLink } from "react-router-dom";
 import { useLocation } from "react-router-dom";
 import PasswordField from "../../components/common/PasswordField";
 import BrandLogo from "../../components/brand/BrandLogo";
+import { nextFromSearch, withNext } from "../../utils/safeNext";
 
 export default function LoginPage() {
   const { login } = useContext(AuthContext);
   const location = useLocation();
+  const next = nextFromSearch(location.search);
   const [formData, setFormData] = useState({ username: "", password: "" });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -36,7 +38,7 @@ export default function LoginPage() {
       return;
     }
 
-    const result = await login(formData);
+    const result = await login(formData, next);
     
     if (!result.success) {
       setError(result.message);
@@ -84,6 +86,11 @@ export default function LoginPage() {
               {location.state.message}
             </Alert>
           )}
+          {next && (
+            <Alert severity="info" sx={{ width: "100%", mb: 2 }}>
+              Đăng nhập để tiếp tục thao tác bạn đã chọn.
+            </Alert>
+          )}
 
           <Box component="form" onSubmit={handleSubmit} sx={{ width: '100%' }}>
             <TextField
@@ -118,8 +125,11 @@ export default function LoginPage() {
             >
               {loading ? <CircularProgress size={24} color="inherit" /> : "Đăng Nhập"}
             </Button>
-            <Button component={RouterLink} to="/register" fullWidth>
+            <Button component={RouterLink} to={withNext("/register", next)} fullWidth>
               Chưa có tài khoản? Đăng ký
+            </Button>
+            <Button component={RouterLink} to="/gioi-thieu" fullWidth color="inherit">
+              Xem thông tin bãi xe
             </Button>
           </Box>
         </Paper>

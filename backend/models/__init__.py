@@ -30,6 +30,7 @@ from expansion import occupancy_models  # noqa: F401 - observational CV, separat
 from expansion import session_payment_models  # noqa: F401 - verified parking-fee credits
 from expansion import vision_models  # noqa: F401 - register private camera observations
 from expansion import analytics_models  # noqa: F401 - register scoped AI history
+from expansion import support_models  # noqa: F401 - customer support threads and receipt refunds
 import expansion_demo_guards  # noqa: F401 - same demo boundary on fresh databases
 import site_finance_guards  # noqa: F401 - site attribution on fresh databases
 from finance_rollout import MONTHLY_CARD_SQLITE_TRIGGERS
