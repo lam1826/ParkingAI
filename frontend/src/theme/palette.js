@@ -1,9 +1,11 @@
 export const palette = {
+  text: { primary: "#172638", secondary: "#596879" },
+  divider: "#dde4ed",
   primary: {
-    main: "#1976d2",
+    main: "#1767bd",
   },
   secondary: {
-    main: "#9c27b0",
+    main: "#506074",
   },
   success: {
     main: "#2e7d32",
@@ -15,7 +17,7 @@ export const palette = {
     main: "#d32f2f",
   },
   background: {
-    default: "#f5f7fb",
+    default: "#f5f7fa",
     paper: "#ffffff",
   },
 };

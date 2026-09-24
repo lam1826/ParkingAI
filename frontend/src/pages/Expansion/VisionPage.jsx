@@ -11,7 +11,7 @@ import { Workspace, Section, Records, useSites, useRemote, useAction, read, send
 
 const newCamera = { name: "Camera điện thoại", direction: "entry", retention_hours: 24, is_active: true };
 
-function ObservationImage({ observation }) {
+export function ObservationImage({ observation }) {
   const [image, setImage] = useState({ src: "", error: "", id: null });
   useEffect(() => {
     let alive = true;

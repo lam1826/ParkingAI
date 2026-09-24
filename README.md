@@ -2,6 +2,8 @@
 
 Hệ thống quản lý bãi đỗ xe dùng FastAPI, React, SQLite và Gemini. Hệ thống hỗ trợ phân quyền, quản lý dữ liệu nền, xe vào/ra, tính phí, vé tháng, chỗ trống, báo cáo lưu lượng–doanh thu và trợ lý AI.
 
+**Giao diện theo demo đã duyệt (23/09/2026):** đã tích hợp vào ứng dụng thật, chạy thử tại `http://127.0.0.1:8793` với DB tổng hợp riêng. Xem [hướng dẫn, thay đổi và kiểm chứng](docs/DEMO_IMPLEMENTATION_2026-09-23.md). Admin/Manager dùng menu nghiệp vụ đã nhóm; Customer có Phí gửi xe, Đặt chỗ trước, Vé & lịch sử, Hỗ trợ. AI thật hiện còn lỗi503; dữ liệu camera và thanh toán cần nghiệm thu thiết bị/tài khoản thật.
+
 **Bản nâng cấp một bãi (15/09/2026):** dùng [hướng dẫn demo hiện hành](docs/SINGLE_LOT_DEMO.md). Mã đã có giá chốt lúc vào, ngoại lệ có lịch sử, portal vé giờ/ngày/tháng và đặt chỗ, adapter payOS và trả phí lượt, biên nhận/đối soát, capture webcam và quan sát ô bằng ảnh tham chiếu. [Nghiệm thu tích hợp](docs/upgrade-2026-09-15/FINAL_ACCEPTANCE.md) ghi kết quả và phần cần tài khoản/thiết bị thật; [nhật ký triển khai](docs/upgrade-2026-09-15/IMPLEMENTATION.md) giữ bằng chứng các mốc trước. Chưa đẩy hoặc triển khai bản nâng cấp này lên website.
 
 ## Phạm vi đồ án theo đề bài gốc

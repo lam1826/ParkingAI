@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Alert, Box, Button, Chip, CircularProgress, MenuItem, Paper, Stack, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TextField, Typography } from "@mui/material";
+import { Alert, Button, CircularProgress, MenuItem, Stack, TextField, Typography } from "@mui/material";
+import { PageHeader, PrototypeIcon, WorkspaceTabs } from "../../components/common/PrototypeUI";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import api from "../../services/api";
 import { getErrorMessage } from "../../utils/errorMessage";
@@ -116,7 +117,7 @@ export function useSites() {
 }
 
 export function SitePicker({ sites, label = "Bãi xe", value = sites.siteId, onChange = sites.setSiteId, disabled = false, sx }) {
-  if (sites.singleSiteMode) return <Typography sx={sx} color="text.secondary">{sites.sites[0]?.name || (sites.loading ? "Đang tải bãi đỗ…" : "Chưa có bãi được cấp quyền.")}</Typography>;
+  if (sites.singleSiteMode) return null;
   return <TextField select label={label} value={value} disabled={disabled || sites.loading || !sites.sites.length} sx={sx}
     onChange={(event) => onChange(event.target.value)}>{sites.sites.map((site) => <MenuItem key={site.id} value={site.id}>{site.name}</MenuItem>)}</TextField>;
 }
@@ -124,17 +125,17 @@ export function SitePicker({ sites, label = "Bãi xe", value = sites.siteId, onC
 /** `remote` may be one useRemote result or a synthetic {reload, loading, error} that spans sections. */
 export function Workspace({ title, description, remote, action, actions = [], children, tools }) {
   const feedback = action ? [action, ...actions] : actions;
-  return <Stack spacing={3} sx={{ minWidth: 0, maxWidth: 1440, mx: "auto" }}>
-    <Stack direction={{ xs: "column", sm: "row" }} spacing={2} useFlexGap sx={{ justifyContent: "space-between", alignItems: { sm: "center" } }}>
-      <Box><Typography variant="h4" component="h1">{title}</Typography><Typography color="text.secondary" sx={{ mt: 1, maxWidth: "75ch" }}>{description}</Typography></Box>
-      <Stack direction="row" spacing={1} useFlexGap>{tools}<Button variant="outlined" startIcon={<RefreshIcon />} onClick={remote.reload} disabled={remote.loading || feedback.some((item) => item?.busy)}>Làm mới</Button></Stack>
-    </Stack>
+  return <div className="workspace">
+    <PageHeader title={title} description={description} actions={<>{tools}<button className="icon-button" type="button" aria-label="Làm mới" title="Làm mới" onClick={remote.reload} disabled={remote.loading || feedback.some((item) => item?.busy)}><PrototypeIcon name="reset" /></button></>} />
+    <WorkspaceTabs />
+    <div className="workspace-content">
     {remote.error && <Alert severity="error">{remote.error}</Alert>}
     {feedback.map((item, index) => item?.error && <Alert key={`error-${index}`} severity="error">{item.error}</Alert>)}
     {feedback.map((item, index) => item?.notice && <Alert key={`notice-${index}`} severity="success" role="status">{item.notice}</Alert>)}
     {remote.loading && <Stack direction="row" spacing={1} useFlexGap sx={{ alignItems: "center" }} role="status"><CircularProgress size={20} /><Typography>Đang tải dữ liệu…</Typography></Stack>}
     {children}
-  </Stack>;
+    </div>
+  </div>;
 }
 
 /** Combine sections for the page header: loading while any section loads; errors stay per section. */
@@ -143,23 +144,21 @@ export function combineRemotes(...remotes) {
 }
 
 export function Section({ title, description, children, actions }) {
-  return <Paper variant="outlined" sx={{ p: { xs: 2, md: 3 }, minWidth: 0 }}>
-    <Stack spacing={2}>
-      <Stack direction={{ xs: "column", sm: "row" }} spacing={1} useFlexGap sx={{ justifyContent: "space-between" }}><Box><Typography variant="h6" component="h2">{title}</Typography>{description && <Typography color="text.secondary" sx={{ mt: 0.5 }}>{description}</Typography>}</Box>{actions}</Stack>
-      {children}
-    </Stack>
-  </Paper>;
+  return <section className="surface">
+    <div className="section-head"><div><h2>{title}</h2>{description && <p>{description}</p>}</div>{actions}</div>
+    <div className="section-content">{children}</div>
+  </section>;
 }
 
 const labels = { pending: "Chờ xử lý", approved: "Đã duyệt", rejected: "Từ chối", paid: "Đã thanh toán mô phỏng", fulfilled: "Đã cấp vé", completed: "Hoàn tất", failed: "Thất bại", cancelled: "Đã hủy", expired: "Hết hạn", confirmed: "Đã đặt", arrived: "Đã đến", active: "Đang hiệu lực", waiting: "Đang chờ", offered: "Đã có chỗ", review: "Cần đối soát", needs_review: "Cần đối soát", refunded: "Đã hoàn", reviewing: "Đang xem xét", open: "Chờ phản hồi", answered: "Đã phản hồi", closed: "Đã đóng" };
 export function StateChip({ value, label }) {
   const good = ["paid", "fulfilled", "completed", "approved", "active", "arrived"].includes(value);
-  return <Chip size="small" variant="outlined" color={good ? "success" : ["failed", "rejected"].includes(value) ? "error" : "default"} label={label || labels[value] || value || "—"} />;
+  return <span className={`badge ${good ? "success" : ["failed", "rejected"].includes(value) ? "warning" : "neutral"}`}>{label || labels[value] || value || "—"}</span>;
 }
 
 export function Records({ rows = [], columns, empty = "Chưa có dữ liệu." }) {
-  if (!rows.length) return <Typography color="text.secondary" sx={{ py: 3 }}>{empty}</Typography>;
-  return <TableContainer sx={{ maxWidth: "100%" }}><Table size="small"><TableHead><TableRow>{columns.map((col) => <TableCell key={col.key} sx={{ whiteSpace: "nowrap", fontWeight: 700 }}>{col.label}</TableCell>)}</TableRow></TableHead><TableBody>{rows.map((row, index) => <TableRow key={row.id ?? index} hover>{columns.map((col) => <TableCell key={col.key} sx={{ py: 1.5, minWidth: col.minWidth, fontVariantNumeric: "tabular-nums" }}>{col.render ? col.render(row) : row[col.key] ?? "—"}</TableCell>)}</TableRow>)}</TableBody></Table></TableContainer>;
+  if (!rows.length) return <p className="empty">{empty}</p>;
+  return <div className="table-wrap"><table className="data-table"><thead><tr>{columns.map((col) => <th scope="col" key={col.key}>{col.label}</th>)}</tr></thead><tbody>{rows.map((row, index) => <tr key={row.id ?? index}>{columns.map((col) => <td key={col.key} style={{ minWidth: col.minWidth }}>{col.render ? col.render(row) : row[col.key] ?? "—"}</td>)}</tr>)}</tbody></table></div>;
 }
 
 export function PageControls({ page, count, onChange, busy, size = 50 }) {

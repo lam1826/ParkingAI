@@ -1,8 +1,9 @@
 import { useCallback, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, MenuItem, Stack, Tab, Tabs, TextField, Typography } from "@mui/material";
 import api from "../../services/api";
 import { useExpansion } from "../../context/ExpansionContext";
+import { PageHeader } from "../../components/common/PrototypeUI";
 import { toBusinessDateString } from "../../utils/businessDate";
 import { mergeSelectedOrder, passStatus } from "./portalState";
 import { entitlementLabel, orderStatusLabel, productKind, productLabel } from "./portalOffers";
@@ -10,7 +11,9 @@ import PortalPurchase from "./PortalPurchase";
 import PortalOrderDetails from "./PortalOrderDetails";
 import PortalSessionDetails from "./PortalSessionDetails";
 import CustomerSupportPanel from "./CustomerSupportPanel";
-import { refundAction } from "./supportState";
+import CustomerFees from "./CustomerFees";
+import { portalTab } from "./customerFlow";
+import { refundAction, supportStatusLabel } from "./supportState";
 import { paymentModeLabel } from "./onlinePaymentState";
 import { combineRemotes, dateOnly, dateTime, endpoint, formLayout, items, money, PageControls, read, Records, refreshAll, RemoteSection, Section, send, StateChip, useAction, usePage, useRemote, Workspace } from "./shared";
 
@@ -39,11 +42,136 @@ function CatalogState({ remote, label }) {
 }
 
 export default function CustomerPortal() {
+  const [params] = useSearchParams();
+  const destination = params.get("tab");
+  if (!params.get("order") && (!destination || destination === "fees")) return <CustomerFees />;
+  if (!params.get("order") && !params.get("view")) {
+    if (destination === "tickets") return <TicketOverview />;
+    if (destination === "support") return <SupportOverview />;
+  }
+  return <CustomerTickets />;
+}
+
+function CompactRemoteState({ remote, label }) {
+  if (remote.error) return <Alert severity="error" action={<Button onClick={remote.reload}>Thử lại</Button>}>{remote.error}</Alert>;
+  return remote.loading ? <p className="muted" role="status">Đang tải {label}…</p> : null;
+}
+
+/** The default view mirrors the compact demo; complete billing workflows remain in detail views. */
+function TicketOverview() {
+  const identity = useRemote(loadIdentity);
+  const linked = Boolean(identity.data?.linked);
+  const page = usePage({}, 50);
+  const passes = usePagedPortalList("/me/passes", page, linked);
+  const vehicles = usePagedPortalList("/me/vehicles", page, linked);
+  const sessions = usePagedPortalList("/me/sessions", page, linked);
+  const receipts = usePagedPortalList("/me/receipts", page, Boolean(identity.data));
+  const closed = (sessions.data || []).filter((row) => row.status === "completed");
+  const paid = (receipts.data || []).filter((row) => row.kind === "receipt");
+  const receiptMethod = (row) => row.method === "demo" ? "DEMO · mô phỏng" : row.method === "cash" ? "Tiền mặt" : row.method === "transfer" ? "Chuyển khoản" : "Chứng từ lịch sử";
+  const receiptTitle = (row) => {
+    const source = row.source_type === "monthly_pass" ? passes.data : ["parking_session", "session_credit"].includes(row.source_type) ? sessions.data : [];
+    return source?.find((item) => String(item.id) === String(row.source_id))?.license_plate || (row.source_type === "monthly_pass" ? "Vé tháng" : row.source_type === "portal_order" ? "Đơn vé" : "Phí gửi xe");
+  };
+  return <>
+    <PageHeader title="Vé & lịch sử" description="Vé tháng, thời hạn và chứng từ của bạn." />
+    <CompactRemoteState remote={identity} label="hồ sơ" />
+    <div className="content-grid">
+      <section className="surface">
+        <div className="section-head"><h2>Vé tháng của bạn</h2></div>
+        <CompactRemoteState remote={passes} label="vé tháng" />
+        {(passes.data || []).map((row) => {
+          const status = passStatus(row, toBusinessDateString());
+          const typeName = vehicles.data?.find((vehicle) => vehicle.id === row.vehicle_id)?.type_name;
+          return <div className="list-row" key={row.id}><div><strong>{row.card_code} · {row.license_plate}</strong>{typeName && <p>{typeName}</p>}<p>{dateOnly(row.start_date)} → {dateOnly(row.end_date)}</p><p>Giá vé: {money(row.price)}</p></div><span className={`badge ${status === "Đang hiệu lực" ? "success" : "neutral"}`}>{status}</span></div>;
+        })}
+        {!passes.loading && !passes.error && !passes.data?.length && <div className="empty">{identity.data?.linked === false ? "Liên kết hồ sơ để xem vé tháng của bạn." : "Bạn chưa có vé tháng."}</div>}
+        <p className="inline-note">Liên hệ quản lý để đăng ký hoặc gia hạn. Bạn cũng có thể mua vé bằng tài khoản đã liên kết.</p>
+        <div className="form-actions"><Link className="button quiet small" to="/portal?tab=tickets&view=purchase">Mua vé / gia hạn</Link><Link className="button quiet small" to="/portal?tab=tickets&view=passes">Tất cả vé</Link></div>
+      </section>
+      <section className="surface">
+        <div className="section-head"><h2>Chứng từ thanh toán</h2></div>
+        <CompactRemoteState remote={receipts} label="chứng từ" />
+        {paid.slice(0, 5).map((row) => <div className="history-row" key={row.id}><div><span className="plate">{receiptTitle(row)}</span><small>{dateTime(row.created_at)} · {receiptMethod(row)}</small></div><strong>{money(row.amount)}</strong></div>)}
+        {!receipts.loading && !receipts.error && !paid.length && <div className="empty">Chưa có chứng từ thanh toán.</div>}
+        <div className="divider" />
+        <h3>Lượt gửi đã kết thúc</h3>
+        <CompactRemoteState remote={sessions} label="lịch sử" />
+        {closed.slice(0, 5).map((row) => <div className="history-row" key={row.id}><div>{row.license_plate}<small>{dateTime(row.check_in_time)} → {dateTime(row.check_out_time)}</small></div><span>{row.parking_fee == null ? "—" : money(row.parking_fee)}</span></div>)}
+        {!sessions.loading && !sessions.error && !closed.length && <p className="muted" style={{ fontSize: 13, marginTop: 12 }}>Lịch sử thuộc tài khoản xuất hiện sau khi xe ra.</p>}
+        <Link className="button quiet small" style={{ marginTop: 18 }} to="/portal?tab=tickets&view=history">Xem tất cả · PDF & hoàn tiền</Link>
+      </section>
+    </div>
+    <details className="demo-help"><summary>Xe, hồ sơ & thông báo</summary><div className="demo-tools"><Link className="button secondary small" to="/portal?tab=tickets&view=profile">Xe & hồ sơ</Link><Link className="button secondary small" to="/portal?tab=tickets&view=notifications">Thông báo</Link></div></details>
+  </>;
+}
+
+const supportSubjects = [["receipt", "Thanh toán & hoàn tiền"], ["order", "Đặt chỗ trước"], ["session", "Mất vé / không tìm thấy lượt"]];
+
+function SupportOverview() {
+  const identity = useRemote(loadIdentity);
+  const linked = Boolean(identity.data?.linked);
+  const loadRequests = useCallback(() => linked ? read("/me/support-requests").then(items) : Promise.resolve([]), [linked]);
+  const requests = useRemote(loadRequests);
+  const [category, setCategory] = useState("receipt"), [message, setMessage] = useState("");
+  const [selected, setSelected] = useState(null), [reply, setReply] = useState("");
+  const loadDetail = useCallback(() => selected ? read(`/me/support-requests/${encodeURIComponent(selected)}`) : Promise.resolve(null), [selected]);
+  const detail = useRemote(loadDetail);
+  const action = useAction(refreshAll(requests, detail));
+  const submit = (event) => {
+    event.preventDefault();
+    void action.run(() => send("/me/support-requests", { subject: supportSubjects.find(([key]) => key === category)[1], category, message: message.trim() }), "Đã gửi yêu cầu. Quản lý sẽ phản hồi trong mục này.", () => setMessage(""));
+  };
+  return <>
+    <PageHeader title="Bạn cần hỗ trợ?" description="Gửi yêu cầu để quản lý bãi tiếp nhận." />
+    <CompactRemoteState remote={identity} label="hồ sơ" />
+    <div className="content-grid">
+      <section className="surface">
+        <form onSubmit={submit}>
+          <div className="field"><label htmlFor="support-subject">Vấn đề cần hỗ trợ</label><select id="support-subject" value={category} onChange={(event) => setCategory(event.target.value)} disabled={action.busy}>{supportSubjects.map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></div>
+          <div className="field"><label htmlFor="support-message">Nội dung</label><textarea id="support-message" placeholder="Mô tả vấn đề để quản lý hỗ trợ bạn…" required maxLength={2000} value={message} onChange={(event) => setMessage(event.target.value)} disabled={action.busy} /></div>
+          <button className="button primary" type="submit" disabled={action.busy || !linked || !message.trim()}>Gửi yêu cầu</button>
+        </form>
+        {identity.data?.linked === false && <p className="inline-note">Liên kết hồ sơ để bãi tiếp nhận hỗ trợ cho đúng khách hàng. <Link to="/portal?tab=tickets&view=profile">Mở hồ sơ</Link></p>}
+        {action.error && <p role="alert" className="inline-note warning">{action.error}</p>}
+        {action.notice && <p role="status" className="inline-note success">{action.notice}</p>}
+      </section>
+      <section className="surface">
+        <h2>Yêu cầu của bạn</h2>
+        <CompactRemoteState remote={requests} label="yêu cầu" />
+        {(requests.data || []).map((row) => <div className="list-row" key={row.id}><div><strong>{row.subject}</strong><p>{dateTime(row.last_message_at || row.created_at)}</p><button className="button quiet small" type="button" onClick={() => { setSelected(row.id); setReply(""); }}>Xem trao đổi</button></div><span className={`badge ${row.status === "open" ? "warning" : "neutral"}`}>{supportStatusLabel(row.status)}</span></div>)}
+        {!requests.loading && !requests.error && !requests.data?.length && <div className="empty">Chưa có yêu cầu hỗ trợ.</div>}
+      </section>
+    </div>
+    <details className="demo-help"><summary>Hoàn tiền & yêu cầu chi tiết</summary><p>Yêu cầu hoàn được gửi từ chứng từ đủ điều kiện. Quản lý kiểm tra và cập nhật kết quả; gửi yêu cầu chưa có nghĩa đã hoàn tiền.</p><div className="demo-tools"><Link className="button secondary small" to="/portal?tab=tickets&view=history">Chứng từ & yêu cầu hoàn</Link><Link className="button secondary small" to="/portal?tab=support&view=details">Theo dõi hoàn tiền / gắn chứng từ</Link></div></details>
+    <Dialog open={Boolean(selected)} onClose={() => { if (!action.busy) setSelected(null); }} fullWidth maxWidth="sm" aria-labelledby="support-thread-title">
+      <div className="prototype-ui" style={{ background: "white", minHeight: 0 }}>
+        <DialogTitle id="support-thread-title">{detail.data?.subject || "Yêu cầu hỗ trợ"}</DialogTitle>
+        <DialogContent>
+          <CompactRemoteState remote={detail} label="trao đổi" />
+          {detail.data && <>
+            <span className="badge neutral">{supportStatusLabel(detail.data.status)}</span>
+            {detail.data.messages.map((row) => <div className={`chat-message ${row.mine ? "user" : "assistant"}`} key={row.id}><small className="muted">{row.mine ? "Bạn" : "Quản lý"} · {dateTime(row.created_at)}</small><p style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{row.body}</p></div>)}
+            {detail.data.status !== "closed" ? <form style={{ marginTop: 20 }} onSubmit={(event) => { event.preventDefault(); void action.run(() => send(`/me/support-requests/${detail.data.id}/messages`, { body: reply.trim() }), "Đã gửi trả lời.", () => setReply("")); }}>
+              <div className="field"><label htmlFor="support-reply">Trả lời</label><textarea id="support-reply" value={reply} onChange={(event) => setReply(event.target.value)} required maxLength={2000} disabled={action.busy} /></div>
+              <div className="form-actions"><button className="button primary" type="submit" disabled={action.busy || !reply.trim()}>Gửi trả lời</button><button className="button quiet" type="button" disabled={action.busy} onClick={() => void action.run(() => send(`/me/support-requests/${detail.data.id}/close`), "Đã đóng yêu cầu.")}>Đóng yêu cầu</button></div>
+            </form> : <p className="inline-note">Yêu cầu đã đóng. Tạo yêu cầu mới nếu bạn cần hỗ trợ tiếp.</p>}
+          </>}
+          {action.error && <p className="inline-note warning" role="alert">{action.error}</p>}
+        </DialogContent>
+        <DialogActions><Button disabled={action.busy} onClick={() => setSelected(null)}>Đóng</Button></DialogActions>
+      </div>
+    </Dialog>
+  </>;
+}
+
+function CustomerTickets() {
   const capabilities = useExpansion();
   const demoPaymentsEnabled = Boolean(capabilities.demo_payments_enabled);
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const requestedOrder = searchParams.get("order");
-  const [tab, setTab] = useState(() => searchParams.get("tab") === "purchase" || requestedOrder ? 2 : searchParams.get("tab") === "support" ? 5 : 0);
+  const tab = portalTab(searchParams);
+  const setTab = (value) => setSearchParams(value === 5 ? { tab: "support" } : { tab: "tickets", view: ["profile", "passes", "purchase", "history", "notifications"][value] });
   const [refundTarget, setRefundTarget] = useState(null);
   const [refundReason, setRefundReason] = useState("");
   const [purchaseLocked, setPurchaseLocked] = useState(false);
@@ -68,7 +196,7 @@ export default function CustomerPortal() {
   const timedPasses = usePagedPortalList("/me/timed-passes", timedPage, linked);
   const orders = usePagedPortalList("/me/orders", ordersPage, linked);
   const sessions = usePagedPortalList("/me/sessions", sessionsPage, linked);
-  const receipts = usePagedPortalList("/me/receipts", receiptsPage, linked);
+  const receipts = usePagedPortalList("/me/receipts", receiptsPage, Boolean(identity.data));
   const notifications = usePagedPortalList("/me/notifications", notificationsPage, linked);
   const loadRefunds = useCallback(() => linked ? read("/me/refund-requests").then(items) : Promise.resolve([]), [linked]);
   const refunds = useRemote(loadRefunds);
@@ -97,10 +225,13 @@ export default function CustomerPortal() {
   const openOrder = (order) => orderAction.run(() => read(`/me/orders/${encodeURIComponent(order.id)}`), "Đã cập nhật đơn vé.", (result) => { setSelected(result); setTab(2); });
   const onCreated = (order) => { setSelected(order); void refreshPurchases(); };
   const everything = combineRemotes(identity, types, plans, links, vehicles, vehicleRequests, passes, timedPasses, orders, sessions, receipts, notifications, refunds, requestedDetail);
-  return <Workspace title="Bãi xe của tôi" description="Quản lý xe, mua vé, đặt chỗ và theo dõi các lượt gửi của bạn." remote={everything}
+  return <Workspace title={tab === 5 ? "Hỗ trợ" : "Vé & lịch sử"} description={tab === 5 ? "Theo dõi trao đổi với bãi xe và yêu cầu hoàn tiền." : "Vé đã mua, lượt gửi và các chứng từ thuộc tài khoản của bạn."} remote={everything}
     actions={[identityAction, vehicleAction, orderAction, notificationAction, downloadAction, { busy: purchaseLocked }]}>
     {identity.error && <Alert severity="error" action={<Button color="inherit" size="small" onClick={identity.reload} disabled={identity.loading}>Thử lại</Button>}>Hồ sơ: {identity.error}</Alert>}
-    {data && !linked && <>
+    {tab !== 5 && <Tabs value={tab} onChange={(_, value) => setTab(value)} variant="scrollable" scrollButtons="auto" aria-label="Vé và lịch sử cá nhân"><Tab value={1} disabled={purchaseLocked} label="Vé của tôi" /><Tab value={2} disabled={purchaseLocked} label="Mua vé" /><Tab value={3} disabled={purchaseLocked} label="Lịch sử & chứng từ" /><Tab value={0} disabled={purchaseLocked} label="Xe & hồ sơ" /><Tab value={4} disabled={purchaseLocked} label="Thông báo" /></Tabs>}
+    {data && !linked && tab !== 0 && <Alert severity="info" action={<Button onClick={() => setTab(0)}>Mở hồ sơ</Button>}>Đặt chỗ trước và thanh toán bằng mã vé không cần liên kết hồ sơ. Liên kết hồ sơ để xem toàn bộ lịch sử xe, mua vé và gửi yêu cầu hỗ trợ.</Alert>}
+    {data && !linked && tab === 3 && <RemoteSection remote={receipts} title="Chứng từ đã thanh toán bằng tài khoản này">{(rows) => <><Records rows={rows} columns={[{ key: "created_at", label: "Ngày thu", render: (row) => dateTime(row.created_at) }, { key: "amount", label: "Số tiền", render: (row) => money(row.amount) }, { key: "method", label: "Phương thức", render: (row) => row.method === "demo" ? "DEMO — mô phỏng" : row.method === "cash" ? "Tiền mặt" : "Chuyển khoản" }, { key: "download", label: "Chứng từ", render: (row) => <Button size="small" disabled={downloadAction.busy} onClick={() => downloadReceipt(row)}>Tải PDF</Button> }]} />{pager(receiptsPage, receipts, downloadAction.busy)}</>}</RemoteSection>}
+    {data && !linked && tab === 0 && <>
       <Alert severity="info">Liên kết hồ sơ trước khi đăng ký xe và vé. Hồ sơ đã tồn tại cần được nhân viên xác minh để bảo vệ dữ liệu của bạn.</Alert>
       <Section title="Tạo hồ sơ khách hàng">
         <Box component="form" onSubmit={(event) => submit(identityAction)(event, () => send("/me/profile", { ...profile, email: profile.email || null }), "Đã tạo hồ sơ khách hàng.")} sx={formLayout}>
@@ -122,7 +253,6 @@ export default function CustomerPortal() {
     </>}
     {data && linked && <>
       <Typography color="text.secondary">Hồ sơ: <strong>{data.customer.full_name}</strong> · {data.customer.phone_number}</Typography>
-      <Tabs value={tab} onChange={(_, value) => setTab(value)} variant="scrollable" scrollButtons="auto" aria-label="Quản lý bãi xe cá nhân"><Tab disabled={purchaseLocked} label="Xe của tôi" /><Tab disabled={purchaseLocked} label="Vé của tôi" /><Tab disabled={purchaseLocked} label="Mua vé & đơn hàng" /><Tab disabled={purchaseLocked} label="Lịch sử & chứng từ" /><Tab disabled={purchaseLocked} label="Thông báo" /><Tab disabled={purchaseLocked} label="Hỗ trợ & hoàn tiền" /></Tabs>
       {tab === 0 && <>
         <RemoteSection remote={vehicles} title="Xe đã liên kết" description="Nhân viên duyệt yêu cầu trước khi xe được liên kết với tài khoản.">
         {(rows) => <>

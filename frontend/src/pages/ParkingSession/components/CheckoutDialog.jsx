@@ -12,7 +12,7 @@ import { settlementAmounts } from "../settlementAmounts";
 import SessionFeePayment from "../../Expansion/SessionFeePayment";
 import { singleSiteId } from "../../../utils/singleSiteMode";
 
-export default function CheckoutDialog({ sessionId, siteId, onClose, onCompleted,
+export default function CheckoutDialog({ sessionId, siteId, onClose, onCompleted, initialOnline = false, initialPaymentMethod = "",
   loadQuote = parkingSessionService.getCheckoutQuote, confirmCheckout = parkingSessionService.checkOut }) {
   const [flow] = useState(() => {
     const token = localStorage.getItem("token");
@@ -21,17 +21,18 @@ export default function CheckoutDialog({ sessionId, siteId, onClose, onCompleted
       isAuthorized: () => Boolean(token) && localStorage.getItem("token") === token });
   });
   const state = useSyncExternalStore(flow.subscribe, flow.getSnapshot, flow.getSnapshot);
-  const [onlineOpen, setOnlineOpen] = useState(false);
+  const [onlineOpen, setOnlineOpen] = useState(initialOnline);
   const paymentSite = siteId || singleSiteId();
   useEffect(() => {
-    void flow.start();
+    let active = true;
+    void flow.start().then(() => { if (active && initialPaymentMethod) flow.setPaymentMethod(initialPaymentMethod); });
     const timer = window.setInterval(flow.tick, 1000);
     const protectPending = (event) => {
       if (!flow.canDismiss()) { event.preventDefault(); event.returnValue = ""; }
     };
     window.addEventListener("beforeunload", protectPending);
-    return () => { flow.stop(); window.clearInterval(timer); window.removeEventListener("beforeunload", protectPending); };
-  }, [flow]);
+    return () => { active = false; flow.stop(); window.clearInterval(timer); window.removeEventListener("beforeunload", protectPending); };
+  }, [flow, initialPaymentMethod]);
 
   const { quote, phase, paymentMethod, paymentConfirmed, expired } = state;
   const loading = phase === "idle" || phase === "loading";

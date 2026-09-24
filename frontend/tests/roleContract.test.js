@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import { ROLE_LEVELS, hasMinimumRole } from "../src/constants/roles.js";
+import { navigationSections } from "../src/utils/navigationItems.js";
 
 
 test("frontend dùng một role ladder chuẩn và role lạ fail closed", () => {
@@ -33,11 +34,7 @@ test("manager nhìn thấy và mở được danh mục vai trò giống contrac
     new URL("../src/routes/AppRoutes.jsx", import.meta.url),
     "utf8",
   );
-  const layout = await readFile(
-    new URL("../src/layouts/MainLayout.jsx", import.meta.url),
-    "utf8",
-  );
-
   assert.match(routes, /path="roles"[^\n]+minimumRole="manager"/);
-  assert.match(layout, /text: "Vai trò"[^\n]+role: "manager"/);
+  const menu = navigationSections("manager", { legacy_workspace_allowed: true }, true);
+  assert.ok(menu.flatMap((section) => section.items).some((item) => item.path === "/roles"));
 });

@@ -32,8 +32,8 @@ export default function PublicProfileForm({ siteId, action }) {
   useEffect(() => { if (remote.data) setForm(fromProfile(remote.data)); }, [remote.data]);
   const change = (name) => (event) => setForm((old) => ({ ...old, [name]: event.target.value }));
   const canEdit = Boolean(remote.data?.can_edit);
-  return <RemoteSection remote={remote} title="Trang giới thiệu công khai" description="Thông tin dưới đây hiển thị cho khách chưa đăng nhập tại /gioi-thieu. Ô để trống sẽ hiện “Chưa cập nhật”; không tự điền địa chỉ, giờ hay giá."
-    actions={<Button component={RouterLink} to="/gioi-thieu" variant="outlined" target="_blank" rel="noopener">Xem trang công khai</Button>}>
+  return <RemoteSection remote={remote} title="Thông tin bãi" description="Địa chỉ, giờ mở cửa và liên hệ hiển thị cho khách."
+    actions={<Button component={RouterLink} to="/gioi-thieu" variant="outlined" target="_blank" rel="noopener" sx={{ whiteSpace: "nowrap", flexShrink: 0 }}>Xem trang</Button>}>
     {(profile) => <Stack spacing={2}>
       {!canEdit && <Alert severity="info">Chỉ quản lý của bãi này mới được cập nhật thông tin công khai; bạn đang xem ở chế độ chỉ đọc.</Alert>}
       <Typography variant="body2" color="text.secondary">Cập nhật lần cuối: {profile.profile_updated_at ? new Date(profile.profile_updated_at).toLocaleString("vi-VN") : "chưa cập nhật"}. Gói vé và giá vãng lai lấy từ mục Gói vé và Bảng giá hiện hành.</Typography>

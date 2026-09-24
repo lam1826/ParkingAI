@@ -1,98 +1,21 @@
-import { Card, CardContent, Box, IconButton, Tooltip, Chip, Button } from "@mui/material";
-import { DataGrid } from "@mui/x-data-grid";
-import AutorenewIcon from "@mui/icons-material/Autorenew";
-import DeleteIcon from "@mui/icons-material/Delete";
-import AddIcon from "@mui/icons-material/Add";
+import { useState } from "react";
 import formatDate from "../../../utils/formatDate";
 import { getMonthlyPassStatus } from "../../../utils/monthlyPassStatus";
 
-const MonthlyPassTable = ({ passes, loading, canManage = false, onAdd, onEdit, onDeactivate }) => {
-  // Lưu ý: MUI DataGrid v9 — valueGetter/valueFormatter nhận (value, row) thay vì params
-  const columns = [
-    { field: "card_code", headerName: "Mã thẻ", width: 130, valueGetter: (_value, row) => row.card_code || row.pass_code, renderCell: ({ value }) => <strong>{value || "—"}</strong> },
-    { field: "price", headerName: "Đã thu (đ)", width: 125, valueFormatter: value => Number(value || 0).toLocaleString("vi-VN") },
-    {
-      field: "license_plate",
-      headerName: "Biển số xe",
-      flex: 1,
-      minWidth: 130,
-      valueGetter: (_value, row) => row.vehicle?.license_plate || "N/A",
-    },
-    {
-      field: "customerName",
-      headerName: "Chủ sở hữu",
-      flex: 1.5,
-      minWidth: 180,
-      valueGetter: (_value, row) => row.customer?.full_name || "N/A",
-    },
-    {
-      field: "start_date",
-      headerName: "Ngày bắt đầu",
-      flex: 1,
-      minWidth: 120,
-      valueFormatter: (value) => (value ? formatDate(value) : "--"),
-    },
-    {
-      field: "end_date",
-      headerName: "Ngày hết hạn",
-      flex: 1,
-      minWidth: 120,
-      valueFormatter: (value) => (value ? formatDate(value) : "--"),
-    },
-    {
-      field: "status",
-      headerName: "Trạng thái",
-      flex: 1,
-      minWidth: 130,
-      renderCell: ({ row }) => {
-        const status = getMonthlyPassStatus(row);
-        return <Chip label={status.label} color={status.color} size="small" />;
-      },
-    },
-    ...(canManage ? [{
-      field: "actions",
-      headerName: "Thao tác",
-      width: 100,
-      sortable: false,
-      renderCell: (params) => (
-        <Box>
-          <Tooltip title="Gia hạn kỳ mới">
-            <IconButton aria-label={`Gia hạn thẻ ${params.row.card_code || params.row.pass_code}`} color="primary" size="small" onClick={() => onEdit(params.row)}>
-              <AutorenewIcon fontSize="small" />
-            </IconButton>
-          </Tooltip>
-          <Tooltip title="Hủy vé">
-            <IconButton aria-label="Ngừng hoạt động kỳ vé" disabled={!params.row.is_active} color="error" size="small" onClick={() => onDeactivate(params.row)}>
-              <DeleteIcon fontSize="small" />
-            </IconButton>
-          </Tooltip>
-        </Box>
-      ),
-    }] : []),
-  ];
-
-  return (
-    <Card elevation={0} sx={{ border: "1px solid #e0e0e0" }}>
-      <CardContent sx={{ p: 2, "&:last-child": { pb: 2 } }}>
-        {canManage && <Box sx={{ display: "flex", justifyContent: "flex-end", mb: 2 }}>
-          <Button variant="contained" startIcon={<AddIcon />} onClick={onAdd}>
-            Đăng ký vé tháng
-          </Button>
-        </Box>}
-        <Box sx={{ height: 500, width: "100%" }}>
-          <DataGrid
-            rows={passes}
-            columns={columns}
-            loading={loading}
-            pageSizeOptions={[10, 20, 50]}
-            initialState={{ pagination: { paginationModel: { pageSize: 10 } } }}
-            disableRowSelectionOnClick
-            sx={{ border: "none", "& .MuiDataGrid-columnHeaders": { backgroundColor: "#f5f7fb" } }}
-          />
-        </Box>
-      </CardContent>
-    </Card>
-  );
-};
-
-export default MonthlyPassTable;
+export default function MonthlyPassTable({ passes, loading, canManage = false, onEdit, onDeactivate }) {
+  const [page, setPage] = useState(0);
+  const currentPage = Math.min(page, Math.max(0, Math.ceil(passes.length / 25) - 1));
+  return <section className="surface">
+    {loading ? <p className="empty" role="status">Đang tải vé tháng…</p> : !passes.length ? <div className="empty">Chưa có kỳ vé tháng.</div> : <>
+      <div className="table-wrap"><table className="data-table core-table"><thead><tr><th scope="col">Vé / xe</th><th scope="col">Khách hàng</th><th scope="col">Thời hạn</th><th scope="col">Giá kỳ vé</th><th scope="col">Trạng thái</th>{canManage && <th scope="col">Thao tác</th>}</tr></thead>
+        <tbody>{passes.slice(currentPage * 25, currentPage * 25 + 25).map(pass => { const status = getMonthlyPassStatus(pass); return <tr key={pass.id}>
+          <td><strong className="plate">{pass.vehicle?.license_plate || "—"}</strong><div className="muted" style={{ fontSize: 12, marginTop: 4 }}>{pass.card_code || pass.pass_code || "—"}{pass.vehicle?.vehicle_type?.name ? ` · ${pass.vehicle.vehicle_type.name}` : ""}</div></td>
+          <td>{pass.customer?.full_name || "—"}</td><td>{formatDate(pass.start_date)}<br />đến hết {formatDate(pass.end_date)}</td><td>{Number(pass.price || 0).toLocaleString("vi-VN")} đ</td>
+          <td><span className={`badge ${status.color === "success" ? "success" : status.color === "warning" ? "warning" : "neutral"}`}>{status.label}</span></td>
+          {canManage && <td><div className="core-row-actions"><button className="button quiet small" onClick={() => onEdit(pass)}>Gia hạn</button><button className="button quiet small danger" disabled={!pass.is_active} onClick={() => onDeactivate(pass)}>Ngừng vé</button></div></td>}
+        </tr>; })}</tbody></table></div>
+      {passes.length > 25 && <div className="form-actions" style={{ justifyContent: "flex-end", marginTop: 18 }}><button className="button quiet small" disabled={!currentPage} onClick={() => setPage(currentPage - 1)}>Trang trước</button><span className="muted">Trang {currentPage + 1}</span><button className="button quiet small" disabled={(currentPage + 1) * 25 >= passes.length} onClick={() => setPage(currentPage + 1)}>Trang sau</button></div>}
+    </>}
+    <p className="inline-note">Vé có hiệu lực đến hết ngày kết thúc theo giờ Việt Nam. Gia hạn tạo kỳ mới; ngừng vé vẫn giữ các kỳ đã sử dụng và chứng từ.</p>
+  </section>;
+}

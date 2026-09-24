@@ -17,7 +17,7 @@ const initialForm = {
   customer_id: "",
 };
 
-const VehicleDialog = ({ isOpen, onClose, onSave, vehicle, vehicleTypes, customers, submitting }) => {
+const VehicleDialog = ({ inline = false, isOpen, onClose, onSave, vehicle, vehicleTypes, customers, submitting }) => {
   const [form, setForm] = useState(initialForm);
 
   useEffect(() => {
@@ -46,13 +46,15 @@ const VehicleDialog = ({ isOpen, onClose, onSave, vehicle, vehicleTypes, custome
     });
   };
 
+  if (inline && !isOpen) return null;
+  const Container = inline ? "section" : Dialog;
   return (
-    <Dialog open={isOpen} onClose={onClose} maxWidth="sm" fullWidth>
-      <DialogTitle fontWeight="bold">
+    <Container {...(inline ? { className: "surface core-editor" } : { open: isOpen, onClose: submitting ? undefined : onClose, maxWidth: "sm", fullWidth: true })}>
+      <DialogTitle component="h2" fontWeight="bold" sx={inline ? { p: 0, mb: "22px", fontSize: "18px" } : undefined}>
         {vehicle ? "Chỉnh sửa Phương tiện" : "Thêm mới Phương tiện"}
       </DialogTitle>
       <form onSubmit={handleSubmit}>
-        <DialogContent dividers>
+        <DialogContent dividers={!inline} sx={inline ? { p: 0, overflow: "visible" } : undefined}>
           <Grid container spacing={2}>
             <Grid size={{ xs: 12, sm: 6 }}>
               <TextField
@@ -105,7 +107,7 @@ const VehicleDialog = ({ isOpen, onClose, onSave, vehicle, vehicleTypes, custome
             </Grid>
           </Grid>
         </DialogContent>
-        <DialogActions sx={{ p: 2 }}>
+        <DialogActions sx={inline ? { p: 0, mt: "20px", justifyContent: "flex-start", flexWrap: "wrap", gap: 1 } : { p: 2 }}>
           <Button onClick={onClose} variant="outlined" disabled={submitting}>
             Hủy
           </Button>
@@ -119,7 +121,7 @@ const VehicleDialog = ({ isOpen, onClose, onSave, vehicle, vehicleTypes, custome
           </Button>
         </DialogActions>
       </form>
-    </Dialog>
+    </Container>
   );
 };
 

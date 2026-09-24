@@ -20,7 +20,7 @@ export default function SessionFeePayment({ sessionId, siteId, onChanged }) {
   const refresh = async () => { await flow.load(); await onChanged?.(); };
   return <Stack spacing={2} component="section" aria-label="Thanh toán phí lượt gửi">
     <Typography variant="h6" component="h3">Thanh toán phí lượt gửi</Typography>
-    <Typography color="text.secondary">{closed ? "Lượt đã kết thúc. Kiểm tra các khoản đã thu và chứng từ trong lịch sử." : "Thanh toán trước khi ra. Nhân viên vẫn cần xác nhận xe ra; thời gian gửi thêm có thể phát sinh phí."}</Typography>
+    <Typography color="text.secondary">{closed ? "Lượt đã kết thúc. Kiểm tra các khoản đã thu và chứng từ trong lịch sử." : "Thanh toán trước khi ra. Lượt gửi chỉ kết thúc khi xe được ghi nhận ra tại cổng; thời gian gửi thêm có thể phát sinh phí."}</Typography>
     {busy && <Typography role="status">Đang kiểm tra phí và khoản đã trả…</Typography>}
     {state.error && <Alert severity={uncertain ? "warning" : "error"}>{state.error}</Alert>}
     {data && <>

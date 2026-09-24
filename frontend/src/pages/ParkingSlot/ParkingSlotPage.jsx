@@ -1,227 +1,87 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import {
-  Alert,
-  Box,
-  Button,
-  Chip,
-  CircularProgress,
-  MenuItem,
-  Paper,
-  Stack,
-  TextField,
-  ToggleButton,
-  ToggleButtonGroup,
-  Typography,
-} from "@mui/material";
-import GridViewIcon from "@mui/icons-material/GridView";
-import TableRowsIcon from "@mui/icons-material/TableRows";
-import RefreshIcon from "@mui/icons-material/Refresh";
-import CrudPage from "../../components/common/CrudPage";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { CrudFields, extractErrorMessage } from "../../components/common/CrudPage";
+import { PageHeader, WorkspaceTabs, PrototypeIcon } from "../../components/common/PrototypeUI";
 import { getParkingSlotVisualStatus } from "../../utils/parkingSlotStatus";
 import { vehicleTypeService } from "../VehicleType/services/vehicleTypeService";
 import { zoneService } from "../Zone/services/zoneService";
 import { parkingSlotService } from "./parkingSlotService";
+import { items, read } from "../Expansion/shared";
 import useCorePermissions from "../../hooks/useCorePermissions";
 
-const slotColors = {
-  available: { background: "#e8f5e9", border: "#43a047", text: "#1b5e20", label: "Còn trống" },
-  occupied: { background: "#ffebee", border: "#e53935", text: "#b71c1c", label: "Đang có xe" },
-  inactive: { background: "#eceff1", border: "#90a4ae", text: "#455a64", label: "Bảo trì / ngừng dùng" },
-};
-
+const labels = { available: "Còn nhận xe", occupied: "Đang có xe", reserved: "Đã giữ chỗ", inactive: "Ngừng phục vụ", unknown: "Chưa rõ khả dụng" };
 export default function ParkingSlotPage() {
   const { canManageConfiguration } = useCorePermissions();
-  const [view, setView] = useState("map");
-  const [zones, setZones] = useState([]);
-  const [types, setTypes] = useState([]);
-  const [slots, setSlots] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [zoneFilter, setZoneFilter] = useState("all");
-  const [typeFilter, setTypeFilter] = useState("all");
-  const [statusFilter, setStatusFilter] = useState("all");
-
-  const loadMapData = useCallback(async () => {
-    setLoading(true);
-    setError("");
+  const [zones, setZones] = useState([]), [types, setTypes] = useState([]), [slots, setSlots] = useState([]), [inventory, setInventory] = useState([]);
+  const [loading, setLoading] = useState(true), [error, setError] = useState("");
+  const [filters, setFilters] = useState({ zone: "", status: "", type: "" }), [draftFilters, setDraftFilters] = useState(filters);
+  const [editor, setEditor] = useState(null), [form, setForm] = useState({}), [formError, setFormError] = useState(""), [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState("");
+  const working = useRef(false), formRef = useRef(null);
+  const load = useCallback(async () => {
+    setLoading(true); setError("");
     try {
-      const [zoneList, typeList, slotList] = await Promise.all([
-        zoneService.getAll(),
-        vehicleTypeService.getAll(),
-        parkingSlotService.getAll(),
+      const [zoneList, typeList, slotList, inventories] = await Promise.all([
+        zoneService.getAll(), vehicleTypeService.getAll(), parkingSlotService.getAll(),
+        read("/sites").then(data => Promise.all(items(data).map(site => read(`/sites/${site.id}/availability`)))),
       ]);
-      setZones(zoneList);
-      setTypes(typeList);
-      setSlots(slotList);
-    } catch (requestError) {
-      setError(requestError.response?.data?.detail || "Không thể tải sơ đồ chỗ đỗ.");
-    } finally {
-      setLoading(false);
-    }
+      setZones(zoneList); setTypes(typeList); setSlots(slotList); setInventory(inventories.flatMap(data => data.slots || []));
+    } catch (failure) { setSlots([]); setInventory([]); setError(extractErrorMessage(failure, "Không thể tải sơ đồ chỗ đỗ.")); }
+    finally { setLoading(false); }
   }, []);
-
-  useEffect(() => {
-    loadMapData();
-  }, [loadMapData, view]);
-
-  const enrichedSlots = useMemo(() => {
-    const zoneMap = new Map(zones.map((item) => [item.id, item]));
-    const typeMap = new Map(types.map((item) => [item.id, item]));
-    return slots.map((slot) => {
-      const zone = zoneMap.get(slot.zone_id);
-      return {
-        ...slot,
-        zone,
-        vehicleType: typeMap.get(slot.vehicle_type_id),
-        visualStatus: getParkingSlotVisualStatus(slot, zone),
-      };
-    });
-  }, [slots, types, zones]);
-
-  const filteredSlots = useMemo(() => enrichedSlots.filter((slot) => (
-    (zoneFilter === "all" || slot.zone_id === Number(zoneFilter))
-    && (typeFilter === "all" || slot.vehicle_type_id === Number(typeFilter))
-    && (statusFilter === "all" || slot.visualStatus === statusFilter)
-  )), [enrichedSlots, statusFilter, typeFilter, zoneFilter]);
-
-  const groupedSlots = useMemo(() => {
-    const groups = new Map();
-    filteredSlots.forEach((slot) => {
-      const key = slot.zone_id;
-      if (!groups.has(key)) groups.set(key, { zone: slot.zone, slots: [] });
-      groups.get(key).slots.push(slot);
-    });
-    return [...groups.values()].sort((left, right) => (left.zone?.name || "").localeCompare(right.zone?.name || ""));
-  }, [filteredSlots]);
-
-  const totals = useMemo(() => enrichedSlots.reduce((result, slot) => {
-    result[slot.visualStatus] += 1;
-    return result;
-  }, { available: 0, occupied: 0, inactive: 0 }), [enrichedSlots]);
-
+  useEffect(() => { void load(); }, [load]);
+  useEffect(() => { if (editor) formRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" }); }, [editor]);
+  const enriched = useMemo(() => {
+    const zoneMap = new Map(zones.map(row => [row.id, row])), typeMap = new Map(types.map(row => [row.id, row])), live = new Map(inventory.map(row => [row.id, row]));
+    return slots.map(slot => ({ ...slot, zone: zoneMap.get(slot.zone_id), vehicleType: typeMap.get(slot.vehicle_type_id), visualStatus: getParkingSlotVisualStatus(slot, zoneMap.get(slot.zone_id), typeMap.get(slot.vehicle_type_id), live.get(slot.id) ?? null) }));
+  }, [slots, zones, types, inventory]);
+  const filtered = enriched.filter(slot => (!filters.zone || slot.zone_id === Number(filters.zone)) && (!filters.type || slot.vehicle_type_id === Number(filters.type)) && (!filters.status || slot.visualStatus === filters.status));
+  const groups = new Map();
+  filtered.forEach(slot => { if (!groups.has(slot.zone_id)) groups.set(slot.zone_id, []); groups.get(slot.zone_id).push(slot); });
+  const grouped = [...groups.values()].sort((a, b) => (a[0].zone?.name || "").localeCompare(b[0].zone?.name || "", "vi"));
+  const totals = enriched.reduce((sum, slot) => { sum[slot.visualStatus] += 1; return sum; }, { available: 0, occupied: 0, reserved: 0, inactive: 0, unknown: 0 });
   const fields = [
     { name: "slot_name", label: "Mã vị trí", required: true },
-    {
-      name: "zone_id",
-      label: "Khu vực",
-      type: "select",
-      required: true,
-      options: zones.map((item) => ({ value: item.id, label: item.name })),
-    },
-    {
-      name: "vehicle_type_id",
-      label: "Loại xe",
-      type: "select",
-      required: true,
-      options: types.map((item) => ({ value: item.id, label: item.name })),
-    },
-    { name: "is_active", label: "Đang hoạt động", type: "boolean" },
+    { name: "zone_id", label: "Khu vực", type: "select", required: true, options: zones.map(row => ({ value: row.id, label: row.name })) },
+    { name: "vehicle_type_id", label: "Loại xe", type: "select", required: true, options: types.map(row => ({ value: row.id, label: row.name })) },
+    { name: "is_active", label: "Vị trí hoạt động", type: "boolean" },
   ];
-
-  return (
-    <Stack spacing={2.5}>
-      <Stack
-        direction={{ xs: "column", sm: "row" }}
-        gap={2}
-        sx={{
-          justifyContent: "space-between",
-          alignItems: { xs: "stretch", sm: "center" },
-        }}
-      >
-        <Box>
-          <Typography variant="h5" fontWeight="bold">Quản lý vị trí đỗ</Typography>
-          <Typography color="text.secondary">Theo dõi trực quan tình trạng từng vị trí theo khu vực.</Typography>
-        </Box>
-        <ToggleButtonGroup
-          exclusive
-          size="small"
-          value={view}
-          onChange={(_, nextView) => nextView && setView(nextView)}
-        >
-          <ToggleButton value="map"><GridViewIcon sx={{ mr: 1 }} />Sơ đồ</ToggleButton>
-          <ToggleButton value="table"><TableRowsIcon sx={{ mr: 1 }} />Danh sách</ToggleButton>
-        </ToggleButtonGroup>
-      </Stack>
-
-      {view === "table" ? (
-        <CrudPage title="Danh sách vị trí đỗ" service={parkingSlotService} fields={fields} canEdit={canManageConfiguration}
-          readOnlyMessage="Bạn có thể tra cứu chỗ đỗ. Quản lý phụ trách thêm và sửa vị trí." />
-      ) : (
-        <>
-          <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-            <Chip color="success" label={`Còn trống: ${totals.available}`} />
-            <Chip color="error" label={`Đang có xe: ${totals.occupied}`} />
-            <Chip label={`Bảo trì / ngừng dùng: ${totals.inactive}`} />
-            <Chip variant="outlined" label={`Tổng vị trí: ${enrichedSlots.length}`} />
-          </Stack>
-
-          <Paper sx={{ p: 2 }}>
-            <Stack
-              direction={{ xs: "column", md: "row" }}
-              spacing={2}
-              sx={{ alignItems: { md: "center" } }}
-            >
-              <TextField select size="small" label="Khu vực" value={zoneFilter} onChange={(event) => setZoneFilter(event.target.value)} sx={{ minWidth: 180 }}>
-                <MenuItem value="all">Tất cả khu vực</MenuItem>
-                {zones.map((zone) => <MenuItem key={zone.id} value={zone.id}>{zone.name}</MenuItem>)}
-              </TextField>
-              <TextField select size="small" label="Loại xe" value={typeFilter} onChange={(event) => setTypeFilter(event.target.value)} sx={{ minWidth: 180 }}>
-                <MenuItem value="all">Tất cả loại xe</MenuItem>
-                {types.map((type) => <MenuItem key={type.id} value={type.id}>{type.name}</MenuItem>)}
-              </TextField>
-              <TextField select size="small" label="Trạng thái" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} sx={{ minWidth: 190 }}>
-                <MenuItem value="all">Tất cả trạng thái</MenuItem>
-                <MenuItem value="available">Còn trống</MenuItem>
-                <MenuItem value="occupied">Đang có xe</MenuItem>
-                <MenuItem value="inactive">Bảo trì / ngừng dùng</MenuItem>
-              </TextField>
-              <Button startIcon={<RefreshIcon />} onClick={loadMapData}>Làm mới</Button>
-            </Stack>
-          </Paper>
-
-          {error && <Alert severity="error">{error}</Alert>}
-          {loading ? (
-            <Box sx={{ display: "flex", justifyContent: "center", py: 8 }}><CircularProgress /></Box>
-          ) : groupedSlots.length === 0 ? (
-            <Alert severity="info">Không có vị trí phù hợp với bộ lọc.</Alert>
-          ) : groupedSlots.map(({ zone, slots: zoneSlots }) => (
-            <Paper key={zone?.id || "unknown"} sx={{ p: 2.5 }}>
-              <Stack
-                direction={{ xs: "column", sm: "row" }}
-                sx={{ justifyContent: "space-between", mb: 2 }}
-              >
-                <Typography variant="h6" fontWeight={700}>{zone?.name || "Chưa xác định khu vực"}</Typography>
-                <Typography color="text.secondary">
-                  {zoneSlots.filter((slot) => slot.visualStatus === "available").length}/{zoneSlots.length} vị trí đang trống
-                </Typography>
-              </Stack>
-              <Box sx={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(145px, 1fr))", gap: 1.5 }}>
-                {zoneSlots.map((slot) => {
-                  const style = slotColors[slot.visualStatus];
-                  return (
-                    <Box
-                      key={slot.id}
-                      sx={{
-                        minHeight: 105,
-                        p: 1.5,
-                        borderRadius: 2,
-                        border: "2px solid",
-                        borderColor: style.border,
-                        bgcolor: style.background,
-                        color: style.text,
-                      }}
-                    >
-                      <Typography fontWeight={800}>{slot.slot_name}</Typography>
-                      <Typography variant="caption" display="block">{slot.vehicleType?.name || "Chưa có loại xe"}</Typography>
-                      <Typography variant="caption" fontWeight={700}>{style.label}</Typography>
-                    </Box>
-                  );
-                })}
-              </Box>
-            </Paper>
-          ))}
-        </>
-      )}
-    </Stack>
-  );
+  const open = row => {
+    if (!canManageConfiguration || busy) return;
+    setEditor(row || {}); setForm({ slot_name: row?.slot_name || "", zone_id: row?.zone_id || "", vehicle_type_id: row?.vehicle_type_id || "", is_active: row?.is_active ?? true }); setFormError(""); setNotice("");
+  };
+  const save = async event => {
+    event.preventDefault();
+    if (!canManageConfiguration || working.current) return;
+    working.current = true; setBusy(true); setFormError("");
+    try {
+      const payload = { ...form, zone_id: Number(form.zone_id), vehicle_type_id: Number(form.vehicle_type_id) };
+      if (editor.id) await parkingSlotService.update(editor.id, payload); else await parkingSlotService.create(payload);
+      setEditor(null); setNotice("Đã lưu vị trí đỗ."); await load();
+    } catch (failure) { setFormError(extractErrorMessage(failure, "Không thể lưu vị trí đỗ.")); }
+    finally { working.current = false; setBusy(false); }
+  };
+  const remove = async row => {
+    if (!canManageConfiguration || working.current || !window.confirm(`Xóa vị trí ${row.slot_name}?`)) return;
+    working.current = true; setBusy(true);
+    try { await parkingSlotService.delete(row.id); setNotice("Đã xóa vị trí đỗ."); await load(); }
+    catch (failure) { setError(extractErrorMessage(failure, "Không thể xóa vị trí đã được sử dụng. Có thể ngừng hoạt động để giữ lịch sử.")); }
+    finally { working.current = false; setBusy(false); }
+  };
+  const resetFilters = () => { const empty = { zone: "", status: "", type: "" }; setFilters(empty); setDraftFilters(empty); };
+  return <>
+    <PageHeader title="Bãi đỗ" description="Quản lý khu vực, chỗ đỗ và khả năng nhận xe tại một bãi." actions={canManageConfiguration && <button className="button primary" disabled={busy} onClick={() => open(null)}><PrototypeIcon name="plus" />Thêm vị trí đỗ</button>} />
+    <WorkspaceTabs />
+    {!canManageConfiguration && <p className="inline-note">Bạn có thể tra cứu chỗ đỗ. Quản lý phụ trách thêm và sửa vị trí.</p>}
+    <div className="stat-strip"><span className="stat-item"><strong>{totals.available}</strong>còn nhận xe</span><span className="stat-item"><strong>{totals.occupied}</strong>đang có xe</span><span className="stat-item"><strong>{totals.reserved}</strong>giữ chỗ</span><span className="stat-item"><strong>{totals.inactive}</strong>ngừng phục vụ</span>{totals.unknown > 0 && <span className="stat-item"><strong>{totals.unknown}</strong>chưa rõ khả dụng</span>}</div>
+    {notice && <p className="inline-note success" role="status">{notice}</p>}
+    {editor && canManageConfiguration && <section ref={formRef} className="surface core-editor"><div className="section-head"><h2>{editor.id ? "Sửa" : "Thêm"} vị trí đỗ</h2></div><form className="form-grid" onSubmit={save}><CrudFields fields={fields} form={form} disabled={busy} onChange={(name, value) => setForm(old => ({ ...old, [name]: value }))} /><p className="inline-note core-wide">Ô có xe, giữ chỗ hoặc lịch sử sử dụng được bảo vệ khỏi thay đổi không phù hợp.</p>{formError && <p role="alert" className="form-error core-wide">{formError}</p>}<div className="form-actions core-wide"><button className="button primary" disabled={busy}>{busy ? "Đang lưu…" : "Lưu thay đổi"}</button><button type="button" className="button secondary" disabled={busy} onClick={() => setEditor(null)}>Hủy</button></div></form></section>}
+    <section className="surface"><form className="form-grid" onSubmit={event => { event.preventDefault(); setFilters(draftFilters); }}>
+      <label className="field">Khu vực<select value={draftFilters.zone} onChange={event => setDraftFilters(old => ({ ...old, zone: event.target.value }))}><option value="">Tất cả khu vực</option>{zones.map(zone => <option key={zone.id} value={zone.id}>{zone.name}</option>)}</select></label>
+      <label className="field">Tình trạng vị trí<select value={draftFilters.status} onChange={event => setDraftFilters(old => ({ ...old, status: event.target.value }))}><option value="">Tất cả trạng thái</option>{Object.entries(labels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+      <div className="form-actions core-wide"><button className="button secondary">Lọc vị trí</button><button type="button" className="button quiet" onClick={resetFilters}>Xóa bộ lọc</button><button type="button" className="button quiet" disabled={loading || busy} onClick={load}>Làm mới</button><details><summary className="muted">Lọc theo loại xe</summary><label className="field">Loại xe<select value={draftFilters.type} onChange={event => setDraftFilters(old => ({ ...old, type: event.target.value }))}><option value="">Tất cả loại xe</option>{types.map(type => <option key={type.id} value={type.id}>{type.name}</option>)}</select></label></details></div>
+    </form></section>
+    {error && <p className="form-error" role="alert">{error}</p>}
+    {loading ? <section className="surface empty" role="status">Đang tải sơ đồ chỗ đỗ…</section> : !grouped.length ? <section className="surface empty">Không có vị trí phù hợp. Đổi bộ lọc hoặc thêm vị trí mới.</section> : grouped.map(group => <section className="surface core-zone" key={group[0].zone_id}><div className="section-head"><div><h2>{group[0].zone?.name || "Chưa xác định khu vực"}</h2><p>{group.length} vị trí trong bộ lọc</p></div></div><div className="availability-grid core-slot-grid">{group.map(slot => <div key={slot.id} className={`slot ${slot.visualStatus === "reserved" ? "held" : slot.visualStatus === "unknown" ? "inactive" : slot.visualStatus}`}><strong>{slot.slot_name}</strong><span>{labels[slot.visualStatus]}</span>{canManageConfiguration && <button className="button quiet small" disabled={busy} onClick={() => open(slot)}>Sửa</button>}</div>)}</div></section>)}
+    <details className="surface core-details"><summary>Danh sách vị trí & thao tác</summary><div className="table-wrap"><table className="data-table core-table"><thead><tr><th scope="col">Vị trí</th><th scope="col">Khu vực</th><th scope="col">Loại xe</th><th scope="col">Trạng thái</th>{canManageConfiguration && <th scope="col">Thao tác</th>}</tr></thead><tbody>{filtered.map(slot => <tr key={slot.id}><td><strong>{slot.slot_name}</strong></td><td>{slot.zone?.name || "—"}</td><td>{slot.vehicleType?.name || "—"}</td><td>{labels[slot.visualStatus]}</td>{canManageConfiguration && <td><div className="core-row-actions"><button className="button quiet small" disabled={busy} onClick={() => open(slot)}>Sửa</button><button className="button quiet small danger" disabled={busy} onClick={() => remove(slot)}>Xóa</button></div></td>}</tr>)}</tbody></table></div>{!filtered.length && <p className="empty">Không có vị trí phù hợp.</p>}</details>
+  </>;
 }

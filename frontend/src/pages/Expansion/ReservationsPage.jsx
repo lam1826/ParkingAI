@@ -1,107 +1,109 @@
-import { useCallback, useState } from "react";
-import { Alert, Box, Button, MenuItem, Tab, Tabs, TextField, Typography } from "@mui/material";
-import { Link, useNavigate } from "react-router-dom";
-import FleetSection from "./FleetSection";
-import { Availability, BookingForm, BookingRecords, WaitlistRecords } from "./siteComponents";
-import { combineRemotes, items, PageControls, read, refreshAll, RemoteSection, Section, send, useAction, usePage, useRemote, useSites, Workspace, SitePicker } from "./shared";
+import { useCallback, useContext, useRef, useState } from "react";
+import { Alert, Button, Stack } from "@mui/material";
+import { Link } from "react-router-dom";
+import { AuthContext } from "../../context/AuthContext";
+import { PageHeader, PrototypeIcon } from "../../components/common/PrototypeUI";
+import { nextBookingWindow } from "./siteForms";
+import { advanceBookingBody, uncertainMutation } from "./customerFlow";
+import { dateTime, items, PageControls, read, Records, refreshAll, RemoteSection, requestKey, send, StateChip, useAction, usePage, useRemote, useSites, SitePicker } from "./shared";
 
-const RESERVATION_STATES = [["", "Tất cả"], ["confirmed", "Đã đặt"], ["arrived", "Đã đến"], ["cancelled", "Đã hủy"], ["expired", "Hết hạn"]];
-const WAITLIST_STATES = [["", "Tất cả"], ["waiting", "Đang chờ"], ["offered", "Đã có chỗ"], ["cancelled", "Đã hủy"]];
-const loadProfile = () => read("/me/profile");
+const loadTypes = () => read("/catalog/vehicle-types").then(items);
+const labels = { confirmed: "Đã giữ chỗ", arrived: "Đã đến", cancelled: "Đã hủy", expired: "Hết hạn" };
 
-function BookingFeedback({ remote, label }) {
+function PreviousBookings({ siteId }) {
+  const loadPrevious = useCallback(async () => {
+    const profile = await read("/me/profile");
+    return profile.linked ? read("/me/reservations", { site_id: siteId, limit: 50 }).then(items) : [];
+  }, [siteId]);
+  const rows = useRemote(loadPrevious);
+  const action = useAction(rows.reload);
+  return <Stack spacing={2}>
+    {action.error && <Alert severity="error">{action.error}</Alert>}
+    {action.notice && <Alert severity="success">{action.notice}</Alert>}
+    <RemoteSection remote={rows} title="Đặt chỗ từ vé hoặc quyền đã cấp" description="Các đặt chỗ cũ được giữ nguyên. Vé trả trước và chứng từ nằm trong Vé & lịch sử.">
+      {(records) => <Records rows={records} columns={[{ key: "start_at", label: "Đến", render: (row) => dateTime(row.start_at) }, { key: "end_at", label: "Đi", render: (row) => dateTime(row.end_at) }, { key: "status", label: "Trạng thái", render: (row) => <StateChip value={row.status} label={labels[row.status]} /> }, { key: "action", label: "Thao tác", render: (row) => row.order_id ? <Button component={Link} to={`/portal?order=${encodeURIComponent(row.order_id)}`}>Xem đơn vé</Button> : row.status === "confirmed" ? <Button disabled={action.busy} onClick={() => void action.run(() => send(`/me/reservations/${row.id}/cancel`), "Đã hủy đặt chỗ.")}>Hủy đặt chỗ</Button> : "—" }]} empty="Không có đặt chỗ cũ." />}
+    </RemoteSection>
+  </Stack>;
+}
+
+function AdvanceBookings({ site }) {
+  const types = useRemote(loadTypes);
+  const page = usePage({}, 25);
+  const loadBookings = useCallback(() => read("/me/advance-bookings", { site_id: site.id, limit: page.size, offset: page.params.offset }), [site.id, page.size, page.params.offset]);
+  const bookings = useRemote(loadBookings);
+  const loadAvailability = useCallback(() => read(`/sites/${site.id}/availability`), [site.id]);
+  const availability = useRemote(loadAvailability);
+  const action = useAction(refreshAll(bookings, availability));
+  const [form, setForm] = useState(() => ({ license_plate: "", vehicle_type_id: "", ...nextBookingWindow() }));
+  const [pending, setPending] = useState(false), [created, setCreated] = useState(null), [previousOpen, setPreviousOpen] = useState(false);
+  const attempt = useRef(null);
+  const typeChoices = (types.data || []).filter((row) => row.is_active !== false && (!availability.data || availability.data.slots.some((slot) => slot.vehicle_type_id === row.id)));
+  const vehicleTypeId = form.vehicle_type_id || String(typeChoices[0]?.id || "");
+  const type = types.data?.find((row) => String(row.id) === vehicleTypeId);
+  const edit = (key) => (event) => setForm((old) => ({ ...old, [key]: event.target.value }));
+  const submit = (event) => {
+    event.preventDefault();
+    void action.run(async () => {
+      if (!attempt.current) attempt.current = Object.freeze(advanceBookingBody({ ...form, vehicle_type_id: vehicleTypeId }, site.id, types.data || [], requestKey()));
+      const token = localStorage.getItem("token");
+      try {
+        const result = await send("/me/advance-bookings", attempt.current);
+        if (token !== localStorage.getItem("token")) throw new Error("Phiên đăng nhập đã thay đổi.");
+        if (!result?.id || !result.license_plate || !result.start_at || result.site_id !== site.id) throw new Error("Chưa xác nhận được kết quả đặt chỗ.");
+        attempt.current = null; setPending(false);
+        return result;
+      } catch (error) {
+        const uncertain = uncertainMutation(error);
+        if (!uncertain) attempt.current = null;
+        setPending(uncertain);
+        throw error;
+      }
+    }, "Đã giữ chỗ. Bạn thanh toán phí theo lượt gửi thực tế, không cần trả trước.", setCreated);
+  };
   return <>
-    {remote.error && <Alert severity="error" action={<Button color="inherit" size="small" onClick={remote.reload} disabled={remote.loading}>Thử lại</Button>}>{label}: {remote.error}</Alert>}
-    {remote.loading && <Typography role="status">Đang tải {label.toLowerCase()}…</Typography>}
+    <PageHeader title="Đặt chỗ trước" description="Giữ một chỗ phù hợp, thanh toán theo thời gian gửi thực tế." />
+    <div className="content-grid">
+      <section className="surface">
+        <div className="section-head"><h2>Thông tin đặt chỗ</h2></div>
+        {types.error && <Alert severity="error" action={<Button onClick={types.reload}>Thử lại</Button>}>{types.error}</Alert>}
+        {pending && <p role="alert" className="inline-note warning">Chưa xác định kết quả yêu cầu trước. Giữ nguyên thông tin và thử lại chính yêu cầu đó để tránh đặt trùng.</p>}
+        <form onSubmit={submit}>
+          <div className="form-grid">
+            <div className="field"><label htmlFor="booking-plate">{type?.requires_plate === false ? "Mã xe (nếu đã có)" : "Biển số xe"}</label><input id="booking-plate" required={type?.requires_plate !== false} value={form.license_plate} onChange={edit("license_plate")} disabled={action.busy || pending} maxLength={20} autoComplete="off" />{type?.requires_plate === false && <small>Để trống để bãi cấp mã xe; giữ mã này khi đến.</small>}</div>
+            <div className="field"><label htmlFor="booking-type">Loại xe</label><select id="booking-type" required value={vehicleTypeId} onChange={edit("vehicle_type_id")} disabled={action.busy || pending || types.loading}>{typeChoices.map((row) => <option key={row.id} value={row.id}>{row.name}</option>)}</select></div>
+            <div className="field"><label htmlFor="booking-start">Giờ đến dự kiến</label><input id="booking-start" type="datetime-local" required value={form.start_at} onChange={edit("start_at")} disabled={action.busy || pending} /></div>
+            <div className="field"><label htmlFor="booking-end">Giờ về dự kiến</label><input id="booking-end" type="datetime-local" required value={form.end_at} onChange={edit("end_at")} disabled={action.busy || pending} /></div>
+          </div>
+          <p className="inline-note">Không thu tiền trước. Chỗ được giữ đến 15 phút sau giờ hẹn; tiền gửi tính từ lúc xe vào. Giờ Việt Nam.</p>
+          <button className="button primary full" type="submit" disabled={action.busy || types.loading || !!types.error || !typeChoices.length}>{pending ? "Thử lại yêu cầu đã gửi" : action.busy ? "Đang giữ chỗ…" : "Giữ chỗ cho tôi"}<PrototypeIcon name="arrow" /></button>
+        </form>
+        {action.error && <p role="alert" className="inline-note warning">{action.error}</p>}
+        {created && <p role="status" className="inline-note success">Xe <strong>{created.license_plate}</strong> · {created.slot_name || "Đã phân vị trí"}. Đến trước <strong>{dateTime(created.arrival_deadline)}</strong>. Khi vào bãi, nhận mã tra phí riêng trên vé.</p>}
+        {!created && action.notice && <p className="inline-note success" role="status">{action.notice}</p>}
+      </section>
+      <section className="surface">
+        <div className="section-head"><h2>Lịch sắp đến</h2></div>
+        {bookings.error && <Alert severity="error" action={<Button onClick={bookings.reload}>Thử lại</Button>}>{bookings.error}</Alert>}
+        {bookings.loading && <p className="muted" role="status">Đang tải lịch đặt chỗ…</p>}
+        {items(bookings.data).map((row) => <div className="booking-row" key={row.id}>
+          <div><div className="plate">{row.license_plate}</div><p>{types.data?.find((item) => item.id === row.vehicle_type_id)?.name || "Xe"} · {dateTime(row.start_at)} → {dateTime(row.end_at)}</p><p>{row.slot_name || "Vị trí phù hợp đã được giữ"}</p></div>
+          <div><span className={`badge ${row.status === "confirmed" ? "success" : "neutral"}`}>{labels[row.status] || row.status}</span>{row.status === "confirmed" && <button className="button quiet small" type="button" disabled={action.busy || pending} onClick={() => void action.run(() => send(`/me/advance-bookings/${encodeURIComponent(row.id)}/cancel`), "Đã hủy đặt chỗ.", () => setCreated(null))}>Hủy</button>}</div>
+        </div>)}
+        {!bookings.loading && !bookings.error && !items(bookings.data).length && <div className="empty"><PrototypeIcon name="calendar" />Chưa có đặt chỗ. Bạn vẫn có thể đến gửi trực tiếp.</div>}
+        {(page.page > 0 || items(bookings.data).length >= page.size) && <PageControls page={page.page} count={items(bookings.data).length} size={page.size} busy={bookings.loading || action.busy || pending} onChange={page.setPage} />}
+      </section>
+    </div>
+    <details className="demo-help" onToggle={(event) => setPreviousOpen(event.currentTarget.open)}><summary>Đặt chỗ và vé trước đây</summary>{previousOpen && <PreviousBookings siteId={site.id} />}</details>
   </>;
 }
 
-function StatusFilter({ label, value, options, onChange, disabled }) {
-  return <TextField select size="small" label={label} value={value} onChange={(event) => onChange(event.target.value)} disabled={disabled} sx={{ minWidth: 180 }}>
-    {options.map(([key, text]) => <MenuItem key={key} value={key}>{text}</MenuItem>)}
-  </TextField>;
+function CustomerReservations() {
+  const sites = useSites();
+  const selected = sites.sites.find((site) => String(site.id) === String(sites.siteId));
+  return <>{sites.sites.length > 1 && !sites.singleSiteMode && <SitePicker sites={sites} sx={{ mb: 2 }} />}{selected ? <AdvanceBookings key={selected.id} site={selected} /> : <><PageHeader title="Đặt chỗ trước" description="Giữ một chỗ phù hợp, thanh toán theo thời gian gửi thực tế." />{sites.error ? <Alert severity="error" action={<Button onClick={sites.reload}>Thử lại</Button>}>{sites.error}</Alert> : <p className="muted" role="status">{sites.loading ? "Đang tải bãi đỗ…" : "Chưa có bãi đang hoạt động."}</p>}</>}</>;
 }
-
-function MySiteBookings({ site, organizations }) {
-  const [tab, setTab] = useState("booking");
-  const [useGrantedRight, setUseGrantedRight] = useState(false);
-  const navigate = useNavigate();
-  const paidPackages = site.customer_booking_mode === "paid_packages";
-  const loadAvailability = useCallback(() => read(`/sites/${site.id}/availability`), [site.id]);
-  const profile = useRemote(loadProfile);
-  const availability = useRemote(loadAvailability);
-  const linked = profile.data?.linked;
-  const loadVehicles = useCallback(() => linked ? read("/me/vehicles").then(items) : Promise.resolve([]), [linked]);
-  const vehicles = useRemote(loadVehicles);
-  const bookingPage = usePage({ status: "" });
-  const waitlistPage = usePage({ status: "" });
-  const loadReservations = useCallback(() => linked
-    ? read("/me/reservations", { site_id: site.id, ...bookingPage.params, ...(bookingPage.filters.status ? { status: bookingPage.filters.status } : {}) }).then(items)
-    : Promise.resolve([]), [site.id, linked, bookingPage.params.offset, bookingPage.filters.status]); // eslint-disable-line react-hooks/exhaustive-deps
-  const loadWaitlist = useCallback(() => linked
-    ? read("/me/waitlist", { site_id: site.id, ...waitlistPage.params, ...(waitlistPage.filters.status ? { status: waitlistPage.filters.status } : {}) }).then(items)
-    : Promise.resolve([]), [site.id, linked, waitlistPage.params.offset, waitlistPage.filters.status]); // eslint-disable-line react-hooks/exhaustive-deps
-  const reservations = useRemote(loadReservations);
-  const waitlist = useRemote(loadWaitlist);
-  // A booking changes physical availability; an offer turns a waitlist row into a reservation.
-  const bookingAction = useAction(refreshAll(reservations, availability));
-  const waitlistAction = useAction(refreshAll(waitlist, reservations, availability));
-  const slots = availability.data?.slots || [];
-  const ownedVehicles = vehicles.data || [];
-  const formUnavailable = vehicles.loading || !!vehicles.error || (tab === "booking" && (availability.loading || !availability.data));
-  return <Workspace title={`Đặt chỗ tại ${site.name}`} description="Chọn khung giờ, giữ chỗ và theo dõi danh sách chờ. Nhân viên xác nhận xe đến tại bãi." remote={combineRemotes(profile, vehicles, availability, reservations, waitlist)} actions={[bookingAction, waitlistAction]}>
-    <BookingFeedback remote={profile} label="Hồ sơ khách" />
-    <BookingFeedback remote={vehicles} label="Xe của tôi" />
-    {tab !== "availability" && <BookingFeedback remote={availability} label="Chỗ trống" />}
-    <Tabs value={tab} onChange={(_, value) => setTab(value)} variant="scrollable" scrollButtons="auto" aria-label="Đặt chỗ và đội xe">
-      <Tab label="Đặt chỗ" value="booking" /><Tab label="Danh sách chờ" value="waitlist" /><Tab label="Chỗ trống" value="availability" /><Tab label="Đội xe của tôi" value="fleet" />
-    </Tabs>
-    {tab === "availability" && <RemoteSection remote={availability} title="Tình trạng vị trí">{(data) => <Availability data={data} />}</RemoteSection>}
-    {tab === "fleet" && <FleetSection organizations={organizations.filter((row) => row.site_id === site.id)} />}
-    {["booking", "waitlist"].includes(tab) && profile.data && <>
-      {!linked ? <Alert severity="info" action={<Button component={Link} to="/portal">Mở hồ sơ</Button>}>Tạo hồ sơ khách hàng hoặc chờ quản lý xác minh hồ sơ để đăng ký chỗ.</Alert> : <>
-        {vehicles.data && !ownedVehicles.length && <Alert severity="info" action={<Button component={Link} to="/portal">Đăng ký xe</Button>}>Bạn cần ít nhất một xe đã được duyệt.</Alert>}
-        {paidPackages && <Section title="Mua vé kèm đặt chỗ" description="Vé giờ/ngày gồm quyền gửi và chỗ đỗ trong khung giờ đã chọn. Chỉ một đơn cho cả hai quyền, không thêm phí đặt chỗ riêng.">
-          <Button component={Link} to="/portal?tab=purchase&kind=hourly" variant="contained" sx={{ alignSelf: "flex-start" }}>Chọn gói giờ / ngày</Button>
-          <Button variant="text" sx={{ alignSelf: "flex-start" }} onClick={() => setUseGrantedRight((old) => !old)}>{useGrantedRight ? "Đóng phần quyền đã cấp" : "Tôi có quyền bảo đảm chỗ đã được cấp"}</Button>
-          {useGrantedRight && <Alert severity="info">Máy chủ kiểm tra quyền bảo đảm chỗ còn hiệu lực do quản lý cấp. Vé tháng thông thường không bao gồm quyền này.</Alert>}
-        </Section>}
-        {(!paidPackages || useGrantedRight) && <Section title={tab === "booking" ? "Giữ một vị trí" : "Đăng ký khi chưa còn chỗ"} description={tab === "booking" ? "Đến trong 15 phút từ giờ bắt đầu. Đặt chỗ riêng không bao gồm phí gửi xe." : "Danh sách chờ chưa giữ chỗ. Khi nhân viên cấp vị trí, đặt chỗ mới sẽ xuất hiện ở mục Đặt chỗ."}>
-          <Box component="fieldset" disabled={formUnavailable} sx={{ border: 0, p: 0, m: 0, minWidth: 0 }}>
-            <BookingForm key={tab} siteId={site.id} vehicles={ownedVehicles} slots={slots} action={tab === "waitlist" ? waitlistAction : bookingAction} kind={tab === "waitlist" ? "waitlist" : "reservation"}
-              onSubmit={(body) => send(tab === "booking" ? "/me/reservations" : "/me/waitlist", body)} />
-          </Box>
-        </Section>}
-        {tab === "booking" ? <RemoteSection remote={reservations} title="Lịch đặt chỗ của tôi" description="Lọc theo bãi đang chọn tại máy chủ; mỗi trang 25 đặt chỗ, mới nhất trước."
-          actions={<StatusFilter label="Trạng thái" value={bookingPage.filters.status} options={RESERVATION_STATES} disabled={reservations.loading} onChange={(status) => bookingPage.setFilters({ status })} />}>
-          {(rows) => <>
-            <BookingRecords rows={rows} slots={slots} vehicles={ownedVehicles} busy={bookingAction.busy}
-              onOpenOrder={(row) => navigate(`/portal?order=${encodeURIComponent(row.order_id)}`)}
-              onCancel={(row) => void bookingAction.run(() => send(`/me/reservations/${row.id}/cancel`), "Đã hủy đặt chỗ.")} />
-            <PageControls page={bookingPage.page} count={rows.length} size={bookingPage.size} busy={reservations.loading || bookingAction.busy} onChange={bookingPage.setPage} />
-          </>}
-        </RemoteSection> : <RemoteSection remote={waitlist} title="Yêu cầu chờ của tôi" description="Mỗi trang 25 yêu cầu, mới nhất trước."
-          actions={<StatusFilter label="Trạng thái" value={waitlistPage.filters.status} options={WAITLIST_STATES} disabled={waitlist.loading} onChange={(status) => waitlistPage.setFilters({ status })} />}>
-          {(rows) => <>
-            <WaitlistRecords rows={rows} vehicles={ownedVehicles} busy={waitlistAction.busy}
-              onCancel={(row) => void waitlistAction.run(() => send(`/me/waitlist/${row.id}/cancel`), "Đã rời danh sách chờ.")} />
-            <PageControls page={waitlistPage.page} count={rows.length} size={waitlistPage.size} busy={waitlist.loading || waitlistAction.busy} onChange={waitlistPage.setPage} />
-          </>}
-        </RemoteSection>}
-      </>}
-    </>}
-  </Workspace>;
-}
-
-const loadOrganizations = () => read("/me/organizations").then(items);
 
 export default function ReservationsPage() {
-  const sites = useSites();
-  const organizations = useRemote(loadOrganizations);
-  const selected = sites.sites.find((site) => String(site.id) === String(sites.siteId));
-  return <>
-    <SitePicker sites={sites} label="Bãi đỗ xe" sx={{ mb: 3, maxWidth: "100%" }} />
-    {organizations.error && <Alert severity="error" sx={{ mb: 2 }} action={<Button color="inherit" size="small" onClick={organizations.reload}>Thử lại</Button>}>{organizations.error}</Alert>}
-    {selected ? <MySiteBookings key={selected.id} site={selected} organizations={organizations.data || []} /> : <Workspace title="Đặt chỗ của tôi" description="Theo dõi quyền sử dụng chỗ đỗ và lịch đến bãi." remote={sites}><Alert severity="info">Chưa có bãi đang hoạt động.</Alert></Workspace>}
-  </>;
+  const { user } = useContext(AuthContext);
+  return user?.role === "customer" ? <CustomerReservations /> : <Alert severity="info">Đặt chỗ trước dành cho khách hàng. Nhân viên ghi nhận xe đến tại mục Vận hành bãi.</Alert>;
 }

@@ -1,9 +1,10 @@
 import { useCallback, useContext, useEffect, useMemo, useState } from "react";
-import { Alert, Box, Button, MenuItem, Stack, Tab, Tabs, TextField, Typography } from "@mui/material";
+import { Alert, Box, Button, MenuItem, Stack, TextField, Typography } from "@mui/material";
 import { useSearchParams } from "react-router-dom";
 import { AuthContext } from "../../context/AuthContext";
 import { sessionSearchParams } from "../../utils/coreAnalytics";
-import { admissionTypeId, admissionVehicleTypes } from "../../utils/admissionVehicleTypes";
+import { admissionVehicleTypes } from "../../utils/admissionVehicleTypes";
+import OperationsPanel from "./OperationsPanel";
 import api from "../../services/api";
 import CheckoutDialog from "../ParkingSession/components/CheckoutDialog";
 import SessionDetailsDialog from "../ParkingSession/components/SessionDetailsDialog";
@@ -35,6 +36,10 @@ function MetadataFeedback({ remote, label }) {
   </>;
 }
 
+function OperationWorkspace({ actions = [], children }) {
+  return <div>{actions.map((action, index) => <div key={index}>{action.error && <Alert severity="error" sx={{ mb: 2 }}>{action.error}</Alert>}{action.notice && <Alert severity="success" role="status" sx={{ mb: 2 }}>{action.notice}</Alert>}</div>)}{children}</div>;
+}
+
 /** Each list is its own remote: one failing API keeps the other sections usable. */
 function usePagedList(path, page, extra = "") {
   const key = JSON.stringify([path, page.params.offset, page.filters, extra]);
@@ -42,16 +47,18 @@ function usePagedList(path, page, extra = "") {
   return useRemote(load);
 }
 
-function SiteOperations({ site, initialPlate, initialAction, onCheckoutChange }) {
+function SiteOperations({ site, initialPlate, initialAction, onCheckoutChange, view = "operations" }) {
   const capabilities = useExpansion();
   const { user } = useContext(AuthContext);
-  const [tab, setTab] = useState("operations");
-  const [checkIn, setCheckIn] = useState({ license_plate: initialAction === "check_in" ? initialPlate : "", vehicle_type_id: "", parking_slot_id: "" });
+  const [tab, setTab] = useState(view);
+  const [selectedStay, setSelectedStay] = useState(null);
+  const [receptionDraft, setReceptionDraft] = useState(null);
   const [search, setSearch] = useState(initialAction === "checkout_lookup" ? initialPlate : "");
   const [searchTicket, setSearchTicket] = useState("");
   const [dateRange, setDateRange] = useState({ date_from: "", date_to: "" });
   const invalidDateRange = !!(dateRange.date_from && dateRange.date_to && dateRange.date_from > dateRange.date_to);
   const [checkout, setCheckout] = useState(null);
+  const [checkoutIntent, setCheckoutIntent] = useState("");
   const [detail, setDetail] = useState(null);
   const [detailBusy, setDetailBusy] = useState(false);
   const [ticket, setTicket] = useState(null);
@@ -69,66 +76,43 @@ function SiteOperations({ site, initialPlate, initialAction, onCheckoutChange })
   const organizations = useRemote(loadOrganizations);
   const members = useRemote(loadMembers);
   const availability = useRemote(loadAvailability);
-  const sessionsPage = usePage({ license_plate: initialAction === "checkout_lookup" ? initialPlate : "", status: "active" });
+  const sessionsPage = usePage({ license_plate: "", status: view === "history" ? "" : "active" });
   const reservationsPage = usePage({ status: "" });
+  const advancePage = usePage({ status: "confirmed" });
   const allocationsPage = usePage({ status: "" });
   const waitlistPage = usePage({ status: "waiting" });
   const sessions = usePagedList(`${prefix}/sessions`, sessionsPage);
   const reservations = usePagedList(`${prefix}/reservations`, reservationsPage);
+  const advanceBookings = usePagedList(`${prefix}/advance-bookings`, advancePage);
   const allocations = usePagedList(`${prefix}/allocations`, allocationsPage);
   const waitlist = usePagedList(`${prefix}/waitlist`, waitlistPage);
   // Mutations refresh only the sections that depend on them; every reload keeps its late-result guard.
-  const checkInAction = useAction(refreshAll(sessions, availability));
+  const checkInAction = useAction(refreshAll(sessions, availability, advanceBookings, reservations));
   const reservationAction = useAction(refreshAll(reservations, availability));
   const allocationAction = useAction(refreshAll(allocations, availability));
   const waitlistAction = useAction(refreshAll(waitlist, reservations, availability));
   const configAction = useAction(refreshAll(zones, members, availability));
   const organizationAction = useAction(organizations.reload);
-  const everything = combineRemotes(vehicleTypes, zones, organizations, members, availability, sessions, reservations, allocations, waitlist);
+  const everything = combineRemotes(vehicleTypes, zones, organizations, members, availability, sessions, reservations, advanceBookings, allocations, waitlist);
   const slots = availability.data?.slots || [];
   const types = admissionVehicleTypes(vehicleTypes.data || []);
-  const selectedTypeId = admissionTypeId(types, checkIn.vehicle_type_id);
-  const activeSlots = slots.filter((slot) => selectedTypeId && slot.available_now && slot.vehicle_type_id === Number(selectedTypeId));
-  const selectedSlotId = activeSlots.some((slot) => slot.id === Number(checkIn.parking_slot_id)) ? checkIn.parking_slot_id : "";
-  const canCheckIn = !availability.loading && !availability.error && !vehicleTypes.loading && !vehicleTypes.error
-    && !!selectedTypeId && !!selectedSlotId && !!checkIn.license_plate.trim();
   const closeCheckout = () => { setCheckout(null); };
-  const openCheckout = (id) => { setTicket(null); setCheckout(id); };
+  const openCheckout = (id, intent = "") => { setTicket(null); setCheckoutIntent(intent); setCheckout(id); };
+  const Layout = view === "history" ? Workspace : OperationWorkspace;
   useEffect(() => {
     onCheckoutChange(Boolean(checkout) || detailBusy);
     return () => onCheckoutChange(false);
   }, [checkout, detailBusy, onCheckoutChange]);
-  return <Workspace title={site.name} description={site.address || "Vận hành lượt xe, quản lý đặt chỗ và phân công nhân sự tại bãi đang chọn."} remote={everything}
+  return <Layout title={view === "history" ? "Lịch sử xe" : "Vận hành bãi"} description={view === "history" ? "Tra cứu lượt gửi theo biển số, mã vé và thời gian." : "Nhận xe, kiểm tra phí và xử lý xe ra tại một nơi."} remote={everything}
     actions={[checkInAction, reservationAction, allocationAction, waitlistAction, configAction, organizationAction]}>
     {initialPlate && <Alert severity="info">Biển số {initialPlate} được chuyển từ camera. Kiểm tra đúng xe và bãi trước khi xác nhận thao tác.</Alert>}
-    <MetadataFeedback remote={vehicleTypes} label="Loại xe" />
-    <MetadataFeedback remote={zones} label="Khu vực" />
-    <MetadataFeedback remote={organizations} label="Nhóm xe" />
-    {canManage && <MetadataFeedback remote={members} label="Nhân sự" />}
-    <Tabs value={tab} onChange={(_, value) => setTab(value)} variant="scrollable" scrollButtons="auto" aria-label="Vận hành bãi đỗ">
-      <Tab value="operations" label="Xe vào / ra" /><Tab value="availability" label="Chỗ trống" /><Tab value="reservations" label="Đặt chỗ" />
-      <Tab value="allocations" label="Bảo đảm chỗ" /><Tab value="waitlist" label="Danh sách chờ" /><Tab value="fleet" label="Đội xe" />
-      {capabilities?.site_finance_enabled && <Tab value="finance" label="Ca & chứng từ" />}
-      {canManage && <Tab value="configuration" label="Cấu hình bãi" />}
-    </Tabs>
-    {tab === "operations" && <>
-      <RemoteSection remote={availability} title="Ghi nhận xe vào" description="Chọn vị trí phù hợp. Với khách đã đặt chỗ, dùng thao tác Xe đã đến trong mục Đặt chỗ.">
-        {() => <Box component="form" onSubmit={(event) => {
-          event.preventDefault();
-          if (!canCheckIn) return;
-          void checkInAction.run(() => send(`${prefix}/check-in`, { license_plate: checkIn.license_plate.trim().toUpperCase(), vehicle_type_id: Number(checkIn.vehicle_type_id), parking_slot_id: Number(checkIn.parking_slot_id) }), "Đã ghi nhận xe vào.", () => setCheckIn((old) => ({ ...old, license_plate: "", parking_slot_id: "" })));
-        }} sx={formLayout}>
-          <TextField label="Biển số xe" value={checkIn.license_plate} required onChange={(event) => setCheckIn((old) => ({ ...old, license_plate: event.target.value }))} slotProps={{ htmlInput: { maxLength: 20 } }} />
-          <TextField select label="Loại xe" value={selectedTypeId} required disabled={vehicleTypes.loading || !!vehicleTypes.error || !types.length || checkInAction.busy} onChange={(event) => setCheckIn((old) => ({ ...old, vehicle_type_id: event.target.value, parking_slot_id: "" }))}
-            helperText={checkIn.vehicle_type_id && !selectedTypeId && !vehicleTypes.loading ? "Loại xe đã chọn không còn nhận xe. Hãy chọn lại." : ""}>
-            {types.map((type) => <MenuItem key={type.id} value={type.id}>{type.name}</MenuItem>)}
-          </TextField>
-          <TextField select label="Vị trí nhận xe" value={selectedSlotId} required disabled={availability.loading || vehicleTypes.loading || checkInAction.busy || !activeSlots.length} onChange={(event) => setCheckIn((old) => ({ ...old, parking_slot_id: event.target.value }))} helperText={selectedTypeId && !activeSlots.length ? "Chưa có vị trí nhận xe vãng lai cho loại xe này." : ""}>
-            {activeSlots.map((slot) => <MenuItem key={slot.id} value={slot.id}>{slot.slot_name} · {slot.zone_name}</MenuItem>)}
-          </TextField>
-          <Button type="submit" variant="contained" disabled={checkInAction.busy || !canCheckIn}>Xác nhận xe vào</Button>
-        </Box>}
-      </RemoteSection>
+    {view === "history" && <MetadataFeedback remote={vehicleTypes} label="Loại xe" />}
+    {view !== "history" && tab !== "operations" && <div className="page-head"><div><h1>Vận hành bãi</h1><p>Tiếp nhận đặt chỗ và quản lý hoạt động của bãi.</p></div><button className="button secondary" onClick={() => setTab("operations")}>Về xe vào / ra</button></div>}
+    {tab === "operations" && <OperationsPanel site={site} availability={availability} vehicleTypes={vehicleTypes} sessions={sessions} page={sessionsPage}
+      action={checkInAction} adapters={adapters} selected={selectedStay} onSelect={row => { setSelectedStay(row); if (row) setReceptionDraft(null); }} onCheckout={openCheckout} onDetail={setDetail} onTicket={setTicket}
+      initialPlate={receptionDraft?.license_plate || initialPlate} initialTypeId={receptionDraft?.vehicle_type_id || ""} initialAction={receptionDraft ? "check_in" : initialAction} onReservations={() => setTab("reservations")} onRefresh={refreshAll(sessions, availability, advanceBookings, reservations)} />}
+    {view !== "history" && <details className="demo-help"><summary>Công cụ vận hành khác</summary><div className="demo-tools"><button className="button secondary small" onClick={() => setTab("availability")}>Chỗ trống</button><button className="button secondary small" onClick={() => setTab("reservations")}>Tiếp nhận đặt chỗ</button>{[["allocations", "Bảo đảm chỗ"], ["waitlist", "Danh sách chờ"], ["fleet", "Đội xe"], ...(capabilities?.site_finance_enabled ? [["finance", "Ca & chứng từ"]] : []), ...(canManage ? [["configuration", "Cấu hình bãi"]] : [])].map(([value, label]) => <button className="button quiet small" key={value} onClick={() => setTab(value)}>{label}</button>)}</div></details>}
+    {tab === "history" && <>
       <RemoteSection remote={sessions} title="Tra cứu lượt gửi và cho xe ra" description="Mỗi trang 25 lượt; đổi biển số hoặc trạng thái sẽ về trang đầu.">
         {(rows) => <>
           <Box component="form" onSubmit={(event) => { event.preventDefault(); if (!invalidDateRange) sessionsPage.setFilters({ license_plate: search.trim().toUpperCase(), session_id: searchTicket.trim(), ...dateRange }); }} sx={formLayout}>
@@ -160,11 +144,20 @@ function SiteOperations({ site, initialPlate, initialAction, onCheckoutChange })
       </RemoteSection>
     </>}
     {tab === "finance" && <SiteFinance site={site} />}
-    {tab === "availability" && <RemoteSection remote={availability} title="Tình trạng vị trí">{(data) => <Availability data={data} />}</RemoteSection>}
+    {tab === "availability" && <RemoteSection remote={availability} title="Tình trạng vị trí">{(data) => <Availability data={data} vehicleTypes={vehicleTypes.data || []} />}</RemoteSection>}
     {tab === "reservations" && <>
-      <Section title="Đặt chỗ cho khách" description="Xe cần được gắn với hồ sơ khách hàng. Mã xe hiển thị trong cổng khách hàng và danh sách quản lý xe.">
-        <BookingForm siteId={site.id} slots={slots} action={reservationAction} onSubmit={(body) => send(`${prefix}/reservations`, body)} />
-      </Section>
+      <Typography color="text.secondary">Khách đặt chỗ trong cổng khách hàng. Khi xe đến, kiểm tra đặt chỗ và xác nhận tiếp nhận tại đây.</Typography>
+      <RemoteSection remote={advanceBookings} title="Khách đã đặt trước" description="Biển số do khách khai báo; kiểm tra xe thực tế khi đến bãi."
+        actions={<StatusFilter value={advancePage.filters.status} options={RESERVATION_STATES} disabled={advanceBookings.loading} onChange={status => advancePage.setFilters({ status })} />}>
+        {rows => <><Records rows={rows} empty="Chưa có đặt trước phù hợp." columns={[
+          { key: "license_plate", label: "Biển số" },
+          { key: "vehicle_type_id", label: "Loại xe", render: row => (vehicleTypes.data || []).find(type => type.id === row.vehicle_type_id)?.name || "—" },
+          { key: "slot_name", label: "Vị trí giữ" }, { key: "start_at", label: "Giờ đến", render: row => dateTime(row.start_at) },
+          { key: "arrival_deadline", label: "Hạn tiếp nhận", render: row => dateTime(row.arrival_deadline) },
+          { key: "status", label: "Trạng thái", render: row => <StateChip value={row.status} /> },
+          { key: "receive", label: "Thao tác", render: row => row.status === "confirmed" ? <Button onClick={() => { setReceptionDraft(row); setSelectedStay(null); setTab("operations"); }}>Kiểm tra & nhận xe</Button> : row.session_id ? <Button onClick={() => setTicket(row.session_id)}>Xem vé</Button> : null },
+        ]} /><PageControls page={advancePage.page} count={rows.length} size={advancePage.size} busy={advanceBookings.loading} onChange={advancePage.setPage} /></>}
+      </RemoteSection>
       <RemoteSection remote={reservations} title="Lịch đặt chỗ" description="Mỗi trang 25 đặt chỗ, mới nhất trước." actions={<Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap" }}>
         <StatusFilter value={reservationsPage.filters.status} options={RESERVATION_STATES} disabled={reservations.loading} onChange={(status) => reservationsPage.setFilters({ status })} />
         <Button disabled={reservationAction.busy} onClick={() => void reservationAction.run(() => send(`${prefix}/reservations/expire`), "Đã cập nhật các đặt chỗ quá hạn đến.")}>Cập nhật quá hạn</Button>
@@ -172,7 +165,7 @@ function SiteOperations({ site, initialPlate, initialAction, onCheckoutChange })
         {(rows) => <>
           <BookingRecords rows={rows} slots={slots} busy={reservationAction.busy}
             onArrive={(row) => void reservationAction.run(() => send(`${prefix}/reservations/${row.id}/arrive`), "Đã xác nhận khách đến và ghi nhận xe vào.", () => void sessions.reload())}
-            onCancel={(row) => void reservationAction.run(() => send(`${prefix}/reservations/${row.id}/cancel`), "Đã hủy đặt chỗ.")} />
+            />
           <PageControls page={reservationsPage.page} count={rows.length} size={reservationsPage.size} busy={reservations.loading || reservationAction.busy} onChange={reservationsPage.setPage} />
         </>}
       </RemoteSection>
@@ -205,23 +198,24 @@ function SiteOperations({ site, initialPlate, initialAction, onCheckoutChange })
       </RemoteSection>
     </>}
     {tab === "fleet" && <>
+      <MetadataFeedback remote={organizations} label="Nhóm xe" />
       {canManage && <Section title="Tạo nhóm xe"><Box component="form" sx={formLayout} onSubmit={(event) => {
         event.preventDefault();
         void organizationAction.run(() => send(`${prefix}/organizations`, { name: organizationName.trim() }), "Đã tạo nhóm xe.", () => setOrganizationName(""));
       }}><TextField label="Tên đơn vị / nhóm xe" required value={organizationName} onChange={(event) => setOrganizationName(event.target.value)} slotProps={{ htmlInput: { maxLength: 150 } }} /><Button type="submit" variant="contained" disabled={organizationAction.busy}>Tạo nhóm xe</Button></Box></Section>}
       <FleetSection organizations={organizations.data || []} canManage={canManage} siteId={site.id} />
     </>}
-    {tab === "configuration" && canManage && <SiteConfiguration siteId={site.id} zones={zones.data || []} types={types} members={members.data || []} isAdmin={site.role === "admin"} action={{ ...configAction, busy: configAction.busy || zones.loading || vehicleTypes.loading || members.loading }} />}
-    {checkout && <CheckoutDialog key={`${site.id}:${checkout}`} sessionId={checkout} siteId={site.id} {...adapters} onClose={closeCheckout}
-      onCompleted={() => { closeCheckout(); checkInAction.notify("Đã ghi nhận xe ra."); void refreshAll(sessions, availability)(); }} />}
+    {tab === "configuration" && canManage && <><MetadataFeedback remote={zones} label="Khu vực" /><MetadataFeedback remote={members} label="Nhân sự" /><SiteConfiguration siteId={site.id} zones={zones.data || []} types={types} members={members.data || []} isAdmin={site.role === "admin"} action={{ ...configAction, busy: configAction.busy || zones.loading || vehicleTypes.loading || members.loading }} /></>}
+    {checkout && <CheckoutDialog key={`${site.id}:${checkout}`} sessionId={checkout} siteId={site.id} initialOnline={checkoutIntent === "online"} initialPaymentMethod={checkoutIntent === "cash" ? "cash" : ""} {...adapters} onClose={closeCheckout}
+      onCompleted={() => { closeCheckout(); setSelectedStay(null); checkInAction.notify("Đã ghi nhận xe ra."); void refreshAll(sessions, availability)(); }} />}
     {detail && <SessionDetailsDialog key={`${site.id}:${detail.id}`} session={detail} siteId={site.id} canManage={canHandleExceptions}
       onClose={() => setDetail(null)} onBusy={setDetailBusy} onCheckout={openCheckout} onTicket={setTicket}
       onChanged={() => void refreshAll(sessions, availability)()} />}
-    <TicketDialog sessionId={ticket} siteId={site.id} onClose={() => setTicket(null)} onCheckOut={openCheckout} />
-  </Workspace>;
+    <TicketDialog sessionId={ticket} siteId={site.id} canManage={canHandleExceptions} onClose={() => setTicket(null)} onCheckOut={openCheckout} />
+  </Layout>;
 }
 
-export default function SitesWorkspace() {
+export default function SitesWorkspace({ view = "operations" }) {
   const { user } = useContext(AuthContext);
   const sites = useSites();
   const [params, setParams] = useSearchParams();
@@ -232,17 +226,17 @@ export default function SitesWorkspace() {
   const action = useAction(sites.reload);
   const onCheckoutChange = useCallback((open) => setCheckoutOpen(open), []);
   return <Stack spacing={3}>
-    <Stack direction={{ xs: "column", sm: "row" }} spacing={2} useFlexGap sx={{ alignItems: { sm: "center" } }}>
+    {!sites.singleSiteMode && <Stack direction={{ xs: "column", sm: "row" }} spacing={2} useFlexGap sx={{ alignItems: { sm: "center" } }}>
       <SitePicker sites={sites} label="Bãi đang vận hành" value={selected?.id || ""} disabled={checkoutOpen} sx={{ maxWidth: "100%" }}
         onChange={(value) => { sites.setSiteId(value); setParams({ site: String(value) }); }} />
       {!sites.singleSiteMode && user?.role === "admin" && <Button variant="outlined" disabled={checkoutOpen} onClick={() => setCreatingSite((old) => !old)}>{creatingSite ? "Đóng tạo bãi" : "Tạo bãi mới"}</Button>}
-    </Stack>
+    </Stack>}
     {sites.error && <Alert severity="error" action={<Button color="inherit" size="small" onClick={sites.reload}>Thử lại</Button>}>{sites.error}</Alert>}
     {action.error && <Alert severity="error">{action.error}</Alert>}
     {action.notice && <Alert severity="success">{action.notice}</Alert>}
     {requestedSite && sites.data && !sites.sites.some((site) => String(site.id) === requestedSite) && <Alert severity="warning">Bạn không có quyền truy cập bãi được chọn hoặc bãi đã ngừng hoạt động. Hãy chọn lại bãi và kiểm tra biển số.</Alert>}
     {!sites.singleSiteMode && creatingSite && user?.role === "admin" && <CreateSiteForm action={action} onCreated={(row) => { setParams({ site: String(row.id) }); setCreatingSite(false); }} />}
-    {selected ? <SiteOperations key={`${selected.id}:${params.get("plate") || ""}:${params.get("action") || ""}`} site={selected}
+    {selected ? <SiteOperations key={`${selected.id}:${view}:${params.get("plate") || ""}:${params.get("action") || ""}`} site={selected} view={view}
       initialPlate={requestedSite === String(selected.id) ? params.get("plate") || "" : ""} initialAction={params.get("action")} onCheckoutChange={onCheckoutChange} /> : <Workspace title="Vận hành bãi đỗ" description="Mỗi nhân sự chỉ thao tác tại bãi được phân công." remote={sites}><Alert severity="info">Chưa có bãi được cấp quyền. Quản trị viên có thể tạo bãi và phân công nhân sự.</Alert></Workspace>}
   </Stack>;
 }

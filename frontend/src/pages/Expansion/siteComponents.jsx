@@ -3,6 +3,7 @@ import { Alert, Box, Button, MenuItem, Stack, TextField, Typography } from "@mui
 import { bookingBody, nextBookingWindow } from "./siteForms";
 import { formLayout, requestKey, Records, dateTime, StateChip } from "./shared";
 import SiteVehiclePicker from "./SiteVehiclePicker";
+import { availabilityByZone, availabilityLabel } from "../../utils/availabilityPresentation";
 
 export function BookingForm({ siteId, slots = [], vehicles, action, onSubmit, kind = "reservation" }) {
   const [form, setForm] = useState(() => ({ vehicle_id: "", slot_id: "", ...nextBookingWindow() }));
@@ -45,16 +46,23 @@ export function BookingForm({ siteId, slots = [], vehicles, action, onSubmit, ki
   </Box>;
 }
 
-export function Availability({ data }) {
+export function Availability({ data, vehicleTypes = [] }) {
   if (!data) return <Typography color="text.secondary">Chọn bãi để xem vị trí.</Typography>;
   return <Stack spacing={2}>
     {data.capacity_total != null && <Typography>Tổng vị trí {data.capacity_total} · Tạm ngừng {data.inactive_slots ?? 0}</Typography>}
     <Typography>Đang phục vụ {data.total} chỗ · Đang đỗ {data.occupied} · Có thể nhận xe vãng lai {data.available_now} · Đã dành chỗ {data.reserved_slots}</Typography>
     <Alert severity="info">Chỗ đang trống có thể đã được giữ cho thời điểm sau. Hệ thống kiểm tra chính xác khung giờ khi bạn đặt chỗ.</Alert>
+    <Typography component="h3" variant="h6">Chỗ trống theo khu vực</Typography>
+    <Records rows={availabilityByZone(data.slots)} columns={[
+      { key: "name", label: "Khu vực" }, { key: "available", label: "Có thể nhận xe" },
+      { key: "occupied", label: "Có xe" }, { key: "reserved", label: "Đã dành chỗ" },
+      { key: "total", label: "Đang phục vụ" },
+    ]} empty="Chưa có vị trí đang phục vụ." />
+    <Typography component="h3" variant="h6">Từng vị trí</Typography>
     <Records rows={data.slots || []} columns={[
       { key: "slot_name", label: "Vị trí" }, { key: "zone_name", label: "Khu vực" },
-      { key: "vehicle_type_id", label: "Mã loại xe" },
-      { key: "availability", label: "Hiện trạng", render: (row) => row.is_occupied ? "Đang có xe" : row.reserved ? "Có cam kết giữ chỗ" : "Trống" },
+      { key: "vehicle_type_id", label: "Loại xe", render: (row) => vehicleTypes.find((type) => type.id === row.vehicle_type_id)?.name || `Loại xe #${row.vehicle_type_id}` },
+      { key: "availability", label: "Hiện trạng", render: availabilityLabel },
     ]} />
   </Stack>;
 }

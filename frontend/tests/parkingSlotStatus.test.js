@@ -3,6 +3,10 @@ import test from "node:test";
 
 import { getParkingSlotVisualStatus } from "../src/utils/parkingSlotStatus.js";
 
+test("vị trí của loại xe ngừng hoạt động không hiển thị còn trống", () => {
+  assert.equal(getParkingSlotVisualStatus({ is_active: true, is_occupied: false }, { is_active: true }, { is_active: false }), "inactive");
+});
+
 test("slot trống trong khu vực hoạt động hiển thị còn trống", () => {
   assert.equal(
     getParkingSlotVisualStatus(
@@ -52,4 +56,13 @@ test("slot ngừng hoạt động hoặc thiếu khu vực đều fail closed th
     getParkingSlotVisualStatus({ is_active: true, is_occupied: false }, undefined),
     "inactive",
   );
+});
+
+
+test("held capacity and unknown inventory never advertise a physically empty space", () => {
+  const slot = { is_active: true, is_occupied: false }, zone = { is_active: true };
+  assert.equal(getParkingSlotVisualStatus(slot, zone, undefined, { reserved: true, available_now: false }), "reserved");
+  assert.equal(getParkingSlotVisualStatus(slot, zone, undefined, null), "unknown");
+  assert.equal(getParkingSlotVisualStatus(slot, zone, undefined, { available_now: true }), "available");
+  assert.equal(getParkingSlotVisualStatus({ ...slot, is_occupied: true }, zone, undefined, { reserved: true }), "occupied");
 });

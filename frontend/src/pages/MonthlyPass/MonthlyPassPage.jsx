@@ -1,5 +1,6 @@
-import { Box, Typography, Stack, Snackbar, Alert, Button, Dialog, DialogTitle, DialogContent, DialogContentText, DialogActions } from "@mui/material";
-import RefreshIcon from "@mui/icons-material/Refresh";
+import { Box, Snackbar, Alert, Button, Dialog, DialogTitle, DialogContent, DialogContentText, DialogActions } from "@mui/material";
+import AddIcon from "@mui/icons-material/Add";
+import { PageHeader, WorkspaceTabs } from "../../components/common/PrototypeUI";
 
 import MonthlyPassTable from "./components/MonthlyPassTable";
 import MonthlyPassDialog from "./components/MonthlyPassDialog";
@@ -16,28 +17,14 @@ const MonthlyPassPage = () => {
   } = useMonthlyPass();
 
   return (
-    <Box sx={{ p: 3 }}>
-      <Stack direction="row" sx={{ justifyContent: "space-between", alignItems: "center", mb: 3 }}>
-        <Typography variant="h5" fontWeight="bold" color="text.primary">
-          Quản lý Vé tháng
-        </Typography>
-        <Button variant="outlined" startIcon={<RefreshIcon />} onClick={fetchData} disabled={loading}>
-          Làm mới
-        </Button>
-      </Stack>
+    <Box>
+      <PageHeader title="Khách & vé" description="Hồ sơ khách, phương tiện liên kết và các kỳ vé tháng." actions={canManageMonthlyPasses && <button className="button primary" disabled={loading || submitting} onClick={handleOpenCreate}><AddIcon fontSize="small" /> Thêm vé tháng</button>} />
+      <WorkspaceTabs />
+      <div className="toolbar" style={{ justifyContent: "flex-end", marginBottom: 12 }}><button className="button quiet small" onClick={fetchData} disabled={loading || submitting}>Làm mới</button></div>
 
       {!canManageMonthlyPasses && <Alert severity="info" sx={{ mb: 2 }}>Bạn có thể kiểm tra hiệu lực vé. Quản lý phụ trách cấp, gia hạn và ngừng vé tháng.</Alert>}
 
-      <MonthlyPassTable
-        passes={passes}
-        loading={loading}
-        canManage={canManageMonthlyPasses}
-        onAdd={handleOpenCreate}
-        onEdit={handleOpenEdit}
-        onDeactivate={handleOpenDeactivate}
-      />
-
-      <MonthlyPassDialog
+      <MonthlyPassDialog inline
         isOpen={dialogOpen && canManageMonthlyPasses}
         onClose={closeDialogs}
         onSave={handleSave}
@@ -46,6 +33,16 @@ const MonthlyPassPage = () => {
         customers={customers}
         submitting={submitting}
       />
+
+      <MonthlyPassTable
+        passes={passes}
+        loading={loading}
+        canManage={canManageMonthlyPasses}
+        onEdit={handleOpenEdit}
+        onDeactivate={handleOpenDeactivate}
+      />
+
+
 
       <Dialog open={deactivateDialogOpen && canManageMonthlyPasses} onClose={closeDialogs}>
         <DialogTitle fontWeight="bold">Xác nhận hủy vé</DialogTitle>

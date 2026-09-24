@@ -1,19 +1,10 @@
 import { useState, useContext } from "react";
-import { 
-  Box, 
-  Container, 
-  TextField, 
-  Button, 
-  Paper, 
-  Alert, 
-  CircularProgress 
-} from "@mui/material";
+import { Link, useLocation } from "react-router-dom";
 import { AuthContext } from "../../context/AuthContext";
-import { Link as RouterLink } from "react-router-dom";
-import { useLocation } from "react-router-dom";
-import PasswordField from "../../components/common/PasswordField";
-import BrandLogo from "../../components/brand/BrandLogo";
+import { PrototypeBrand } from "../../components/common/PrototypeUI";
 import { nextFromSearch, withNext } from "../../utils/safeNext";
+import "../../styles/prototype-reference.css";
+import "../../styles/prototype-app.css";
 
 export default function LoginPage() {
   const { login } = useContext(AuthContext);
@@ -22,118 +13,35 @@ export default function LoginPage() {
   const [formData, setFormData] = useState({ username: "", password: "" });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-
-  const handleChange = (e) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value });
-  };
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setError("");
-    setLoading(true);
-
+  const [visible, setVisible] = useState(false);
+  const handleChange = event => setFormData(old => ({ ...old, [event.target.name]: event.target.value }));
+  async function handleSubmit(event) {
+    event.preventDefault();
+    if (loading) return;
+    setError(""); setLoading(true);
     if (!formData.username || !formData.password) {
-      setError("Vui lòng nhập đầy đủ Tên đăng nhập và Mật khẩu");
-      setLoading(false);
-      return;
+      setError("Vui lòng nhập đầy đủ tên đăng nhập và mật khẩu."); setLoading(false); return;
     }
-
-    const result = await login(formData, next);
-    
-    if (!result.success) {
-      setError(result.message);
-      setLoading(false);
-    }
-  };
-
-  return (
-    <Box 
-      sx={{ 
-        height: "100vh", 
-        display: "flex", 
-        alignItems: "center", 
-        justifyContent: "center",
-        backgroundColor: "background.default"
-      }}
-    >
-      <Container maxWidth="xs">
-        <Paper
-          elevation={3}
-          sx={{
-            p: { xs: 3, sm: 4 },
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            borderRadius: 2,
-          }}
-        >
-          <Box sx={{ mb: 2.5 }}>
-            <BrandLogo
-              size={56}
-              orientation="vertical"
-              headingComponent="h1"
-              tagline="Đăng nhập hệ thống quản lý bãi đỗ xe"
-            />
-          </Box>
-
-          {error && (
-            <Alert severity="error" sx={{ width: "100%", mb: 2 }}>
-              {error}
-            </Alert>
-          )}
-          {location.state?.message && (
-            <Alert severity="success" sx={{ width: "100%", mb: 2 }}>
-              {location.state.message}
-            </Alert>
-          )}
-          {next && (
-            <Alert severity="info" sx={{ width: "100%", mb: 2 }}>
-              Đăng nhập để tiếp tục thao tác bạn đã chọn.
-            </Alert>
-          )}
-
-          <Box component="form" onSubmit={handleSubmit} sx={{ width: '100%' }}>
-            <TextField
-              margin="normal"
-              required
-              fullWidth
-              id="username"
-              label="Tên đăng nhập"
-              name="username"
-              autoComplete="username"
-              autoFocus
-              value={formData.username}
-              onChange={handleChange}
-            />
-            <PasswordField
-              margin="normal"
-              required
-              fullWidth
-              name="password"
-              label="Mật khẩu"
-              id="password"
-              autoComplete="current-password"
-              value={formData.password}
-              onChange={handleChange}
-            />
-            <Button
-              type="submit"
-              fullWidth
-              variant="contained"
-              sx={{ mt: 3, mb: 2, py: 1.5, fontSize: "1rem" }}
-              disabled={loading}
-            >
-              {loading ? <CircularProgress size={24} color="inherit" /> : "Đăng Nhập"}
-            </Button>
-            <Button component={RouterLink} to={withNext("/register", next)} fullWidth>
-              Chưa có tài khoản? Đăng ký
-            </Button>
-            <Button component={RouterLink} to="/gioi-thieu" fullWidth color="inherit">
-              Xem thông tin bãi xe
-            </Button>
-          </Box>
-        </Paper>
-      </Container>
-    </Box>
-  );
+    try {
+      const result = await login(formData, next);
+      if (!result.success) { setError(result.message); setLoading(false); }
+    } catch { setError("Chưa kết nối được hệ thống. Vui lòng thử lại."); setLoading(false); }
+  }
+  return <div className="prototype-ui"><main className="login-shell">
+    <div className="login-intro"><PrototypeBrand /><h1>Một bãi xe.<br />Mọi thao tác rõ ràng.</h1>
+      <p>Theo dõi chỗ trống, tính phí và thanh toán trong một nơi. Đăng nhập để gửi xe hoặc quản lý bãi.</p>
+      <p className="inline-note">Không cần đặt trước để gửi xe. Đặt chỗ giúp bạn giữ một vị trí trước giờ đến.</p>
+    </div>
+    <section className="surface login-form"><div className="section-head"><div><h2>Đăng nhập</h2><p>Chào mừng bạn quay lại ParkingAI.</p></div></div>
+      {error && <p className="inline-note warning" role="alert">{error}</p>}
+      {location.state?.message && <p className="inline-note success" role="status">{location.state.message}</p>}
+      {next && <p className="inline-note">Đăng nhập để tiếp tục thao tác bạn đã chọn.</p>}
+      <form onSubmit={handleSubmit}>
+        <div className="field"><label htmlFor="username">Tên đăng nhập</label><input id="username" name="username" autoComplete="username" autoFocus required value={formData.username} onChange={handleChange} /></div>
+        <div className="field"><label htmlFor="password">Mật khẩu</label><div className="app-password"><input id="password" name="password" type={visible ? "text" : "password"} autoComplete="current-password" required value={formData.password} onChange={handleChange} /><button type="button" onClick={() => setVisible(old => !old)} aria-label={visible ? "Ẩn mật khẩu" : "Hiện mật khẩu"}>{visible ? "Ẩn" : "Hiện"}</button></div></div>
+        <button className="button primary full" type="submit" disabled={loading}>{loading ? "Đang đăng nhập…" : "Đăng nhập"}</button>
+      </form>
+      <div className="login-links"><Link to={withNext("/register", next)}>Chưa có tài khoản? Đăng ký</Link><Link to="/gioi-thieu">Thông tin bãi xe</Link></div>
+    </section>
+  </main></div>;
 }

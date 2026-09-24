@@ -1,5 +1,6 @@
-import { Box, Typography, Stack, Snackbar, Alert, Button, Dialog, DialogTitle, DialogContent, DialogContentText, DialogActions } from "@mui/material";
-import RefreshIcon from "@mui/icons-material/Refresh";
+import { Box, Snackbar, Alert, Button, Dialog, DialogTitle, DialogContent, DialogContentText, DialogActions } from "@mui/material";
+import AddIcon from "@mui/icons-material/Add";
+import { PageHeader, WorkspaceTabs } from "../../components/common/PrototypeUI";
 
 import VehicleTable from "./components/VehicleTable";
 import VehicleDialog from "./components/VehicleDialog";
@@ -29,33 +30,13 @@ export default function VehiclesPage() {
   } = useVehicle();
 
   return (
-    <Box sx={{ p: 3 }}>
-      {/* Header */}
-      <Stack direction="row" sx={{ justifyContent: "space-between", alignItems: "center", mb: 3 }}>
-        <Typography variant="h5" fontWeight="bold" color="text.primary">
-          Quản lý Phương tiện
-        </Typography>
-        <Button
-          variant="outlined"
-          startIcon={<RefreshIcon />}
-          onClick={fetchData}
-          disabled={loading}
-        >
-          Làm mới
-        </Button>
-      </Stack>
+    <Box>
+      <PageHeader title="Khách & vé" description="Hồ sơ khách, phương tiện liên kết và các kỳ vé tháng." actions={<button className="button primary" disabled={loading || submitting} onClick={handleOpenCreate}><AddIcon fontSize="small" /> Thêm phương tiện</button>} />
+      <WorkspaceTabs />
+      <div className="toolbar" style={{ justifyContent: "flex-end", marginBottom: 12 }}><button className="button quiet small" onClick={fetchData} disabled={loading || submitting}>Làm mới</button></div>
 
       {/* Bảng Dữ liệu */}
-      <VehicleTable
-        vehicles={vehicles}
-        loading={loading}
-        onAdd={handleOpenCreate}
-        onEdit={handleOpenEdit}
-        onDelete={canDeleteCustomerRecords ? handleOpenDelete : undefined}
-      />
-
-      {/* Modal Thêm/Sửa */}
-      <VehicleDialog
+      <VehicleDialog inline
         isOpen={dialogOpen}
         onClose={closeDialogs}
         onSave={handleSave}
@@ -64,6 +45,16 @@ export default function VehiclesPage() {
         customers={customers}
         submitting={submitting}
       />
+
+      <VehicleTable
+        vehicles={vehicles}
+        loading={loading}
+        onEdit={handleOpenEdit}
+        onDelete={canDeleteCustomerRecords ? handleOpenDelete : undefined}
+      />
+
+      {/* Modal Thêm/Sửa */}
+
 
       {/* Modal Xóa */}
       <Dialog open={deleteDialogOpen && canDeleteCustomerRecords} onClose={closeDialogs}>

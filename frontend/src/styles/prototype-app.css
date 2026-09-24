@@ -1,0 +1,58 @@
+/* Real application bridges; composition and sizing come from the approved reference. */
+.prototype-ui { min-height: 100dvh; font-family: "Segoe UI", Arial, sans-serif; }
+.prototype-ui a.brand-link { color: inherit; text-decoration: none; }
+.prototype-ui a.nav-item { text-decoration: none; }
+.prototype-ui a.nav-item.active { color: var(--blue); }
+.prototype-ui .role-display { display:flex; align-items:center; gap:7px; padding:8px 18px; border-radius:7px; font-size:14px; font-weight:600; color:var(--muted); }
+.prototype-ui .role-display.active { background:white; color:var(--blue); box-shadow:0 2px 5px #16324f12; }
+.prototype-ui .role-display svg { width:17px; height:17px; }
+.prototype-ui .app-skip { position:fixed; top:-100px; left:16px; z-index:2000; background:white; padding:12px; }
+.prototype-ui .app-skip:focus { top:8px; }
+.prototype-ui .segments a { border:0; background:transparent; border-radius:6px; padding:9px 16px; color:#56667a; display:flex; align-items:center; gap:7px; font-size:13px; font-weight:600; min-height:38px; text-decoration:none; }
+.prototype-ui .segments a.active { background:white; color:var(--blue); box-shadow:0 1px 4px #16324f15; }
+.prototype-ui .workspace-tabs { display:inline-flex; width:fit-content; }
+.prototype-ui .demo-panel { background:white; border:1px solid var(--line); border-radius:14px; padding:26px; min-width:0; }
+.prototype-ui .demo-form-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; }
+.prototype-ui .demo-toolbar { display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:22px; }
+.prototype-ui .demo-table { width:100%; border-collapse:collapse; font-size:13px; text-align:left; }
+.prototype-ui .demo-table th { font-size:12px; font-weight:600; padding:12px; color:var(--muted); background:#f8fafc; }
+.prototype-ui .demo-table td { padding:15px 12px; border-bottom:1px solid #edf0f4; }
+.prototype-ui .app-help { margin-top:36px; font-size:12px; color:var(--muted); }
+.prototype-ui .app-help summary { cursor:pointer; }
+.prototype-ui .app-help-body { margin-top:16px; padding:18px; border:1px solid var(--line); border-radius:8px; background:white; }
+.prototype-ui .page-status { margin:0 0 20px; }
+.prototype-ui .page-status:empty { display:none; }
+.prototype-ui .app-inline-error { background:#fff0ef; color:#a02c25; padding:12px 14px; border-radius:7px; margin-bottom:16px; font-size:13px; }
+.prototype-ui .app-refresh { margin-left:auto; display:inline-flex; gap:6px; align-items:center; }
+.prototype-ui .app-refresh svg { width:16px; height:16px; }
+.prototype-ui .MuiTableContainer-root { min-width:0; }
+.prototype-ui input[type=checkbox], .prototype-ui input[type=radio] { min-height:0; padding:0; width:auto; }
+.prototype-ui .MuiInputBase-input { border:0; border-radius:0; min-height:0; }
+.prototype-ui .MuiSelect-nativeInput { min-height:0; padding:0; }
+.prototype-ui .MuiFormControl-root { min-width:0; }
+.prototype-ui .surface > .surface:first-child { margin-top:0; }
+@media(max-width:1050px) { .prototype-ui .role-display { padding:8px 13px; } }
+@media(max-width:780px) {
+  .prototype-ui .role-display { flex:1; justify-content:center; padding:9px 10px; }
+  .prototype-ui .demo-panel { padding:22px; }
+  .prototype-ui .demo-table th, .prototype-ui .demo-table td { padding:12px 8px; }
+  .prototype-ui .sidebar-bottom { display:none; }
+}
+@media(max-width:390px) {
+  .prototype-ui .demo-form-grid { grid-template-columns:1fr; }
+  .prototype-ui .demo-panel { padding:18px; }
+  .prototype-ui .role-display { font-size:13px; }
+  .prototype-ui .role-display svg { display:none; }
+}
+.prototype-ui .workspace-content>.MuiAlert-root{margin-bottom:18px}
+.prototype-ui .section-content>*+*{margin-top:16px}
+.prototype-ui .button svg{width:20px;height:20px;flex-shrink:0}
+.prototype-ui .overview-updated{font-size:12px;margin-top:18px}
+.prototype-ui .login-shell{max-width:1000px;margin:0 auto;min-height:100vh;display:grid;grid-template-columns:1fr 1fr;gap:64px;align-items:center;padding:56px 24px}
+.prototype-ui .login-intro h1{font-size:42px;margin:34px 0 20px}
+.prototype-ui .login-intro>p{color:var(--muted)}
+.prototype-ui .login-links{display:flex;flex-direction:column;gap:14px;text-align:center;font-size:13px;margin-top:22px}
+.prototype-ui .app-password{position:relative}
+.prototype-ui .app-password input{padding-right:64px}
+.prototype-ui .app-password button{position:absolute;right:7px;top:7px;min-height:32px;border:0;border-radius:5px;background:#f0f3f7;color:var(--muted);padding:5px 9px;font-size:12px}
+@media(max-width:780px){.prototype-ui .login-shell{grid-template-columns:1fr;gap:28px;padding:30px 18px;min-height:100vh}.prototype-ui .login-intro h1{font-size:32px;margin:24px 0 16px}}

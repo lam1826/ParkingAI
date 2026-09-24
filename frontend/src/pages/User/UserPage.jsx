@@ -1,5 +1,5 @@
-import { Box, Typography, Stack, Snackbar, Alert, Button, Dialog, DialogTitle, DialogContent, DialogContentText, DialogActions } from "@mui/material";
-import RefreshIcon from "@mui/icons-material/Refresh";
+import { Box, Snackbar, Alert, Button, Dialog, DialogTitle, DialogContent, DialogContentText, DialogActions } from "@mui/material";
+import { PageHeader, PrototypeIcon, WorkspaceTabs } from "../../components/common/PrototypeUI";
 
 import UserTable from "./components/UserTable";
 import UserDialog from "./components/UserDialog";
@@ -14,16 +14,12 @@ export default function UsersPage() {
   } = useUser();
 
   return (
-    <Box sx={{ p: 3 }}>
-      {/* Header */}
-      <Stack direction="row" sx={{ justifyContent: "space-between", alignItems: "center", mb: 3 }}>
-        <Typography variant="h5" fontWeight="bold" color="text.primary">
-          Quản lý Người dùng
-        </Typography>
-        <Button variant="outlined" startIcon={<RefreshIcon />} onClick={fetchUsers} disabled={loading}>
-          Làm mới
-        </Button>
-      </Stack>
+    <Box>
+      <PageHeader title="Tài khoản & phân quyền" description="Quản lý tài khoản nhân sự và tra cứu quyền sử dụng hệ thống." actions={<>
+        <button className="button quiet small" onClick={fetchUsers} disabled={loading || submitting}>Làm mới</button>
+        {canManage && <button className="button primary" onClick={handleOpenCreate} disabled={loading || submitting}><PrototypeIcon name="plus" />Thêm tài khoản</button>}
+      </>} />
+      <WorkspaceTabs />
 
       {/* Warning Banner */}
       {!canManage && (
@@ -33,30 +29,29 @@ export default function UsersPage() {
       )}
       {canManage && !canDeleteUsers && <Alert severity="info" sx={{ mb: 3 }}>Bạn có thể tạo, cập nhật và khóa tài khoản nhân viên. Tài khoản quản lý và quản trị viên do quản trị viên phụ trách.</Alert>}
 
-      {/* Table */}
+      {canManage && <UserDialog inline
+        isOpen={dialogOpen}
+        onClose={closeDialogs}
+        onSave={handleSave}
+        user={selectedUser}
+        roles={roles}
+        submitting={submitting}
+      />}
+
       <UserTable
         users={users}
         loading={loading}
         canManage={canManage}
         canDelete={canDeleteUsers}
         canEditUser={canEditUser}
-        onAdd={handleOpenCreate}
         onEdit={handleOpenEdit}
         onDelete={handleOpenDelete}
+        busy={submitting}
       />
 
       {/* Modals */}
       {canManage && (
         <>
-          <UserDialog
-            isOpen={dialogOpen}
-            onClose={closeDialogs}
-            onSave={handleSave}
-            user={selectedUser}
-            roles={roles}
-            submitting={submitting}
-          />
-
           <Dialog open={deleteDialogOpen && canDeleteUsers} onClose={closeDialogs}>
             <DialogTitle fontWeight="bold">Xác nhận xóa tài khoản</DialogTitle>
             <DialogContent>

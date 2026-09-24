@@ -1,5 +1,32 @@
 # Intent — ParkingAI theo đề bài gốc
 
+## Mẫu giao diện bắt buộc — 24/09/2026
+
+Người dùng phản hồi bản triển khai chưa đúng và chỉ rõ `http://127.0.0.1:8790/?v=full-demo`. Mẫu này là căn cứ bố cục trực tiếp: cùng tỷ lệ panel, điều hướng, form gọn, bảng và responsive; không chỉ giữ màu xanh hoặc nhóm menu. Đang sửa ứng dụng React thật theo cấu trúc mẫu, bảo toàn API, quyền, nghiệp vụ và dữ liệu. Không sửa bản mẫu, không xin duyệt lại một thiết kế khác.
+
+## Phê duyệt hiện hành — triển khai bản demo đã duyệt (23/09/2026)
+
+Người dùng đã phê duyệt rõ: **“được hãy triển khai theo bản demo này”**. Bước duyệt trước đã hoàn tất; triển khai giao diện/luồng trong `frontend/prototypes/parking-simple` vào ứng dụng thật FastAPI/React. Phần “chỉ demo/chờ duyệt” bên dưới là lịch sử và không còn chặn công việc. Giữ một bãi, các chức năng lõi, Admin kế thừa Manager và quyền Staff, bảo toàn dữ liệu/phí/thu tiền/lịch sử. Khách đặt trước tùy chọn; nhận khách vãng lai vẫn là luồng cốt lõi.
+
+
+## Đính chính hiện hành — xem demo trước khi triển khai (23/09/2026)
+
+Người dùng làm rõ: **cần xem và duyệt demo trước khi triển khai**. Đợt sửa ứng dụng thật bên dưới xuất phát từ việc Codex hiểu sai yêu cầu ưu tiên đề bài; không phải phê duyệt thiết kế/triển khai mới. Hiện chỉ trình bày và chỉnh prototype theo phản hồi. Giữ các thay đổi mã thật đã có ở dạng nháp cục bộ, chưa commit/push/deploy; không tiếp tục backend hoặc gọi AI thật trước khi demo được duyệt. F01–F13 là danh sách đối chiếu cho thiết kế demo, không phải lý do bỏ qua bước duyệt.
+
+Bản xem trước: `frontend/prototypes/parking-simple/index.html` / `http://127.0.0.1:8790/`. Phải nói rõ màn hình còn thiếu và chức năng đang mô phỏng. Kế hoạch/kết quả triển khai bên dưới là lịch sử và đã bị đính chính về phạm vi.
+
+## Ưu tiên hiện hành — hoàn thành đề bài gốc (23/09/2026)
+
+Người dùng xác nhận đề bài là tiêu chí nghiệm thu bắt buộc. Bản HTML ở `frontend/prototypes/parking-simple` chỉ dùng duyệt giao diện, không chứng minh hoàn thành backend, CSDL hoặc AI. Đợt này đối chiếu và hoàn thiện trên ứng dụng FastAPI/React hiện có, giữ một bãi cùng dữ liệu hiện hữu.
+
+Thứ tự ưu tiên: xác thực/phân quyền quản lý–nhân viên; CRUD khu vực/chỗ/loại xe/giá; phương tiện, vào/ra, thời gian và phí; chỗ trống theo khu; tra cứu biển số/thời gian; vé tháng hoặc khách quen; lưu lượng/doanh thu/cao điểm; ba chức năng AI báo cáo ngày/tuần, hỏi đáp và gợi ý nhân sự; kiểm thử và minh chứng KT1/KT2/KT3/cuối kỳ. Admin kế thừa khả năng Manager, Customer là tác nhân bổ sung; không bỏ Staff khỏi yêu cầu lõi.
+
+Tiêu chí hoàn thành: mỗi yêu cầu có mã chạy thật, đường thao tác đúng quyền và bằng chứng kiểm chứng; ghi tách test provider giả với nghiệm thu model thật, tách dữ liệu tổng hợp với dữ liệu thực. Không dựa vào số nút, tổng test hoặc demo mô phỏng để đánh dấu đủ đề.
+
+Camera/OCR/CV, QR ngân hàng, portal/đặt chỗ là phần mở rộng sau nghiệm thu lõi. Giữ các chức năng đã có nhưng không thêm phạm vi cho chúng trong đợt này. Không xóa dữ liệu/guard, không đổi DB đang dùng; kiểm trên DB tổng hợp riêng. Không push/deploy trong đợt kiểm chứng local này.
+
+Các mốc bên dưới là lịch sử; phần ưu tiên mới này có hiệu lực khi có khác biệt. Minh chứng mới sẽ được liên kết tại `docs/ORIGINAL_REQUIREMENTS.md`.
+
 ## Yêu cầu hiện hành — nâng cấp đồ án một bãi (15/09/2026)
 
 Người dùng đã phê duyệt phương án ngày 15/09/2026 và cho phép triển khai. Phạm vi vẫn là **một bãi duy nhất phục vụ đồ án**: giữ đầy đủ lõi gốc trước, sau đó thêm QR nhận tiền, camera quét biển, computer vision, website khách mua vé giờ/ngày/tháng, đặt chỗ và thanh toán hóa đơn. Không cần tham vấn Claude. Triển khai theo các giai đoạn trong plan.md; phê duyệt không thay cho nghiệm thu hoặc giao dịch ngân hàng thật.

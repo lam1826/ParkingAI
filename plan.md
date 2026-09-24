@@ -1,5 +1,106 @@
 # Plan
 
+## Phát hành production — 24/09/2026
+
+Người dùng yêu cầu thay bản cũ trên Fly.io và đã cho phép commit/push source/test lên GitHub công khai. Phê duyệt này thay thế giới hạn không deploy của các đợt lịch sử bên dưới. Giữ tên miền, tài khoản và dữ liệu Supabase; không nhập DB demo.
+
+- [x] Kiểm đích Fly/Pages, schema07, deep readiness và số lượng dữ liệu trước phát hành; lưu metadata image cũ.
+- [x] Commit/push backend `2e73887` (62 file), tắt showcase và thanh toán mô phỏng trong cấu hình Fly; frontend293/lint/production build đạt cục bộ.
+- [x] CI backend/PG16/Windows/OCR đạt, cổng backup Supabase đạt; CD đưa API lên schema09 và đúng SHA. Probe sau backend: deep readiness và số lượng dữ liệu không đổi.
+- [ ] Sau API mới, phát hành giao diện đúng mẫu đã duyệt lên Pages; kiểm CI/CD lần hai.
+- [ ] Kiểm trực tiếp HTTPS, readiness/CORS, đăng nhập/phân quyền/giao diện/camera và bảo toàn dữ liệu; cập nhật báo cáo và bộ nhớ chung.
+
+Theo dõi: [PRODUCTION_RELEASE_2026-09-24.md](docs/PRODUCTION_RELEASE_2026-09-24.md). Không bỏ cổng lỗi; camera vật lý, nhận dạng loại xe độc lập và payOS chưa có nghiệm thu.
+
+## Sửa lỗi tài khoản/camera và kiểm thử toàn bộ — 24/09/2026
+
+**Mục tiêu:** Sửa nút mất chữ ở trang tài khoản; camera đã có hình nhưng chưa đọc được biển số; chạy lại toàn bộ test và các chức năng qua API/UI, ghi trung thực FAIL/BLOCKED/NOT RUN, không bỏ assertion hoặc tạo số liệu để đạt.
+
+**Hiện trạng/phạm vi:** Giữ bố cục mẫu8790, sửa ứng dụng8793; kiểm chuỗi webcam → gửi ảnh → detector/OCR → kết quả → xác nhận vào/ra. Tái kiểm lõi F01–F13 cùng phần mở rộng đã có. Không reset DB người dùng, không chuyển tiền ngân hàng, không push/deploy. Dùng fixture/DB thử riêng hoặc DB tổng hợp có marker. Camera thật/AI provider phải báo riêng với mock và test giả lập.
+
+**Thành phần/owner:** Root: AccountPage, CSS/theme liên kết, frontend checks, AI live, tài liệu/memory. camera_repair: CameraOperations/vision/OCR và hồi quy. full_backend_audit: toàn pytest, phân tích lỗi và ma trận backend. full_browser_audit: ma trận chức năng và thử API/UI thật. Root sole writer shared memory; không restart/build khi browser đang kiểm.
+
+**Các bước và nghiệm thu:**
+- [x] Tái hiện chữ nút bằng computed style/contrast; sửa nguyên nhân và kiểm liên kết trên desktop/mobile. Giữ cả regression từ bản sửa CSS đầu; bản cuối a:where(...) đạt15/15 kiểm MUI/native/hover và sidebar.
+- [x] Tái hiện camera/OCR bằng khung hình hoặc ảnh chuẩn, kiểm cấu hình/model, sửa điểm hỏng; kiểm số đọc thực với nhãn đúng và giữ confidence/review guards. Luồng quét/review27/27; pilotVN toàn xe20/20 nhưng crop64/500, không gọi đã đạt thiết bị thật.
+- [x] Chạy toàn pytest và Node/lint/build, lưu log đầy đủ; sửa lỗi thật và chạy lại phạm vi ảnh hưởng. Baseline2013pass5fail20skip; wholefinal2024pass19skip; laterprefix36pass gồm2testmới. Không thêm skip;18PG+1POSIXchưa kiểm. Node279/lint/buildđạt.
+- [x] Chạy ma trận UI/API: quyền/tài khoản/hồ sơ, danh mục, vào/ra/phí/chỗ trống/lịch sử, khách/xe/vé tháng, đặt chỗ, thanh toán/hỗ trợ, báo cáo/AI, camera/cấu hình/audit và các phần mở rộng hiện có. Browser277route/97flows/34followup; giữ NOT_RUN cho giao dịch nâng cao chưa thao tác UI, bankBLOCKED, provider/OCR riêng.
+- [x] Kiểm AI/provider thật và OCR thật riêng, đối chiếu nội dung. Ghi rõ kiểm thử thiết bị/ngân hàng/DB khác nào chưa thực hiện hoặc bị chặn. AI9request:6thành công/3lỗi503, sáu output được đọc với snapshot. OCR520mẫuVN+2CC0; không giấu trường hợp nhận diện sai.
+- [x] Sửa xác nhận, cập nhật ma trận bằng chứng, bộ nhớ chung và bàn giao các lỗi/giới hạn còn lại. Báo cáo docs/COMPREHENSIVE_RETEST_2026-09-24.md và các tài liệu camera/AI/browser liên kết; không tuyên bố OCR/thiết bị/ngân hàng đã đủ nghiệm thu.
+
+**Rủi ro/khôi phục:** CSS mẫu có thể ghi đè anchor-button MUI; OCR có thể thiếu model/runtime hoặc chưa gửi khung hình. Giữ bản chụp/log trước sửa; sửa nhỏ theo nguyên nhân, không hạ ngưỡng hoặc bỏ quyền. Nếu provider/thiết bị không sẵn có, giữ test lỗi đúng và nêu chưa nghiệm thu, không gọi toàn hệ thống đã bình thường.
+
+**Thông tin đã rõ:** Người dùng xác nhận camera có hình nhưng không đọc được biển số. Không cần hỏi lại phê duyệt sửa và test.
+
+## Đính chính giao diện hiện hành — 24/09/2026
+
+Người dùng chỉ rõ mẫu chuẩn là `http://127.0.0.1:8790/?v=full-demo`. Bản triển khai trước tuy giữ nghiệp vụ nhưng chưa đạt bố cục; kết quả giao diện ngày 23/09 bên dưới đã bị thay thế về đánh giá độ giống mẫu. Cần tái sử dụng đúng cấu trúc, tỷ lệ, biểu mẫu, bảng và responsive của `frontend/prototypes/parking-simple`, nối API thật, không sửa prototype hay dữ liệu người dùng.
+
+- [x] Chụp mẫu 1440×1000 và 390×844; lấy CSS/SVG mẫu có phạm vi trong React.
+- [x] Thay shell, login, tổng quan, vận hành, chatbot, trang khách, danh mục, sơ đồ và báo cáo theo mẫu.
+- [x] Kiểm tra build/lint/test và browser nghiệp vụ; đối chiếu ảnh thật với ảnh mẫu; sửa lỗi có bằng chứng.
+- [x] Cập nhật hướng dẫn/memory và bàn giao link bản thật, phân biệt cổng 8790 mẫu và 8793 ứng dụng.
+
+Kết quả:274 test frontend; sau menu cuối14 test mục tiêu;10 test demo server; lint/build đạt. Browser103/103 nghiệp vụ,67/67 xác nhận bản cuối,42/42 xác nhận Admin. Sửa tràn điện thoại do nhãn ẩn header bảng và hai dialog min-height. Chi tiết/ảnh tại docs/PROTOTYPE_ALIGNMENT_2026-09-24.md. Không tuyên bố AI/ngân hàng/camera live đã nghiệm thu.
+
+Root giữ quyền ghi memory; agent core_frontend vận hành/chat, core_permissions danh mục/report/config, simplify_flows_audit khách và browser. Giữ auth/backend/phí/quote/idempotency; không triển khai ra ngoài, không chuyển tiền hay nghiệm thu camera/AI live trong đợt giao diện.
+
+## Phê duyệt hiện hành — triển khai bản demo đã duyệt (23/09/2026)
+
+Người dùng đã phê duyệt rõ: **“được hãy triển khai theo bản demo này”**. Bước duyệt trước đã hoàn tất; triển khai giao diện/luồng trong `frontend/prototypes/parking-simple` vào ứng dụng thật FastAPI/React. Phần “chỉ demo/chờ duyệt” bên dưới là lịch sử và không còn chặn công việc. Giữ một bãi, các chức năng lõi, Admin kế thừa Manager và quyền Staff, bảo toàn dữ liệu/phí/thu tiền/lịch sử. Khách đặt trước tùy chọn; nhận khách vãng lai vẫn là luồng cốt lõi.
+
+### Kế hoạch triển khai và nghiệm thu
+
+- [x] Shell/điều hướng/theme theo demo; nhóm màn Bãi đỗ, Khách & vé, Báo cáo, Loại xe & giá; tổng quan thật; giữ đường dẫn cũ có guard. Root.
+- [x] Vận hành nhập tay/camera + chọn lượt/xem phí/thu/trả, lịch sử riêng; giữ các API checkout và chứng từ. core_frontend.
+- [x] Customer Phí/Đặt trước/Vé/Hỗ trợ; chatbot công khai và chatbot nội bộ theo bãi/quyền. simplify_flows_audit.
+- [x] Server: vé bí mật cấp quyền thanh toán lượt hiện tại; đặt trước bằng biển/loại không cấp sở hữu; tự động camera có chống lặp. Additive migration, giữ dữ liệu cũ. core_permissions + camera owner.
+- [x] Test backend quyền/dữ liệu/phí/capacity/idempotency, frontend unit/lint/build; browser API thật DB tổng hợp riêng, desktop/mobile và luồng chính. Kiểm AI thật nếu provider cho phép, ghi tách lỗi ngoài hệ thống.
+- [x] README/ma trận SDLC/handoff và bản chạy local. Không push/deploy hoặc migrate DB người dùng trong phạm vi tự động.
+
+Kết quả triển khai: 272 test frontend, lint và build đạt; 81 test nghiệp vụ và 348 test schema đạt (1 skip); 42 kiểm tra giao dịch, 60 + 33 kiểm tra giao diện đạt. Đã xác nhận sửa sơ đồ bãi trên mobile ở 390px, scale 1. Bản thật chạy cổng 8793 với DB tổng hợp riêng. Gemini thật trả 503; chưa chốt nghiệm thu AI live. Xem docs/DEMO_IMPLEMENTATION_2026-09-23.md. Không push/deploy hoặc migrate DB người dùng.
+
+Phụ thuộc: schema/contracts chốt giữa agent trước khi ghép UI. Rủi ro chính là nhầm sở hữu xe từ biển số, tạo/thu trùng, mất tính tương thích chứng từ và rò dữ liệu giữa vai trò. Khôi phục: giữ migration cộng thêm tương thích, không xóa cột/bảng/lịch sử; test DB dùng bản riêng; giữ prototype để đối chiếu. Cổng8790 tiếp tục là prototype; ứng dụng thật dùng cổng local riêng.
+
+
+## Lịch sử trước phê duyệt — xem demo trước khi triển khai (23/09/2026)
+
+Người dùng làm rõ: **cần xem và duyệt demo trước khi triển khai**. Đợt sửa ứng dụng thật bên dưới xuất phát từ việc Codex hiểu sai yêu cầu ưu tiên đề bài; không phải phê duyệt thiết kế/triển khai mới. Hiện chỉ trình bày và chỉnh prototype theo phản hồi. Giữ các thay đổi mã thật đã có ở dạng nháp cục bộ, chưa commit/push/deploy; không tiếp tục backend hoặc gọi AI thật trước khi demo được duyệt. F01–F13 là danh sách đối chiếu cho thiết kế demo, không phải lý do bỏ qua bước duyệt.
+
+Bản xem trước: `frontend/prototypes/parking-simple/index.html` / `http://127.0.0.1:8790/`. Phải nói rõ màn hình còn thiếu và chức năng đang mô phỏng. Kế hoạch/kết quả triển khai bên dưới là lịch sử và đã bị đính chính về phạm vi.
+
+## Hoàn tất demo theo đề tài — 23/09/2026
+
+Yêu cầu mới “thêm đủ chức năng của đề tài” đã được thực hiện **trong prototype xem trước**. Đã thêm đăng nhập/quyền mô phỏng, CRUD khu/chỗ/loại/giá, khách/phương tiện/vé tháng/gia hạn, lịch sử/lọc, thống kê ngày/tuần và ba chức năng AI mô phỏng có số liệu nguồn/lịch sử. Admin kế thừa Manager, giữ ba giao diện chính và chế độ thử Staff.
+
+Kế hoạch chi tiết: [prototype PLAN](frontend/prototypes/parking-simple/PLAN.md); cách thử/ma trận: [README](frontend/prototypes/parking-simple/README.md); minh chứng: [SDLC_EVIDENCE](frontend/prototypes/parking-simple/SDLC_EVIDENCE.md). 30 Node tests và 65 kiểm tra trình duyệt đạt; HTTP8790 khớp bundle210523 bytes. Các nháp ứng dụng thật từ lượt trước không đổi (đối chiếu hash diff). Bước tiếp theo là người dùng xem demo; chưa triển khai tích hợp hoặc nghiệm thu LLM/backend thật.
+
+## Hoàn thiện và nghiệm thu theo đề gốc — 23/09/2026
+
+**Objective:** bảo đảm F01–F13 trên ứng dụng thật là ưu tiên số một. Prototype chỉ làm mẫu giao diện; các tính năng mở rộng không thay yêu cầu cốt lõi.
+
+**Existing behavior:** HEAD5922894 đã có FastAPI/SQLAlchemy/React, core/scoped API, CRUD, monthly/checkout, thống kê/Gemini, runner UAT một bãi và minh chứng cũ. Cần kiểm lại mã hiện tại; chưa gọi kết quả lịch sử là nghiệm thu mới.
+
+**Scope/files:** `frontend/src/layouts/MainLayout.jsx`, `utils/navigationItems.js`, các trang core/availability và test tương ứng; `backend/services/parking_service.py`, schema/test chỗ trống; `intent.md`, `plan.md`, `docs/ORIGINAL_REQUIREMENTS.md`, tài liệu SDLC/biên bản mới; `.agent-memory` do root ghi. Không sửa prototype hay tính năng ngân hàng/camera trong đợt này.
+
+**Steps / status:**
+- [x] Đối chiếu từng F01–F13 với mã/API/UI/test hiện hành; root tổng hợp, core_permissions kiểm backend, core_frontend kiểm UI.
+- [x] Sửa gap có bằng chứng: menu nghiệp vụ cốt lõi; loại xe ngừng hoạt động không báo trống; API legacy không gợi ý ô bị giữ, thống nhất với điều kiện nhận xe.
+- [x] Backend baseline294, sau sửa167, AI/analytics144; frontend227/lint/build đạt. Các nhóm test có giao nhau, không cộng tổng. UI fixture44 và API thật21 đạt, đã xem ảnh desktop/mobile.
+- [x] DB tổng hợp một bãi mới: HTTP core79 đạt; không ghi đè dữ liệu người dùng.
+- [ ] AI thật: đã gọi lại, provider Gemini trả503UNAVAILABLE. Cần chạy đủ 5ca ngày/tuần/hỏi đáp/nhân sự/kỳ rỗng và review nội dung khi provider phục hồi; chưa đánh dấu đạt.
+- [x] Cập nhật [biên bản hiện hành](docs/CORE_ACCEPTANCE_2026-09-23.md), ma trận yêu cầu–code–test, trình tự bảo vệ và minh chứng prompt/code/test; handoff ghi rõ giới hạn/provider còn mở.
+
+**Kết quả:** các thay đổi lõi đã kiểm cục bộ, source/dist cập nhật. Không commit/push/deploy/migration. Chưa nghiệm thu toàn đề đợt mới vì provider lỗi; kết quả AI thật ngày15/09 chỉ là lịch sử. Word/slide cũ chưa xuất lại. Backend hồi quy ban đầu166pass/1ca phụ thuộc đồng hồ; ghim riêng đồng hồ test và chạy lại167pass, không sửa nghiệp vụ phí.
+
+**Dependencies/risks:** nguồn cấu hình AI chỉ đọc dưới dạng trạng thái, không in secret; provider có thể hết quota/không khả dụng. Historical schema/data guards phải giữ nguyên; lỗi/đổi menu không được cho staff xem tài chính. Mọi fixture/DB UAT nằm trong artifacts riêng. Mã frontend/backend có chủ sở hữu riêng; root chỉ ghi tài liệu chung.
+
+**Verification:** core auth/catalog/fee/slots/monthly/search/checkout suites; scoped analytics/AI validation/history/provider-failure tests; npm test/lint/build; existing `verify_single_lot_core.py`, `verify_single_lot_ai.py` và UI theo khả năng. Dùng kết quả mới, không cộng số test lặp thành coverage.
+
+**Rollback/recovery:** không migrate DB người dùng hay deploy; có thể bỏ riêng các thay đổi nguồn/UI/tài liệu đợt này. Dữ liệu kiểm chứng nằm trong DB mới, không ghi đè presentation DB hoặc credentials cũ. Không xóa artifact lỗi để giả kết quả đạt.
+
+**Open questions:** không có câu hỏi chặn việc hoàn thiện lõi. Thiết bị camera và payOS không nằm trong gate của đề bài.
+
 ## Phương án nâng cấp một bãi phục vụ đồ án — 15/09/2026
 
 **Objective:** bảo toàn/hoàn thiện F01–F13 theo đề, sau đó mở rộng E01–E08 cho một bãi đồ án. Người dùng đã phê duyệt phương án ngày 15/09/2026; bắt đầu triển khai, không cần tham vấn Claude.
@@ -167,6 +268,17 @@ Migration SQLite chạy trên candidate và chỉ thay sau preflight/readiness; 
 Không cần tài khoản thanh toán hoặc camera thật cho phạm vi đồ án. Model có metadata giấy phép khác model card; tài liệu phải ghi nguồn và giới hạn đúng thực tế.
 
 ## Status
+### Production replacement authorized 24/09/2026
+- Existing production confirmed: Fly parkingai-api-lam1826, API api.parkingai.am release9c6aa58, Cloudflare Pages parkingai.am, Supabase PostgreSQL schema07. Remote main5922894 matches local base. Preserve data/accounts and existing domains.
+- Prepare current frontend/backend and additive migrations08/09; inspect CI requirements, production recovery gate, Pages ordering and rollback. Run required CI including realPostgreSQL; no skipped release gates or synthetic local DB substitution.
+- Publish through existing authorized deployment workflow, verify exact release/schema/readiness/CORS/frontend/auth and camera availability. Record actual limits and update shared memory after release.
+
+### Camera automatic-start follow-up 24/09/2026
+- Reproduced on 8793: ready webcam but Admin/Manager button disabled because policy defaults OFF; enabling checkbox hidden in advanced settings. Staff still requires manager permission.
+- Implemented startup: open source, explicitly enable policy for Admin/Manager preserving thresholds, wait for confirmed policy, then capture new live frames. Failed camera/permission/policy requests do not show running. Stop stays available; completed in-flight result refreshes parking data without changing newer selection.
+- Verified final frontend293pass/lint/build, backend127pass/no skips and final integrated normal loop34pass after backend reload. Browser116workflow/60failure paths/30roles/27late response are separately recorded overlapping batches; red baselines retained. Shared policy/session/image/passage counts unchanged; isolated clone stopped. See docs/CAMERA_AUTOMATION_FIX_2026-09-24.md.
+- Fixed successful-auto-image quota exhaustion with exact durable event matching and60s rate-window retention; genuine human-review images and event/session/payment/replay retained. Retired event UUID upload410, no quota/threshold changes. Physical camera and real high-confidence automatic admission remain unverified.
+
 ### Review/debug vòng 2 ngày 08/09/2026
 - Nguồn yêu cầu: `docs/REVIEW_ROUND2_2026-09-08.md`, backlog `docs/tickets/epics.json` và `docs/tickets/tickets.json`.
 - P0 PARK-101–104: đã tái hiện bằng test đỏ và sửa bốn lỗi chặn demo: dữ liệu email legacy làm v1 serialize 500; replay portal giữ khóa SQLite và làm mất audit; upload ảnh giữ connection/cạn pool và audit chặn event loop; SPA demo che API `/dashboard`.

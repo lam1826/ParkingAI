@@ -1,17 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import {
-  Alert,
-  Box,
-  Button,
-  Chip,
-  MenuItem,
-  Paper,
-  Stack,
-  TextField,
-  Typography,
-} from "@mui/material";
-import RefreshIcon from "@mui/icons-material/Refresh";
-import { DataGrid, GridToolbar } from "@mui/x-data-grid";
+import { PageHeader } from "../../components/common/PrototypeUI";
+import { getErrorMessage } from "../../utils/errorMessage";
 import api from "../../services/api";
 import { requestAllOffsetPages } from "../../services/paginatedLookup";
 import formatMetadataTimestamp from "../../utils/formatMetadataTimestamp";
@@ -36,6 +25,7 @@ export default function AuditLogPage() {
     requestGate.current = createLatestRequestGate();
   }
   const [rows, setRows] = useState([]);
+  const [page, setPage] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [action, setAction] = useState("");
@@ -60,7 +50,7 @@ export default function AuditLogPage() {
       if (requestGate.current.isCurrent(generation)) setRows(data);
     } catch (requestError) {
       if (requestGate.current.isCurrent(generation)) {
-        setError(requestError.response?.data?.detail || "Không thể tải nhật ký hoạt động.");
+        setError(getErrorMessage(requestError, "Không thể tải nhật ký hoạt động."));
       }
     } finally {
       if (requestGate.current.isCurrent(generation)) setLoading(false);
@@ -72,61 +62,30 @@ export default function AuditLogPage() {
     return () => requestGate.current.invalidate();
   }, [load]);
 
-  const columns = [
-    { field: "id", headerName: "ID", width: 75 },
-    // created_at do SQLite func.now() sinh -> UTC-naive, phải diễn giải là
-    // UTC trước khi hiển thị theo giờ VN (xem utils/formatMetadataTimestamp.js).
-    { field: "created_at", headerName: "Thời gian", width: 175, valueFormatter: (value) => formatMetadataTimestamp(value) },
-    { field: "username", headerName: "Tài khoản", minWidth: 140, flex: 1 },
-    { field: "action", headerName: "Hành động", width: 135, renderCell: ({ value }) => <Chip size="small" label={actionLabels[value] || value} /> },
-    { field: "resource", headerName: "Đối tượng", minWidth: 140, flex: 1 },
-    { field: "resource_id", headerName: "Mã đối tượng", width: 135, valueFormatter: (value) => value || "—" },
-    { field: "path", headerName: "API", minWidth: 220, flex: 1.3 },
-    { field: "request_id", headerName: "Mã truy vết", minWidth: 250, flex: 1 },
-    { field: "site_id", headerName: "Bãi", width: 80 },
-    { field: "duration_ms", headerName: "Thời gian (ms)", width: 125 },
-    { field: "status_code", headerName: "Mã HTTP", width: 100 },
-    {
-      field: "success",
-      headerName: "Kết quả",
-      width: 115,
-      renderCell: ({ value }) => <Chip size="small" color={value ? "success" : "error"} label={value ? "Thành công" : "Thất bại"} />,
-    },
-  ];
-
-  return (
-    <Stack spacing={2.5}>
-      <Box>
-        <Typography variant="h5" fontWeight="bold">Nhật ký hoạt động</Typography>
-        <Typography color="text.secondary">Theo dõi thao tác thay đổi dữ liệu của nhân viên, quản lý và quản trị viên.</Typography>
-      </Box>
-      <Paper sx={{ p: 2 }}>
-        <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
-          <TextField select size="small" label="Hành động" value={action} onChange={(event) => setAction(event.target.value)} sx={{ minWidth: 165 }}>
-            <MenuItem value="">Tất cả</MenuItem>
-            {Object.entries(actionLabels).map(([value, label]) => <MenuItem key={value} value={value}>{label}</MenuItem>)}
-          </TextField>
-          <TextField size="small" label="Tên tài khoản" value={username} onChange={(event) => setUsername(event.target.value)} />
-          <TextField select size="small" label="Kết quả" value={success} onChange={(event) => setSuccess(event.target.value)} sx={{ minWidth: 150 }}>
-            <MenuItem value="">Tất cả</MenuItem>
-            <MenuItem value="true">Thành công</MenuItem>
-            <MenuItem value="false">Thất bại</MenuItem>
-          </TextField>
-          <Button startIcon={<RefreshIcon />} onClick={load}>Làm mới</Button>
-        </Stack>
-      </Paper>
-      {error && <Alert severity="error">{error}</Alert>}
-      <Box sx={{ height: 610, width: "100%" }}>
-        <DataGrid
-          rows={rows}
-          columns={columns}
-          loading={loading}
-          disableRowSelectionOnClick
-          pageSizeOptions={[25, 50, 100]}
-          initialState={{ pagination: { paginationModel: { pageSize: 25 } } }}
-          slots={{ toolbar: GridToolbar }}
-        />
-      </Box>
-    </Stack>
-  );
+  const currentPage = Math.min(page, Math.max(0, Math.ceil(rows.length / 25) - 1));
+  const changeFilter = setter => event => { setter(event.target.value); setPage(0); };
+  const detailFields = [["id", "ID"], ["resource_id", "Mã đối tượng"], ["path", "API"], ["request_id", "Mã truy vết"], ["site_id", "Bãi"], ["duration_ms", "Thời gian xử lý (ms)"], ["status_code", "Mã HTTP"]];
+  return <>
+    <PageHeader title="Nhật ký hoạt động" description="Theo dõi thao tác thay đổi dữ liệu của nhân viên, quản lý và quản trị viên." />
+    <section className="surface"><div className="section-head"><h2>Lọc hoạt động</h2></div>
+      <form className="form-grid" onSubmit={event => { event.preventDefault(); void load(); }}>
+        <label className="field">Hành động<select value={action} onChange={changeFilter(setAction)}><option value="">Tất cả</option>{Object.entries(actionLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+        <label className="field">Tên tài khoản<input value={username} onChange={changeFilter(setUsername)} placeholder="Tìm theo tài khoản…" /></label>
+        <label className="field">Kết quả<select value={success} onChange={changeFilter(setSuccess)}><option value="">Tất cả</option><option value="true">Thành công</option><option value="false">Thất bại</option></select></label>
+        <div className="form-actions core-wide"><button className="button secondary" disabled={loading}>Làm mới</button><button type="button" className="button quiet" onClick={() => { setAction(""); setUsername(""); setSuccess(""); setPage(0); }}>Xóa bộ lọc</button></div>
+      </form>
+    </section>
+    <section className="surface" aria-labelledby="audit-title"><div className="section-head"><h2 id="audit-title">Hoạt động gần đây</h2><span className="muted">{rows.length} bản ghi</span></div>
+      {error && <p className="form-error" role="alert">{error}</p>}
+      {loading ? <p className="empty" role="status">Đang tải nhật ký hoạt động…</p> : !rows.length ? <div className="empty">Chưa có hoạt động phù hợp với bộ lọc.</div> : <>
+        <div className="table-wrap"><table className="data-table"><thead><tr><th scope="col">Thời gian</th><th scope="col">Hành động</th><th scope="col">Đối tượng</th><th scope="col">Tài khoản</th><th scope="col">Kết quả</th><th scope="col">Chi tiết</th></tr></thead><tbody>
+          {rows.slice(currentPage * 25, currentPage * 25 + 25).map(row => <tr key={row.id}>
+            <td className="tabular">{formatMetadataTimestamp(row.created_at)}</td><td>{actionLabels[row.action] || row.action}</td><td>{row.resource || "—"}{row.resource_id != null && <div className="muted" style={{ fontSize: 12, overflowWrap: "anywhere" }}>{row.resource_id}</div>}</td><td>{row.username || "—"}</td><td><span className={`badge ${row.success ? "success" : "warning"}`}>{row.success ? "Thành công" : "Thất bại"}</span></td>
+            <td><details style={{ textAlign: "left", minWidth: 90 }}><summary style={{ cursor: "pointer", color: "var(--blue)" }}>Chi tiết</summary><dl className="definition-list" style={{ gridTemplateColumns: "1fr", gap: 12, marginTop: 16, maxWidth: 320 }}>{detailFields.map(([key, label]) => <div key={key}><dt>{label}</dt><dd style={{ overflowWrap: "anywhere", whiteSpace: "pre-wrap", fontSize: 12 }}>{row[key] ?? "—"}</dd></div>)}</dl></details></td>
+          </tr>)}
+        </tbody></table></div>
+        {rows.length > 25 && <div className="form-actions" style={{ justifyContent: "flex-end", marginTop: 18 }}><button className="button quiet small" disabled={!currentPage} onClick={() => setPage(currentPage - 1)}>Trang trước</button><span className="muted">Trang {currentPage + 1} / {Math.ceil(rows.length / 25)}</span><button className="button quiet small" disabled={(currentPage + 1) * 25 >= rows.length} onClick={() => setPage(currentPage + 1)}>Trang sau</button></div>}
+      </>}
+    </section>
+  </>;
 }

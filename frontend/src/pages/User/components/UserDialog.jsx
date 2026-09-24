@@ -9,7 +9,7 @@ const initialForm = {
   is_active: true,
 };
 
-const UserDialog = ({ isOpen, onClose, onSave, user, roles, submitting }) => {
+const UserDialog = ({ inline = false, isOpen, onClose, onSave, user, roles, submitting }) => {
   const [form, setForm] = useState(initialForm);
 
   useEffect(() => {
@@ -36,6 +36,7 @@ const UserDialog = ({ isOpen, onClose, onSave, user, roles, submitting }) => {
 
   const handleSubmit = (e) => {
     e.preventDefault();
+    if (submitting) return;
     const submitData = { ...form };
     // Nếu là edit và không nhập mật khẩu mới, xóa trường password đi
     if (user && !submitData.password) {
@@ -44,6 +45,18 @@ const UserDialog = ({ isOpen, onClose, onSave, user, roles, submitting }) => {
     submitData.role_id = Number(submitData.role_id);
     onSave(submitData);
   };
+
+  if (inline) return isOpen ? <section className="surface core-editor" aria-labelledby="account-form-title">
+    <div className="section-head"><h2 id="account-form-title">{user ? "Sửa tài khoản" : "Thêm tài khoản"}</h2></div>
+    <form className="form-grid" onSubmit={handleSubmit}>
+      <label className="field">Họ và tên<input autoFocus name="full_name" required value={form.full_name} disabled={submitting} onChange={handleChange} autoComplete="off" /></label>
+      <label className="field">Tên đăng nhập<input name="username" required value={form.username} disabled={Boolean(user) || submitting} onChange={handleChange} autoComplete="off" /></label>
+      <label className="field">Vai trò<select name="role_id" required value={form.role_id} disabled={roles.length === 1 || submitting} onChange={handleChange}><option value="">Chọn vai trò</option>{roles.map(role => <option key={role.id} value={role.id}>{role.name}</option>)}</select></label>
+      <label className="field">{user ? "Mật khẩu mới (để trống nếu không đổi)" : "Mật khẩu"}<input type="password" name="password" required={!user} value={form.password} disabled={submitting} onChange={handleChange} autoComplete="new-password" /></label>
+      <label className="checkbox-field"><input type="checkbox" name="is_active" checked={form.is_active} disabled={submitting} onChange={handleChange} /><span>Tài khoản hoạt động</span></label>
+      <div className="form-actions core-wide"><button className="button primary" disabled={submitting}>{submitting ? "Đang lưu…" : user ? "Lưu thay đổi" : "Tạo tài khoản"}</button><button type="button" className="button secondary" disabled={submitting} onClick={onClose}>Hủy</button></div>
+    </form>
+  </section> : null;
 
   return (
     <Dialog open={isOpen} onClose={onClose} maxWidth="sm" fullWidth>

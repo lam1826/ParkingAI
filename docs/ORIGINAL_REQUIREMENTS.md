@@ -1,6 +1,10 @@
 # Phạm vi nộp đồ án theo đề bài gốc
 
-Cập nhật 09/09/2026: ứng dụng `0b8c54c` đã phát hành và nghiệm thu ba mục sửa; mốc đối chiếu ban đầu `3afc56c`. Yêu cầu người dùng nhắc lại là căn cứ ưu tiên cao hơn các đề xuất mở rộng trước đó.
+**Kiểm lại mới nhất 24/09:** [Sửa tài khoản/camera và kiểm thử tổng thể](COMPREHENSIVE_RETEST_2026-09-24.md), [AI thật đã đối chiếu đủ sáu loại ca nhưng có ba lần 503](AI_LIVE_RETEST_2026-09-24.md), [OCR thật gồm các mẫu đọc sai/không đọc được](CAMERA_SCAN_DIAGNOSIS_2026-09-24.md). Các kết quả ngày23/09 bên dưới là mốc lịch sử, không thay cho kết quả mới; không coi model mock hay trang mở được là nghiệm thu đầy đủ.
+
+**Triển khai demo đã duyệt:** xem [bản tích hợp FastAPI/React ngày23/09](DEMO_IMPLEMENTATION_2026-09-23.md). Các màn lõi được giữ và nhóm lại; bổ sung Customer tra phí/đặt trước, loại xe không biển số, camera tự động có điều kiện. Kết quả AI thật hiện còn503; không dùng bản mô phỏng thay nghiệm thu mô hình.
+
+Cập nhật 23/09/2026: **đề bài gốc là tiêu chí nghiệm thu ưu tiên**; prototype giao diện và các phần mở rộng không thay thế chức năng thật. Đã rà ứng dụng tại HEAD `5922894` và sửa bổ sung trong working tree. Kết quả mới, ma trận F01–F13 và giới hạn nằm ở [CORE_ACCEPTANCE_2026-09-23.md](CORE_ACCEPTANCE_2026-09-23.md). Nghiệp vụ qua HTTP cục bộ đạt 79 bước; nghiệm thu AI thật đợt này còn mở vì Gemini trả 503 UNAVAILABLE. Không gọi kết quả live cũ là kết quả mới.
 
 ## 1. Mục tiêu bắt buộc
 
@@ -8,7 +12,7 @@ Một bãi đỗ xe gồm nhiều khu vực và vị trí, phục vụ hai vai t
 
 AI cốt lõi là **sinh báo cáo lưu lượng ngày/tuần, hỏi đáp dữ liệu bãi xe và gợi ý bố trí nhân sự theo cao điểm**. Backend tổng hợp số liệu từ CSDL; AI chỉ diễn giải dữ liệu được cung cấp. Phải phân biệt dữ liệu demo, thống kê thực, giả định về năng suất nhân viên và dữ liệu không đủ để kết luận.
 
-Giữ FastAPI/React, SQLite cục bộ và PostgreSQL trên website. Gemini hiện có đã bật; ba nhóm AI đã kiểm model thật trên dữ liệu tổng hợp demo được người dùng cho phép gửi. Không yêu cầu thay kiến trúc, huấn luyện model mới hoặc tăng gói Fly.
+Giữ FastAPI/React, SQLite cục bộ và PostgreSQL trên website. Gemini đã được tích hợp; phải kiểm trạng thái cấu hình và provider ở môi trường trình diễn. Ba nhóm AI có bằng chứng live lịch sử nhưng lần kiểm lại 23/09 chưa sinh được output. Không yêu cầu thay kiến trúc, huấn luyện model mới hoặc tăng gói Fly.
 
 ## 2. Ma trận yêu cầu – mã – kiểm thử – khoảng thiếu
 
@@ -17,7 +21,7 @@ Giữ FastAPI/React, SQLite cục bộ và PostgreSQL trên website. Gemini hi�
 | Mục đề bài | Mã và bằng chứng | Điều còn phải bảo đảm ở bản nộp một bãi |
 | --- | --- | --- |
 | Đăng nhập, phân quyền quản lý/nhân viên | `backend/services/auth_service.py`, `backend/expansion/site_scope.py`; `tests/test_auth.py`, `tests/test_expansion_sites.py` | Hai vai trò thực hiện được phần việc của mình; không phải dùng admin thay quản lý hoặc bỏ guard để mở chức năng |
-| Khu vực, vị trí, loại xe | `backend/routers/zone.py`, `parking_slot.py`, `vehicle_type.py`; `backend/expansion/site_router.py`; `tests/test_management_api.py`, `tests/test_zone_slot_integrity.py` | Khu/chỗ đã có đường theo bãi. Quản lý loại xe và bảng giá hiện còn phụ thuộc API toàn hệ thống/admin trên website; cần chốt luồng quản lý đúng quyền |
+| Khu vực, vị trí, loại xe | `backend/routers/zone.py`, `parking_slot.py`, `vehicle_type.py`; `backend/expansion/site_router.py`; `tests/test_management_api.py`, `tests/test_zone_slot_integrity.py` | Manager CRUD loại xe/bảng giá đã được triển khai và kiểm lại HTTP trong DB một bãi; giữ guard quyền và dữ liệu legacy |
 | Xe vào/ra, thời gian gửi | `backend/services/parking_service.py`, `backend/expansion/site_router.py`; `tests/test_session_lifecycle_integrity.py`, `tests/test_checkout_quote_contract.py` | Nhập biển thủ công phải hoàn tất được hành trình; OCR là lựa chọn hỗ trợ |
 | Tính phí theo loại xe và thời gian | `ParkingService.calculate_fee`, `backend/routers/price_config.py`; `tests/test_fee.py`, `tests/test_price_config_api.py` | Hiển thị cách tính/phí trước trả xe; số tiền do server xác định, giữ xác nhận thu tiền |
 | Chỗ trống theo khu vực | `ParkingService.get_available_slots_summary`, `backend/expansion/site_service.py`; `tests/test_slots.py`, `tests/test_expansion_sites.py` | Phân biệt chỗ có xe, chỗ bị giữ và chỗ có thể nhận xe; cập nhật sau vào/ra |
@@ -30,17 +34,17 @@ Giữ FastAPI/React, SQLite cục bộ và PostgreSQL trên website. Gemini hi�
 | Test cho vào/ra, phí, chỗ trống, AI | Các file test ở trên; `tests/conftest.py` chặn provider thật trong pytest | Giữ kiểm thử tự động; ghi riêng phiên chạy model thật, không gọi mock là kết quả live |
 | AI trong SDLC: KT1/KT2/KT3/cuối kỳ | `docs/AI_SDLC.md`, `docs/EXPANSION_SDLC.md`, code/test/commit | Minh chứng chính phải bám nghiệp vụ và AI báo cáo. Phân biệt prompt tái lập với bản ghi prompt đã thực sự sử dụng; không tạo lại lịch sử như bằng chứng gốc |
 
-## 3. Kết quả ba mục sửa
+## 3. Kết quả ba mục sửa ngày 09/09 — lịch sử
 
 **READY cho ba mục người dùng yêu cầu sửa:** Gemini thật cho báo cáo ngày/tuần, hỏi đáp và nhân sự; Báo cáo/AI đúng quyền quản lý–nhân viên; lọc ngày vào trong lịch sử. Đã kiểm kỳ rỗng, retry, lịch sử và một lần sinh qua giao diện. Đọc kết quả live phát hiện lỗi đơn vị giờ, đã sửa prompt rồi nghiệm thu lại. [Biên bản](CORE_AI_COMPLETION.md) có bằng chứng và giới hạn.
 
 Không xóa bãi cũ, không bỏ guard legacy. Nghiệm thu toàn bộ đề gốc và vận hành bãi thật chưa được chốt.
 
-## 4. Công việc còn theo dõi
+## 4. Công việc còn theo dõi — cập nhật 23/09
 
-1. PARK-217 DONE: ba nhóm Gemini thật, kỳ rỗng và nút sinh AI đã đạt trong phạm vi các ca đã kiểm.
-2. PARK-218 IN_PROGRESS: menu/báo cáo/lọc ngày đã xong; còn luồng manager cấu hình loại xe/bảng giá ngoài ba mục sửa.
-3. PARK-219 IN_PROGRESS: đã bổ sung bằng chứng thật; UAT/hồ sơ toàn đề còn mở.
+1. PARK-217 có bằng chứng đạt lịch sử; kiểm lại provider hiện tại còn mở do 503 UNAVAILABLE. Cần đủ ngày/tuần/hỏi đáp/nhân sự/kỳ rỗng và review nội dung trước khi chốt AI mới.
+2. PARK-218: luồng manager cấu hình loại xe/bảng giá đã có, được kiểm lại trong HTTP 79 bước. Menu nghiệp vụ ưu tiên trước phần mở rộng; sửa chỗ đang giữ không được tính là nhận xe được. Không còn coi các mục này là thiếu triển khai.
+3. PARK-219: đã cập nhật ma trận, code/test và minh chứng Markdown. Chưa chốt toàn đề trong phiên này khi AI thật chưa kiểm lại thành công; Word/slide cũ chưa xuất lại. Xem biên bản mới để phân biệt phần đạt cục bộ và phần còn mở.
 
 ## 5. Phần bổ sung và phần không phát triển tiếp
 
@@ -51,7 +55,7 @@ Không xóa bãi cũ, không bỏ guard legacy. Nghiệm thu toàn bộ đề g�
 
 ## 6. Kịch bản nghiệm thu theo đề
 
-Đây là kịch bản mục tiêu, chưa phải biên bản đã thực hiện đầy đủ trên website.
+Đây là kịch bản bảo vệ. Bước nghiệp vụ đã có kiểm chứng HTTP cục bộ mới; không thay cho nghiệm thu trên website đã triển khai. Các bước AI thật phải kiểm lại khi provider hoạt động. Xem biên bản 23/09 ở đầu tài liệu.
 
 1. Quản lý đăng nhập, xem/cấu hình khu vực, vị trí, loại xe và bảng giá đúng quyền.
 2. Nhân viên nhập biển và nhận xe; kiểm chứng lượt vào, giờ vào và chỗ trống theo khu vực giảm đúng.

@@ -23,16 +23,20 @@ test("MUI layout props stay in sx instead of leaking to DOM", () => {
   assert.deepEqual(offenders, []);
 });
 
-test("CrudPage includes its default page size in pageSizeOptions", () => {
+test("compact catalog uses a native table and offers pagination without a DataGrid page-size warning", () => {
   const crudPage = readFileSync(
     fileURLToPath(new URL("../src/components/common/CrudPage.jsx", import.meta.url)),
     "utf8",
   );
 
-  assert.match(crudPage, /pageSizeOptions=\{\[10, 25, 50, 100\]\}/);
+  assert.doesNotMatch(crudPage, /@mui\/x-data-grid|<DataGrid|pageSizeOptions/);
+  assert.match(crudPage, /<table\b/);
+  assert.match(crudPage, /scope="col"/);
+  assert.match(crudPage, /Trang trước/);
+  assert.match(crudPage, /Trang sau/);
 });
 
-test("CrudPage focuses the first text field when its dialog opens", () => {
+test("CrudPage focuses the first text or select field when its inline editor opens", () => {
   const crudPage = readFileSync(
     fileURLToPath(new URL("../src/components/common/CrudPage.jsx", import.meta.url)),
     "utf8",

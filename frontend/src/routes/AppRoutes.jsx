@@ -14,6 +14,8 @@ import { hasMinimumRole } from "../constants/roles";
 const lazy = lazyWithRecovery;
 
 // --- Pages ---
+const OverviewPage = lazy(() => import("../pages/Expansion/OverviewPage"));
+const SiteFinancePage = lazy(() => import("../pages/Expansion/SiteFinancePage"));
 const Dashboard = lazy(() => import("../pages/Dashboard/DashboardPage"));
 const LoginPage = lazy(() => import("../pages/Login/LoginPage"));
 const RegisterPage = lazy(() => import("../pages/Register/RegisterPage"));
@@ -46,6 +48,7 @@ const VisionPage = lazy(() => import("../pages/Expansion/VisionPage"));
 const OccupancyPage = lazy(() => import("../pages/Expansion/OccupancyPage"));
 const InsightsPage = lazy(() => import("../pages/Expansion/InsightsPage"));
 const CoreAnalyticsPage = lazy(() => import("../pages/Expansion/CoreAnalyticsPage"));
+const SiteConfigurationPage = lazy(() => import("../pages/Expansion/SiteConfigurationPage"));
 
 function CoreAnalyticsRoute({ mode }) {
   const capabilities = useExpansion();
@@ -54,10 +57,18 @@ function CoreAnalyticsRoute({ mode }) {
     : <PermissionRoute minimumRole="manager">{mode === "ai" ? <AIPage /> : <ReportPage />}</PermissionRoute>;
 }
 
+function FinanceRoute() {
+  const capabilities = useExpansion();
+  return capabilities?.site_finance_enabled
+    ? <PermissionRoute minimumRole="staff" legacy={false}><SiteFinancePage /></PermissionRoute>
+    : <PermissionRoute minimumRole="staff"><FinancePage /></PermissionRoute>;
+}
+
 function HomePage() {
   const { user } = useContext(AuthContext);
   const capabilities = useExpansion();
   if (user?.role === "customer") return <Navigate to="/portal" replace />;
+  if (capabilities.site_analytics_enabled) return <PermissionRoute minimumRole="staff" legacy={false}><OverviewPage /></PermissionRoute>;
   if (singleSiteId() !== null || !capabilities.legacy_workspace_allowed || !hasMinimumRole(user?.role, "manager")) return <Navigate to="/sites" replace />;
   return <PermissionRoute minimumRole="manager"><Dashboard /></PermissionRoute>;
 }
@@ -86,6 +97,9 @@ const AppRoutes = () => {
         <Route path="reservations" element={<ReservationsPage />} />
         <Route path="portal-admin" element={<PermissionRoute minimumRole="manager" legacy={false}><PortalAdminPage /></PermissionRoute>} />
         <Route path="sites" element={<PermissionRoute minimumRole="staff" legacy={false}><SitesWorkspace /></PermissionRoute>} />
+        <Route path="site-settings" element={<PermissionRoute minimumRole="manager" legacy={false}><SiteConfigurationPage /></PermissionRoute>} />
+        <Route path="history" element={<PermissionRoute minimumRole="staff" legacy={false}><SitesWorkspace view="history" /></PermissionRoute>} />
+        <Route path="operations" element={<Navigate to="/sites" replace />} />
         <Route path="vision" element={<PermissionRoute minimumRole="staff" legacy={false}><VisionPage /></PermissionRoute>} />
         <Route path="occupancy" element={<PermissionRoute minimumRole="staff" legacy={false}><OccupancyPage /></PermissionRoute>} />
         <Route path="insights" element={<PermissionRoute minimumRole="staff" legacy={false}><InsightsPage /></PermissionRoute>} />
@@ -149,7 +163,7 @@ const AppRoutes = () => {
         <Route path="vehicle-types" element={<PermissionRoute minimumRole="staff"><VehicleTypePage /></PermissionRoute>} />
         <Route path="price-configs" element={<PermissionRoute minimumRole="staff"><PriceConfigPage /></PermissionRoute>} />
         <Route path="reports" element={<CoreAnalyticsRoute mode="reports" />} />
-        <Route path="finance" element={<PermissionRoute minimumRole="staff"><FinancePage /></PermissionRoute>} />
+        <Route path="finance" element={<FinanceRoute />} />
         <Route path="audit-logs" element={<PermissionRoute minimumRole="manager"><AuditLogPage /></PermissionRoute>} />
         <Route path="ai" element={<CoreAnalyticsRoute mode="ai" />} />
         <Route path="roles" element={<PermissionRoute minimumRole="manager"><RolePage /></PermissionRoute>} />

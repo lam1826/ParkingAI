@@ -1,259 +1,80 @@
 import { useState, useContext } from "react";
-import { Outlet, useNavigate, useLocation } from "react-router-dom";
-import {
-  Box,
-  Drawer,
-  AppBar,
-  Toolbar,
-  List,
-  Typography,
-  Divider,
-  IconButton,
-  ListItem,
-  ListItemButton,
-  ListItemIcon,
-  ListItemText,
-  Menu,
-  MenuItem,
-  Alert,
-  Chip,
-} from "@mui/material";
-
-// Import Icons
-import MenuIcon from "@mui/icons-material/Menu";
-import DashboardIcon from "@mui/icons-material/Dashboard";
-import LocalParkingIcon from "@mui/icons-material/LocalParking";
-import DirectionsCarIcon from "@mui/icons-material/DirectionsCar";
-import CardMembershipIcon from "@mui/icons-material/CardMembership";
-import PeopleIcon from "@mui/icons-material/People";
-import AccountCircleIcon from "@mui/icons-material/AccountCircle";
-import DomainIcon from "@mui/icons-material/Domain";
-import CategoryIcon from "@mui/icons-material/Category";
-import PriceChangeIcon from "@mui/icons-material/PriceChange";
-import AssessmentIcon from "@mui/icons-material/Assessment";
-import AdminPanelSettingsIcon from "@mui/icons-material/AdminPanelSettings";
-import HistoryIcon from "@mui/icons-material/History";
-import SmartToyIcon from "@mui/icons-material/SmartToy";
-
+import { Link, Outlet, useNavigate, useLocation } from "react-router-dom";
+import { Menu, MenuItem, Divider } from "@mui/material";
 import { AuthContext } from "../context/AuthContext";
 import AIChatbot from "../components/ai/AIChatbot";
 import ErrorBoundary from "../components/common/ErrorBoundary";
-import BrandLogo from "../components/brand/BrandLogo";
+import { PrototypeBrand, PrototypeIcon } from "../components/common/PrototypeUI";
 import { useExpansion } from "../context/ExpansionContext";
-import PhotoCameraIcon from "@mui/icons-material/PhotoCamera";
-import { isMenuPathSelected } from "../utils/navigationState";
 import { singleSiteId } from "../utils/singleSiteMode";
-import { canShowMenuItem } from "../utils/menuPermissions";
+import { navigationItemSelected, navigationSections } from "../utils/navigationItems";
+import "../styles/prototype-reference.css";
+import "../styles/prototype-app.css";
 
-const drawerWidth = 260; // Độ rộng của Sidebar
+const iconNames = { dashboard: "chart", parking: "car", vehicle: "car", pass: "ticket", people: "users", zone: "parking", type: "parking", price: "wallet", reports: "wallet", roles: "shield", history: "history", camera: "camera", settings: "settings" };
+const roles = { admin: "Admin", manager: "Manager", staff: "Nhân viên", customer: "Customer" };
 
 export default function MainLayout() {
   const { user, logout } = useContext(AuthContext);
   const capabilities = useExpansion();
+  const navigate = useNavigate(), location = useLocation();
+  const [accountAnchor, setAccountAnchor] = useState(null);
+  const customer = user?.role === "customer";
   const showcase = capabilities?.showcase_mode || globalThis.__PARKINGAI_CONFIG__?.DEMO;
-  const singleSiteMode = singleSiteId() !== null;
-  const navigate = useNavigate();
-  const location = useLocation();
+  const sections = navigationSections(user?.role, capabilities, singleSiteId() !== null);
+  const primary = sections.find(section => section.id === (customer ? "customer" : "operations"))?.items || [];
+  const management = sections.find(section => section.id === "management")?.items || [];
+  const extensions = sections.find(section => section.id === "extensions")?.items || [];
+  const name = user?.full_name || user?.username || roles[user?.role];
+  const go = path => { setAccountAnchor(null); navigate(path); };
+  const nav = item => <Link key={item.path} className={`nav-item ${navigationItemSelected(location, item) ? "active" : ""}`} to={item.path} aria-current={navigationItemSelected(location, item) ? "page" : undefined}>
+    <PrototypeIcon name={item.path === "/reservations" ? "calendar" : item.path.includes("support") ? "help" : iconNames[item.icon]} />{item.path === "/users" ? "Tài khoản & quyền" : item.text}
+  </Link>;
 
-  // State quản lý Menu User góc phải trên
-  const [anchorEl, setAnchorEl] = useState(null);
-  // State mở/đóng Sidebar trên màn hình nhỏ (mobile)
-  const [mobileOpen, setMobileOpen] = useState(false);
-
-  // Danh sách các menu trong Sidebar
-  const menuItems = [
-    { text: "Bãi xe của tôi", icon: <DirectionsCarIcon />, path: "/portal", scoped: true },
-    { text: "Đặt chỗ của tôi", icon: <LocalParkingIcon />, path: "/reservations", scoped: true },
-    { text: "Vận hành bãi", icon: <DomainIcon />, path: "/sites", role: "staff", scoped: true },
-    { text: "Khách & đơn vé", icon: <CardMembershipIcon />, path: "/portal-admin", role: "manager", scoped: true },
-    { text: "Camera & biển số", icon: <PhotoCameraIcon />, path: "/vision", role: "staff", scoped: true },
-    { text: "Chỗ đỗ qua camera", icon: <LocalParkingIcon />, path: "/occupancy", role: "staff", scoped: true },
-    { text: "Dự báo & điều hành", icon: <AssessmentIcon />, path: "/insights", role: "staff", scoped: true },
-    { text: "Tài khoản của tôi", icon: <AccountCircleIcon />, path: "/account" },
-    { text: "Dashboard", icon: <DashboardIcon />, path: "/", role: "manager" },
-    { text: "Phiên Đỗ Xe", icon: <LocalParkingIcon />, path: "/sessions", role: "staff" },
-    { text: "Khu vực", icon: <DomainIcon />, path: "/zones", role: "staff" },
-    { text: "Vị trí đỗ", icon: <LocalParkingIcon />, path: "/parking-slots", role: "staff" },
-    { text: "Loại xe", icon: <CategoryIcon />, path: "/vehicle-types", role: "staff" },
-    { text: "Phương tiện", icon: <DirectionsCarIcon />, path: "/vehicles", role: "staff" },
-    { text: "Khách hàng", icon: <PeopleIcon />, path: "/customers", role: "staff" },
-    { text: "Vé Tháng", icon: <CardMembershipIcon />, path: "/monthly-passes", role: "staff" },
-    { text: "Thu tiền & Chốt ca", icon: <PriceChangeIcon />, path: "/finance", role: "staff" },
-    { text: "Bảng giá", icon: <PriceChangeIcon />, path: "/price-configs", role: "staff" },
-    { text: "Báo cáo", icon: <AssessmentIcon />, path: "/reports", role: capabilities?.site_analytics_enabled ? "staff" : "manager", scoped: capabilities?.site_analytics_enabled },
-    { text: "AI báo cáo & hỏi đáp", icon: <SmartToyIcon />, path: "/ai", role: capabilities?.site_analytics_enabled ? "staff" : "manager", scoped: capabilities?.site_analytics_enabled },
-    { text: "Tài Khoản", icon: <PeopleIcon />, path: "/users", role: "manager" },
-    { text: "Nhật ký hoạt động", icon: <HistoryIcon />, path: "/audit-logs", role: "manager" },
-    { text: "Vai trò", icon: <AdminPanelSettingsIcon />, path: "/roles", role: "manager" },
-  ];
-
-  const handleMenuOpen = (event) => {
-    setAnchorEl(event.currentTarget);
-  };
-
-  const handleMenuClose = () => {
-    setAnchorEl(null);
-  };
-
-  const handleLogout = () => {
-    handleMenuClose();
-    logout();
-  };
-
-  const handleNavigate = (path) => {
-    handleMenuClose();
-    navigate(path);
-  };
-
-  return (
-    <Box sx={{ display: "flex", minHeight: "100vh", backgroundColor: "#f5f7fb" }}>
-      {/* 1. HEADER (AppBar) */}
-      <AppBar 
-        position="fixed" 
-        sx={{ 
-          zIndex: (theme) => theme.zIndex.drawer + 1,
-          backgroundColor: "#1976d2" // Màu xanh chủ đạo của MUI, có thể đổi theo theme
-        }}
-      >
-        <Toolbar>
-          {/* Nút mở Sidebar - chỉ hiện trên màn hình nhỏ */}
-          <IconButton
-            aria-label="Mở menu điều hướng"
-            color="inherit"
-            edge="start"
-            onClick={() => setMobileOpen(true)}
-            sx={{ mr: 2, display: { xs: "inline-flex", md: "none" } }}
-          >
-            <MenuIcon />
-          </IconButton>
-          <Box sx={{ flexGrow: 1 }}>
-            <BrandLogo size={34} inverse />
-          </Box>
-          {showcase && <Chip label={singleSiteMode ? "Đồ án · 1 bãi" : "DEMO đồ án"} size="small" sx={{ bgcolor: "white", color: "primary.dark", mr: 2 }} />}
-
-          {/* Góc phải User Profile */}
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <Typography variant="body1" sx={{ display: { xs: "none", sm: "block" } }}>
-              Xin chào, {user?.username || "Admin"}
-            </Typography>
-            <IconButton aria-label="Mở menu tài khoản" color="inherit" onClick={handleMenuOpen}>
-              <AccountCircleIcon fontSize="large" />
-            </IconButton>
-            <Menu
-              anchorEl={anchorEl}
-              open={Boolean(anchorEl)}
-              onClose={handleMenuClose}
-              anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-              transformOrigin={{ vertical: 'top', horizontal: 'right' }}
-            >
-              <MenuItem onClick={() => handleNavigate("/profile")}>Hồ sơ cá nhân</MenuItem>
-              <MenuItem onClick={() => handleNavigate("/settings")}>Cài đặt</MenuItem>
-              <MenuItem onClick={() => handleNavigate("/gioi-thieu")}>Trang giới thiệu bãi</MenuItem>
-              <Divider />
-              <MenuItem onClick={handleLogout} sx={{ color: 'error.main' }}>
-                Đăng xuất
-              </MenuItem>
-            </Menu>
-          </Box>
-        </Toolbar>
-      </AppBar>
-
-      {/* 2. SIDEBAR (Drawer) - permanent trên desktop, trượt tạm thời trên mobile */}
-      {(() => {
-        const drawerContent = (
-          <>
-            <Toolbar /> {/* Khối Toolbar trống này để đẩy danh sách menu xuống dưới Header */}
-            <Box sx={{ overflow: "auto", mt: 2 }}>
-              <List>
-                {menuItems.map((item) => {
-                  if (!canShowMenuItem(item, user?.role, capabilities, singleSiteMode)) return null;
-
-                  const isSelected = isMenuPathSelected(location.pathname, item.path);
-
-                  return (
-                    <ListItem key={item.text} disablePadding sx={{ mb: 1, px: 2 }}>
-                      <ListItemButton
-                        selected={isSelected}
-                        onClick={() => { setMobileOpen(false); navigate(item.path); }}
-                        sx={{
-                          borderRadius: 2,
-                          "&.Mui-selected": {
-                            backgroundColor: "primary.main",
-                            color: "white",
-                            "&:hover": { backgroundColor: "primary.dark" },
-                            "& .MuiListItemIcon-root": { color: "white" }
-                          }
-                        }}
-                      >
-                        <ListItemIcon sx={{ color: isSelected ? "white" : "inherit", minWidth: 40 }}>
-                          {item.icon}
-                        </ListItemIcon>
-                        <ListItemText
-                          primary={item.text}
-                          slotProps={{ primary: { fontWeight: isSelected ? 'bold' : 'normal' } }}
-                        />
-                      </ListItemButton>
-                    </ListItem>
-                  );
-                })}
-              </List>
-            </Box>
-          </>
-        );
-
-        return (
-          <>
-            {/* Mobile: drawer trượt, đóng khi chọn menu hoặc bấm ra ngoài */}
-            <Drawer
-              variant="temporary"
-              open={mobileOpen}
-              onClose={() => setMobileOpen(false)}
-              ModalProps={{ keepMounted: true }}
-              sx={{
-                display: { xs: "block", md: "none" },
-                [`& .MuiDrawer-paper`]: { width: drawerWidth, boxSizing: "border-box" },
-              }}
-            >
-              {drawerContent}
-            </Drawer>
-
-            {/* Desktop: drawer cố định */}
-            <Drawer
-              variant="permanent"
-              sx={{
-                display: { xs: "none", md: "block" },
-                width: drawerWidth,
-                flexShrink: 0,
-                [`& .MuiDrawer-paper`]: { width: drawerWidth, boxSizing: "border-box" },
-              }}
-            >
-              {drawerContent}
-            </Drawer>
-          </>
-        );
-      })()}
-
-      {/* 3. MAIN CONTENT (Nội dung chính) */}
-      <Box
-        component="main"
-        sx={{
-          flexGrow: 1,
-          p: { xs: 1.5, sm: 2, md: 3 },
-          width: { xs: "100%", md: `calc(100% - ${drawerWidth}px)` },
-          minWidth: 0, // cho phép bảng/biểu đồ co lại thay vì tràn ngang
-        }}
-      >
-        <Toolbar /> {/* Để đẩy nội dung xuống dưới Header */}
-        {showcase && <Alert severity="info" sx={{ mb: 3 }}>ParkingAI — trình diễn đồ án{singleSiteMode ? " một bãi đỗ xe" : ""}. QR chỉ mô phỏng, không chuyển tiền. Dữ liệu DEMO dùng để thử chức năng; lịch sử mẫu không phải số liệu vận hành thật.</Alert>}
-
-        {/* ĐÂY LÀ NƠI CÁC TRANG (Dashboard, Users,...) SẼ ĐƯỢC RENDER VÀO.
-            Bọc ErrorBoundary (key theo pathname để tự reset khi đổi trang):
-            một trang lỗi vẫn giữ nguyên Header/Sidebar. */}
-        <ErrorBoundary key={location.pathname}>
-          <Outlet />
-        </ErrorBoundary>
-      </Box>
-      {!singleSiteMode && capabilities?.legacy_workspace_allowed && (["manager", "admin"].includes(String(user?.role).toLowerCase())) && <AIChatbot />}
-    </Box>
-  );
+  return <div className="prototype-ui">
+    <a className="app-skip" href="#main-content">Chuyển đến nội dung chính</a>
+    <header className="topbar">
+      <Link to={customer ? "/portal" : "/"} className="brand-link"><PrototypeBrand /></Link>
+      <div className="role-switch account-roles" role="group" aria-label="Vai trò tài khoản đang đăng nhập">
+        {(user?.role === "staff" ? ["staff"] : ["customer", "manager", "admin"]).map(role => <span key={role} className={`role-display ${role === user?.role ? "active" : ""}`} aria-current={role === user?.role ? "true" : undefined}><PrototypeIcon name={{ customer: "user", manager: "car", admin: "shield", staff: "car" }[role]} />{roles[role]}</span>)}
+      </div>
+      <div className="top-actions">
+        <button type="button" className="icon-button" onClick={event => setAccountAnchor(event.currentTarget)} aria-label="Tài khoản của tôi"><PrototypeIcon name="user" /></button>
+        <button type="button" className="icon-button" onClick={logout} aria-label="Đăng xuất"><PrototypeIcon name="logout" /></button>
+      </div>
+    </header>
+    <div className="demo-banner">{showcase ? "Bản chạy thử · Dữ liệu mẫu · Thanh toán mô phỏng" : "ParkingAI · Quản lý bãi đỗ và thanh toán"}</div>
+    {customer && <nav className="customer-nav" aria-label="Điều hướng khách hàng">{primary.map(nav)}</nav>}
+    <div className={`app-shell ${customer ? "customer" : "internal"}`}>
+      {!customer && <aside className="sidebar" aria-label="Điều hướng nội bộ">
+        <div className="nav-label">{user?.role === "admin" ? "ĐIỀU HÀNH BÃI" : "BÃI TRUNG TÂM"}</div>
+        {primary.map(nav)}
+        {user?.role === "admin" && <><div className="nav-label admin-section-label">QUẢN TRỊ</div>{management.filter(item => item.path !== "/roles").map(nav)}</>}
+        <div className="sidebar-bottom">
+          <span className="badge neutral">{showcase ? "Dữ liệu thử nghiệm" : "Tài khoản đã xác thực"}</span>
+          <div className="profile-row"><div className="account-avatar">{name?.slice(0, 1)}</div><div>{name}<br /><span>{roles[user?.role]}</span></div></div>
+        </div>
+      </aside>}
+      <main className={`main ${customer ? "customer-main" : ""}`} id="main-content" tabIndex={-1}>
+        <ErrorBoundary key={location.pathname}><Outlet /></ErrorBoundary>
+        <details className="app-help"><summary>Cách sử dụng & chức năng khác</summary><div className="app-help-body">
+          <p>Bạn có thể gửi xe trực tiếp; đặt trước chỉ để giữ chỗ. Số tiền được tính theo lượt gửi và bảng giá trên hệ thống.{showcase && " Thanh toán mô phỏng không chuyển tiền thật."}</p>
+          <div className="overview-links"><Link className="button quiet small" to="/gioi-thieu">Thông tin bãi xe</Link><Link className="button quiet small" to="/profile">Hồ sơ cá nhân</Link>
+            {[...(user?.role === "admin" ? management.filter(item => item.path === "/roles") : management), ...extensions].map(item => <Link key={item.path} className="button quiet small" to={item.path}>{item.text}</Link>)}
+          </div>
+        </div></details>
+        <p className="footer-note">ParkingAI · Quản lý một bãi đỗ<br />{showcase ? "Dữ liệu mẫu riêng để kiểm tra giao diện và nghiệp vụ." : "Thông tin cập nhật từ hệ thống quản lý bãi."}</p>
+      </main>
+    </div>
+    <Menu anchorEl={accountAnchor} open={Boolean(accountAnchor)} onClose={() => setAccountAnchor(null)}>
+      <MenuItem disabled>{roles[user?.role]} · {user?.username}</MenuItem>
+      <MenuItem onClick={() => go("/profile")}>Hồ sơ cá nhân</MenuItem>
+      <MenuItem onClick={() => go("/account")}>Tài khoản của tôi</MenuItem>
+      <MenuItem onClick={() => go("/settings")}>Cài đặt tài khoản</MenuItem>
+      <Divider />
+      {management.map(item => <MenuItem key={item.path} onClick={() => go(item.path)}>{item.text}</MenuItem>)}
+      <MenuItem onClick={() => { setAccountAnchor(null); logout(); }}>Đăng xuất</MenuItem>
+    </Menu>
+    <AIChatbot />
+  </div>;
 }

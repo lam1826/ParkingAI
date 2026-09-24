@@ -1,88 +1,13 @@
-import { Card, CardContent, Box, IconButton, Tooltip, Chip, Button } from "@mui/material";
-import { DataGrid } from "@mui/x-data-grid";
-import EditIcon from "@mui/icons-material/Edit";
-import DeleteIcon from "@mui/icons-material/Delete";
-import AddIcon from "@mui/icons-material/Add";
+import { useState } from "react";
 
-const VehicleTable = ({ vehicles, loading, onAdd, onEdit, onDelete }) => {
-  const columns = [
-    { field: "id", headerName: "ID", width: 80 },
-    {
-      field: "license_plate",
-      headerName: "Biển số xe",
-      flex: 1.2,
-      minWidth: 150,
-      renderCell: (params) => (
-        <strong style={{ color: "#1976d2" }}>{params.value}</strong>
-      ),
-    },
-    {
-      field: "vehicle_type",
-      headerName: "Loại xe",
-      flex: 1,
-      minWidth: 150,
-      renderCell: (params) => {
-        // Có thể lấy tên từ object vehicle_type nếu backend trả về dạng nested object
-        const typeName = params.row.vehicle_type?.name || params.value || "N/A";
-        return <Chip label={typeName} size="small" variant="outlined" />;
-      },
-    },
-    {
-      field: "customerName",
-      headerName: "Chủ sở hữu",
-      flex: 1.5,
-      minWidth: 180,
-      valueGetter: (_value, row) => row.customer?.full_name || "Khách vãng lai",
-    },
-    {
-      field: "actions",
-      headerName: "Thao tác",
-      width: 120,
-      sortable: false,
-      renderCell: (params) => (
-        <Box>
-          <Tooltip title="Chỉnh sửa">
-            <IconButton aria-label={`Sửa xe ${params.row.license_plate}`} color="primary" size="small" onClick={() => onEdit(params.row)}>
-              <EditIcon fontSize="small" />
-            </IconButton>
-          </Tooltip>
-          {onDelete && <Tooltip title="Xóa">
-            <IconButton aria-label={`Xóa xe ${params.row.license_plate}`} color="error" size="small" onClick={() => onDelete(params.row)}>
-              <DeleteIcon fontSize="small" />
-            </IconButton>
-          </Tooltip>}
-        </Box>
-      ),
-    },
-  ];
-
-  return (
-    <Card elevation={0} sx={{ border: "1px solid #e0e0e0" }}>
-      <CardContent sx={{ p: 2, "&:last-child": { pb: 2 } }}>
-        <Box sx={{ display: "flex", justifyContent: "flex-end", mb: 2 }}>
-          <Button variant="contained" startIcon={<AddIcon />} onClick={onAdd}>
-            Thêm phương tiện
-          </Button>
-        </Box>
-        <Box sx={{ height: 500, width: "100%" }}>
-          <DataGrid
-            rows={vehicles}
-            columns={columns}
-            loading={loading}
-            pageSizeOptions={[10, 20, 50]}
-            initialState={{
-              pagination: { paginationModel: { pageSize: 10 } },
-            }}
-            disableRowSelectionOnClick
-            sx={{
-              border: "none",
-              "& .MuiDataGrid-columnHeaders": { backgroundColor: "#f5f7fb" },
-            }}
-          />
-        </Box>
-      </CardContent>
-    </Card>
-  );
-};
-
-export default VehicleTable;
+export default function VehicleTable({ vehicles, loading, onEdit, onDelete }) {
+  const [search, setSearch] = useState(""), [page, setPage] = useState(0);
+  const rows = vehicles.filter(row => `${row.license_plate} ${row.customer?.full_name || ""}`.toLocaleLowerCase("vi").includes(search.trim().toLocaleLowerCase("vi")));
+  const currentPage = Math.min(page, Math.max(0, Math.ceil(rows.length / 25) - 1));
+  return <section className="surface"><div className="toolbar"><input aria-label="Tìm phương tiện" placeholder="Tìm biển số hoặc khách hàng…" value={search} onChange={event => { setSearch(event.target.value); setPage(0); }} /><span className="muted">{rows.length} phương tiện</span></div>
+    {loading ? <p className="empty" role="status">Đang tải phương tiện…</p> : !rows.length ? <div className="empty">Không có phương tiện phù hợp.</div> : <>
+      <div className="table-wrap"><table className="data-table core-table"><thead><tr><th scope="col">Biển số / mã xe</th><th scope="col">Loại xe</th><th scope="col">Khách hàng</th><th scope="col">Thao tác</th></tr></thead><tbody>{rows.slice(currentPage * 25, currentPage * 25 + 25).map(row => <tr key={row.id}><td><strong className="plate">{row.license_plate}</strong></td><td>{row.vehicle_type?.name || (typeof row.vehicle_type === "string" ? row.vehicle_type : "—")}</td><td>{row.customer?.full_name || "Khách vãng lai"}</td><td><div className="core-row-actions"><button className="button quiet small" onClick={() => onEdit(row)}>Sửa</button>{onDelete && <button className="button quiet small danger" onClick={() => onDelete(row)}>Xóa</button>}</div></td></tr>)}</tbody></table></div>
+      {rows.length > 25 && <div className="form-actions" style={{ justifyContent: "flex-end", marginTop: 18 }}><button className="button quiet small" disabled={!currentPage} onClick={() => setPage(currentPage - 1)}>Trang trước</button><span className="muted">Trang {currentPage + 1}</span><button className="button quiet small" disabled={(currentPage + 1) * 25 >= rows.length} onClick={() => setPage(currentPage + 1)}>Trang sau</button></div>}
+    </>}
+  </section>;
+}

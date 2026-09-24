@@ -1,0 +1,23 @@
+/* Uses the existing demo palette and controls; adds only core data layouts. */
+.core-subtabs{margin-bottom:22px;max-width:100%;flex-wrap:wrap}
+.core-wide{grid-column:1/-1}
+.core-editor{margin-bottom:22px}
+.core-editor label.field{font-size:13px;font-weight:600;color:#34465a}
+.core-editor .checkbox-field{align-self:center;margin-bottom:18px;font-weight:400}
+.core-row-actions{display:flex;gap:5px;justify-content:flex-end;flex-wrap:wrap}
+.core-row-actions .core-row-actions{display:contents}
+.core-slot-grid{grid-template-columns:repeat(auto-fill,minmax(108px,1fr));gap:10px}
+.core-slot-grid .slot{padding:13px 8px;display:flex;flex-direction:column;align-items:center;gap:7px}
+.core-slot-grid .slot.inactive{background:#f0f2f5;color:#536171;border-color:#ccd4df}
+.core-slot-grid .slot .button{min-height:32px;padding:4px 10px;font-size:12px}
+.core-slot-grid .slot>span{font-size:11px;line-height:1.5}
+.core-table td{overflow-wrap:anywhere}
+.core-long-text{max-width:340px;white-space:pre-wrap}
+.core-details summary{cursor:pointer;font-size:14px;font-weight:600;padding:3px 0;min-height:30px}
+.core-details[open] summary{margin-bottom:18px}
+.core-facts{margin:20px 0}
+.core-facts dd{overflow-wrap:anywhere;line-height:1.5;font-size:14px}
+.core-empty-note{font-size:13px;margin:12px 0 20px}
+.core-filter .field:last-of-type{margin-bottom:18px}
+@media(max-width:780px){.core-subtabs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%}.core-subtabs button{justify-content:center}.core-history-filter{grid-template-columns:1fr}.core-slot-grid{grid-template-columns:repeat(auto-fill,minmax(88px,1fr))}.core-row-actions .button{min-height:38px}.core-editor .form-actions .button{white-space:normal}.core-table{min-width:820px}.core-table td{overflow-wrap:normal;word-break:normal}}
+@media(prefers-reduced-motion:reduce){.core-editor:focus-within{scroll-behavior:auto}}

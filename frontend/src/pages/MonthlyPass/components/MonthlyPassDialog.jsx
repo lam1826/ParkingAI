@@ -12,7 +12,7 @@ const initialForm = {
   payment_method: "cash",
 };
 
-const MonthlyPassDialog = ({ isOpen, onClose, onSave, pass, vehicles, customers, submitting }) => {
+const MonthlyPassDialog = ({ inline = false, isOpen, onClose, onSave, pass, vehicles, customers, submitting }) => {
   const [form, setForm] = useState(initialForm);
   const [requestId, setRequestId] = useState("");
 
@@ -69,13 +69,15 @@ const MonthlyPassDialog = ({ isOpen, onClose, onSave, pass, vehicles, customers,
     });
   };
 
+  if (inline && !isOpen) return null;
+  const Container = inline ? "section" : Dialog;
   return (
-    <Dialog open={isOpen} onClose={submitting ? undefined : onClose} maxWidth="sm" fullWidth>
-      <DialogTitle fontWeight="bold">
+    <Container {...(inline ? { className: "surface core-editor" } : { open: isOpen, onClose: submitting ? undefined : onClose, maxWidth: "sm", fullWidth: true })}>
+      <DialogTitle component="h2" fontWeight="bold" sx={inline ? { p: 0, mb: "22px", fontSize: "18px" } : undefined}>
         {pass ? "Gia hạn vé tháng" : "Đăng ký vé tháng mới"}
       </DialogTitle>
       <form onSubmit={handleSubmit}>
-        <DialogContent dividers>
+        <DialogContent dividers={!inline} sx={inline ? { p: 0, overflow: "visible" } : undefined}>
           <Alert severity="info" sx={{ mb: 2 }}>
             {pass ? "Gia hạn tạo kỳ vé mới trên cùng mã thẻ. Lịch sử và khoản thu của kỳ cũ được giữ nguyên. Mặc định kỳ mới là 30 ngày; có thể chỉnh ngày." : "Xác nhận sẽ cấp vé và ghi nhận khoản thu vào sổ thu tiền."}
           </Alert>
@@ -157,7 +159,7 @@ const MonthlyPassDialog = ({ isOpen, onClose, onSave, pass, vehicles, customers,
             <MenuItem value="cash">Tiền mặt</MenuItem><MenuItem value="transfer">Chuyển khoản</MenuItem>
           </TextField>
         </DialogContent>
-        <DialogActions sx={{ p: 2 }}>
+        <DialogActions sx={inline ? { p: 0, mt: "20px", justifyContent: "flex-start", flexWrap: "wrap", gap: 1 } : { p: 2 }}>
           <Button onClick={onClose} variant="outlined" disabled={submitting}>Hủy</Button>
           <Button
             type="submit" variant="contained" disabled={submitting || dateRangeInvalid || priceInvalid}
@@ -167,7 +169,7 @@ const MonthlyPassDialog = ({ isOpen, onClose, onSave, pass, vehicles, customers,
           </Button>
         </DialogActions>
       </form>
-    </Dialog>
+    </Container>
   );
 };
 
