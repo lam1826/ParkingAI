@@ -42,6 +42,7 @@ def test_demo_ui_uses_same_origin_and_static_route_cannot_select_another_file(tm
     client = TestClient(demo.build_demo_app())
     assert "location.origin" in client.get("/config.js").text
     assert client.get("/portal").text == "<html>Demo application</html>"
+    assert client.get("/site-settings").text == "<html>Demo application</html>"
     assert client.get("/brand-mark.svg?filename=private.txt").text == "<svg>logo</svg>"
 
 

@@ -1,7 +1,7 @@
 from typing import List, Optional
 from datetime import datetime
 
-from sqlalchemy import Boolean, Index, String, func
+from sqlalchemy import Boolean, Index, String, func, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from database import Base
@@ -13,10 +13,13 @@ class VehicleType(Base):
     name: Mapped[str] = mapped_column(String(50))
     description: Mapped[Optional[str]] = mapped_column(String(255))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    requires_plate: Mapped[bool] = mapped_column(Boolean, default=True, server_default=text('true'))
+    code_prefix: Mapped[Optional[str]] = mapped_column(String(8))
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
 
     __table_args__ = (
+        Index('uq_vehicle_types_code_prefix', 'code_prefix', unique=True),
         Index(
             "uq_vehicle_types_name_normalized",
             func.unicode_casefold(name),

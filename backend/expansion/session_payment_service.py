@@ -79,7 +79,9 @@ def authorize_session(db, user, session_id, *, site_id=None):
         grant = db.get(PortalSessionGrant, session_id)
         if (not user.is_active or customer_id is None or grant is None or grant.customer_id != customer_id
                 or vehicle.customer_id != customer_id):
-            raise HTTPException(404, "Không tìm thấy lượt gửi được xác nhận thuộc hồ sơ của bạn.")
+            from expansion.ticket_payment_access import valid_access
+            if valid_access(db, user, session, vehicle) is None:
+                raise HTTPException(404, "Không tìm thấy lượt gửi được xác nhận thuộc hồ sơ của bạn.")
     return session, vehicle, actual_site
 
 
@@ -88,7 +90,12 @@ def authorize_quote(db, user, quote_id):
     if quote is None:
         raise HTTPException(404, "Không tìm thấy đề nghị thanh toán phí gửi xe.")
     operational = user.role and user.role.name in {"staff", "manager", "admin"}
-    authorize_session(db, user, quote.session_id, site_id=quote.site_id if operational else None)
+    session, vehicle, _ = authorize_session(db, user, quote.session_id, site_id=quote.site_id if operational else None)
+    if not operational and quote.created_by_id != user.id:
+        owner = db.scalar(select(PortalAccountLink.customer_id).where(PortalAccountLink.user_id == user.id))
+        grant = db.get(PortalSessionGrant, session.id)
+        if owner is None or grant is None or grant.customer_id != owner or vehicle.customer_id != owner:
+            raise HTTPException(404, 'Không tìm thấy đề nghị thanh toán của bạn.')
     return quote
 
 
@@ -238,6 +245,13 @@ def fulfillment_problem(db, quote, evidence):
         return "session_owner_changed"
     if quote.owner_customer_id is not None and vehicle.customer_id != quote.owner_customer_id:
         return "session_owner_changed"
+    from models.user import User
+    creator = db.get(User, quote.created_by_id)
+    if creator is not None and creator.role and creator.role.name == 'customer':
+        try:
+            authorize_session(db, creator, session.id)
+        except HTTPException:
+            return 'session_payment_access_revoked'
     credits = credit_snapshot(db, session.id)
     if _hash(credit_claim(credits)) != quote.credit_snapshot_hash:
         return "session_credit_changed"

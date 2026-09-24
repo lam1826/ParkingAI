@@ -99,6 +99,28 @@ def _provider_http_exception(error: Exception) -> HTTPException:
         chain.append(current)
         current = current.__cause__ or current.__context__
 
+    api_error = next(
+        (item for item in chain if isinstance(item, genai_errors.APIError)),
+        None,
+    )
+    # Keep diagnosis useful without logging provider messages, URLs, headers,
+    # prompts or exception tracebacks (which can contain credentials).
+    diagnostic_code = getattr(api_error, "code", None)
+    diagnostic_status = getattr(api_error, "status", None)
+    known_statuses = _PROVIDER_TIMEOUT_STATUSES | _PROVIDER_UNAVAILABLE_STATUSES | {"INTERNAL", "INVALID_ARGUMENT", "NOT_FOUND"}
+    category = (
+        "timeout" if any(isinstance(item, _PROVIDER_TIMEOUT_EXCEPTIONS) for item in chain)
+        else "api" if api_error is not None
+        else "network" if any(isinstance(item, _PROVIDER_NETWORK_EXCEPTIONS) for item in chain)
+        else "invalid_response"
+    )
+    logger.warning(
+        "AI provider failure: category=%s code=%s status=%s",
+        category,
+        diagnostic_code if type(diagnostic_code) is int else "none",
+        diagnostic_status if isinstance(diagnostic_status, str) and diagnostic_status in known_statuses else "unknown",
+    )
+
     if any(isinstance(item, _PROVIDER_TIMEOUT_EXCEPTIONS) for item in chain):
         return HTTPException(
             status_code=status.HTTP_504_GATEWAY_TIMEOUT,
@@ -108,10 +130,6 @@ def _provider_http_exception(error: Exception) -> HTTPException:
             ),
         )
 
-    api_error = next(
-        (item for item in chain if isinstance(item, genai_errors.APIError)),
-        None,
-    )
     if api_error is not None:
         provider_code = getattr(api_error, "code", None)
         provider_status = str(getattr(api_error, "status", "") or "").upper()

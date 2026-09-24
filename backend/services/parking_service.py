@@ -49,6 +49,9 @@ class ParkingService:
         vehicle_type_id: int,
         zone_id: Optional[int] = None,
         vehicle_id: Optional[int] = None,
+        site_id: Optional[int] = None,
+        *,
+        at: datetime | None = None,
     ) -> Optional[ParkingSlot]:
 
         try:
@@ -64,10 +67,13 @@ class ParkingService:
 
             if zone_id:
                 stmt = stmt.where(ParkingSlot.zone_id == zone_id)
+            if site_id is not None:
+                stmt = stmt.where(Zone.site_id == site_id)
 
             from expansion.reservations import admission_allowed
             from core.clock import business_now
-            at = business_now()
+            if at is None:
+                at = business_now()
             for candidate in self.db.scalars(stmt.order_by(ParkingSlot.id)):
                 if admission_allowed(self.db, candidate.id, vehicle_id=vehicle_id, at=at, lock=False):
                     return candidate
@@ -222,11 +228,10 @@ class ParkingService:
             if not vehicle_type.is_active:
                 raise HTTPException(409, "Loại xe đã ngừng sử dụng. Không thể nhận thêm xe thuộc loại này.")
 
-            vehicle = self.db.execute(
-                select(Vehicle).where(
-                    Vehicle.license_plate == license_plate
-                ).with_for_update(key_share=True)
-            ).scalar_one_or_none()
+            from core.vehicle_identity import admission_identity, lock_identity, resolve_vehicle
+            license_plate = admission_identity(vehicle_type, license_plate)
+            lock_identity(self.db, vehicle_type_id, license_plate)
+            vehicle = resolve_vehicle(self.db, license_plate)
 
             if vehicle is None:
                 vehicle = Vehicle(
@@ -241,11 +246,8 @@ class ParkingService:
                     # Chưa có write nào khác trong transaction nên rollback an
                     # toàn, rồi dùng lại bản ghi đã tồn tại thay vì trả 500.
                     self.db.rollback()
-                    vehicle = self.db.execute(
-                        select(Vehicle).where(
-                            Vehicle.license_plate == license_plate
-                        ).with_for_update(key_share=True)
-                    ).scalar_one_or_none()
+                    lock_identity(self.db, vehicle_type_id, license_plate)
+                    vehicle = resolve_vehicle(self.db, license_plate)
                     if vehicle is None:
                         raise HTTPException(
                             status_code=500,
@@ -256,6 +258,14 @@ class ParkingService:
             else:
                 self._validate_existing_vehicle(vehicle, vehicle_type_id)
                 self._ensure_vehicle_not_parked(vehicle.id)
+
+            # Use one admission instant for booking selection, capacity,
+            # entitlement and billing, including the arrival deadline.
+            # A reservation arrival may already have sampled it under lock.
+            check_in_time = _check_in_time if _check_in_time is not None else crud_parking_session.server_now()
+            if parking_slot_id is None:
+                from expansion.declared_bookings import preferred_slot
+                parking_slot_id = preferred_slot(self.db, vehicle, _expected_site_id, check_in_time)
 
             if parking_slot_id is not None:
                 # Nhân viên chọn đích danh một vị trí đỗ -> kiểm tra đầy đủ
@@ -298,20 +308,18 @@ class ParkingService:
             else:
                 # Preserve the established "lot full" result before checking
                 # billing configuration, but do not claim the candidate yet.
-                slot = self.find_available_slot(vehicle_type_id, zone_id, vehicle.id)
+                slot = self.find_available_slot(vehicle_type_id, zone_id, vehicle.id, _expected_site_id, at=check_in_time)
                 if slot is None:
                     raise HTTPException(
                         status_code=404,
                         detail="Không còn chỗ trống."
                     )
 
-            # Sample the business clock exactly once. Before any slot claim,
-            # either snapshot a valid monthly-pass entitlement or prove that
-            # a non-monthly checkout rate is already active/effective.
+            # Before any slot claim, either snapshot a valid monthly-pass
+            # entitlement or prove that a non-monthly rate is active/effective.
             # Reservation arrival supplies the instant already sampled after
             # its slot lock. It must not cross the arrival deadline on a second
             # clock read. These keyword-only values are never API body fields.
-            check_in_time = _check_in_time if _check_in_time is not None else crud_parking_session.server_now()
             admission_site_id = _expected_site_id if _expected_site_id is not None else slot.zone.site_id
             monthly_pass_id = (
                 crud_parking_session.resolve_check_in_monthly_pass_id(
@@ -385,7 +393,7 @@ class ParkingService:
                     # Candidate vừa bị chiếm: làm mới trạng thái ORM để vòng
                     # lặp sau không chọn lại bản ghi cũ trong identity map.
                     self.db.expire(slot)
-                    slot = self.find_available_slot(vehicle_type_id, zone_id, vehicle.id)
+                    slot = self.find_available_slot(vehicle_type_id, zone_id, vehicle.id, _expected_site_id, at=check_in_time)
                     if slot is None:
                         raise HTTPException(
                             status_code=404,
@@ -568,29 +576,11 @@ class ParkingService:
             }
 
             if today == current_business_date:
-                slot_stats = self.db.execute(
-                    select(
-                        ParkingSlot.is_occupied,
-                        func.count(ParkingSlot.id)
-                    )
-                    .join(Zone, ParkingSlot.zone_id == Zone.id)
-                    .where(
-                        ParkingSlot.is_active == True,
-                        ParkingSlot.vehicle_type_id.in_(select(VehicleType.id).where(VehicleType.is_active.is_(True))),
-                        Zone.is_active == True,
-                    )
-                    .group_by(ParkingSlot.is_occupied)
-                ).all()
-                available = 0
-                occupied = 0
-                for is_occupied, count in slot_stats:
-                    if is_occupied:
-                        occupied = count
-                    else:
-                        available = count
+                slots = self.get_available_slots_summary()
                 result.update({
-                    "available_slots": available,
-                    "occupied_slots": occupied,
+                    "available_slots": slots["total_available"],
+                    "occupied_slots": slots["total_occupied"],
+                    "reserved_slots": slots["total_reserved"],
                     "slot_state_as_of": str(current_business_date),
                 })
             else:
@@ -697,85 +687,45 @@ class ParkingService:
         """
 
         try:
-            # Lấy tất cả slot đang hoạt động
-            stmt_slots = select(ParkingSlot).join(
-                Zone, ParkingSlot.zone_id == Zone.id
-            ).where(
-                ParkingSlot.is_active == True,
+            from expansion.reservations import has_slot_commitment
+
+            # Share the admission predicate: an empty slot may still be held
+            # for a booking, allocation or unpaid order. One query handles all
+            # slots; reading availability never expires/mutates those records.
+            now = crud_parking_session.server_now()
+            rows = self.db.execute(select(
+                ParkingSlot, Zone.name, has_slot_commitment(ParkingSlot.id, now),
+            ).join(Zone, ParkingSlot.zone_id == Zone.id).where(
+                ParkingSlot.is_active.is_(True), Zone.is_active.is_(True),
                 ParkingSlot.vehicle_type_id.in_(select(VehicleType.id).where(VehicleType.is_active.is_(True))),
-                Zone.is_active == True,
-            )
-            slots = self.db.execute(stmt_slots).scalars().all()
+            ).order_by(Zone.id, ParkingSlot.id)).all()
 
-            # Lấy danh sách khu vực
-            stmt_zones = select(Zone).where(Zone.is_active == True)
-            zones = self.db.execute(stmt_zones).scalars().all()
-
-            zone_map = {z.id: z.name for z in zones}
-
-            total_slots = len(slots)
-            total_occupied = sum(1 for s in slots if s.is_occupied)
-            total_available = total_slots - total_occupied
-
-            zone_data: Dict[Any, dict] = {}
-
-            # Khởi tạo dữ liệu cho các Zone
-            for z in zones:
-                zone_data[z.id] = {
-                    "zone_id": z.id,
-                    "zone_name": z.name,
-                    "total_slots": 0,
-                    "occupied_slots": 0,
-                    "available_slots": 0,
-                    "available_slots_list": []
-                }
-
-            # Khu vực chung (slot không có zone)
-            zone_data[None] = {
-                "zone_id": None,
-                "zone_name": "Khu vực chung",
-                "total_slots": 0,
-                "occupied_slots": 0,
-                "available_slots": 0,
-                "available_slots_list": []
-            }
-
-            for slot in slots:
-
-                zone_id = getattr(slot, "zone_id", None)
-
-                if zone_id not in zone_data:
-                    zone_data[zone_id] = {
-                        "zone_id": zone_id,
-                        "zone_name": zone_map.get(zone_id, f"Khu vực {zone_id}"),
-                        "total_slots": 0,
-                        "occupied_slots": 0,
-                        "available_slots": 0,
-                        "available_slots_list": []
-                    }
-
-                zone_data[zone_id]["total_slots"] += 1
-
+            zone_data = {}
+            total_occupied = total_available = total_reserved = 0
+            for slot, zone_name, committed in rows:
+                zone = zone_data.setdefault(slot.zone_id, {
+                    "zone_id": slot.zone_id, "zone_name": zone_name,
+                    "total_slots": 0, "occupied_slots": 0, "available_slots": 0,
+                    "reserved_slots": 0, "available_slots_list": [],
+                })
+                zone["total_slots"] += 1
                 if slot.is_occupied:
-                    zone_data[zone_id]["occupied_slots"] += 1
+                    zone["occupied_slots"] += 1
+                    total_occupied += 1
+                elif committed:
+                    zone["reserved_slots"] += 1
+                    total_reserved += 1
                 else:
-                    zone_data[zone_id]["available_slots"] += 1
-                    zone_data[zone_id]["available_slots_list"].append({
-                        "id": slot.id,
-                        "name": getattr(slot, "slot_name", f"Slot-{slot.id}"),
-                        "vehicle_type_id": getattr(slot, "vehicle_type_id", None)
+                    zone["available_slots"] += 1
+                    total_available += 1
+                    zone["available_slots_list"].append({
+                        "id": slot.id, "name": slot.slot_name, "vehicle_type_id": slot.vehicle_type_id,
                     })
 
-            active_zones = [
-                z for z in zone_data.values()
-                if z["total_slots"] > 0
-            ]
-
             return {
-                "total_slots": total_slots,
-                "total_occupied": total_occupied,
-                "total_available": total_available,
-                "zones": active_zones
+                "total_slots": len(rows), "total_occupied": total_occupied,
+                "total_available": total_available, "total_reserved": total_reserved,
+                "zones": list(zone_data.values()),
             }
 
         except SQLAlchemyError as db_err:

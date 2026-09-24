@@ -113,8 +113,8 @@ def build_demo_app(frontend_dist=None):
     def frontend():
         return FileResponse(dist / "index.html", headers={"Cache-Control": "no-store"})
 
-    for route in ("/", "/gioi-thieu", "/welcome", "/login", "/register", "/portal", "/portal-admin", "/reservations", "/sites", "/vision", "/occupancy", "/insights",
-                  "/account", "/profile", "/settings", "/sessions", "/parking-sessions", "/customers", "/vehicles",
+    for route in ("/", "/gioi-thieu", "/welcome", "/login", "/register", "/portal", "/portal-admin", "/reservations", "/sites", "/history", "/operations", "/vision", "/occupancy", "/insights",
+                  "/account", "/profile", "/settings", "/site-settings", "/sessions", "/parking-sessions", "/customers", "/vehicles",
                   "/monthly-passes", "/users", "/zones", "/parking-slots", "/vehicle-types", "/price-configs", "/reports",
                   "/finance", "/audit-logs", "/ai", "/roles", "/home"):
         app.add_api_route(route, frontend, methods=["GET"], include_in_schema=False)

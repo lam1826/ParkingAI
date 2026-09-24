@@ -162,7 +162,7 @@ def serialize_analysis(row):
     return {"id": row.id, "site_id": row.site_id, "kind": row.kind, "model": row.model, "content": row.content,
             "created_at": row.created_at.replace(tzinfo=BUSINESS_TZ).isoformat(),
             "period": row.context["period"], "start_date": row.context["start_date"], "end_date": row.context["end_date"],
-            "source": "database", "generated_by_id": row.generated_by_id}
+            "source": "database", "generated_by_id": row.generated_by_id, "input": row.context}
 
 
 def history_query(db, actor, site_id):

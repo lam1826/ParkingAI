@@ -8,6 +8,8 @@ class VehicleTypeBase(BaseModel):
     name: str = Field(min_length=1, max_length=50)
     description: Optional[str] = Field(default=None, max_length=255)
     is_active: bool = True
+    requires_plate: bool = Field(default=True, strict=True)
+    code_prefix: str | None = Field(default=None, max_length=8, pattern=r'^[A-Z][A-Z0-9]{0,7}$')
 
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
@@ -25,6 +27,8 @@ class VehicleTypeUpdate(BaseModel):
     name: Optional[str] = Field(default=None, min_length=1, max_length=50)
     description: Optional[str] = Field(default=None, max_length=255)
     is_active: Optional[bool] = None
+    requires_plate: bool | None = Field(default=None, strict=True)
+    code_prefix: str | None = Field(default=None, max_length=8, pattern=r'^[A-Z][A-Z0-9]{0,7}$')
 
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
@@ -32,7 +36,7 @@ class VehicleTypeUpdate(BaseModel):
     @classmethod
     def reject_explicit_null_name(cls, data: Any) -> Any:
         if isinstance(data, dict):
-            for field in ("name", "is_active"):
+            for field in ("name", "is_active", "requires_plate"):
                 if field in data and data[field] is None:
                     raise ValueError(f"{field} không được nhận giá trị null")
         return data

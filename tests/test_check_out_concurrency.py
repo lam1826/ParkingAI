@@ -480,14 +480,19 @@ def test_rollback_when_slot_release_fails(env):
 # ===========================================================================
 
 
-def test_checkout_session_without_slot(env):
+def test_checkout_session_without_slot(env, monkeypatch):
+    # This checks slot-less legacy compatibility, not movement across a fee
+    # boundary. Freeze both preview and confirmation to avoid a valid 409 when
+    # wall-clock seconds tick past the exactly-one-hour fixture admission.
+    at = business_now().replace(microsecond=0)
+    monkeypatch.setattr(crud_session_module, "server_now", lambda: at)
     db = env.Session()
     vehicle = Vehicle(license_plate="80B-00002", vehicle_type_id=env.vt_id)
     db.add(vehicle)
     db.commit()
     session = ParkingSession(
         vehicle_id=vehicle.id, parking_slot_id=None,
-        check_in_time=business_now() - datetime.timedelta(hours=1),
+        check_in_time=at - datetime.timedelta(hours=1),
         status="active", staff_in_id=env.staff_a,
     )
     db.add(session)

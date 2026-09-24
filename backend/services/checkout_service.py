@@ -225,7 +225,7 @@ class CheckoutService:
         return session
 
     def confirm(self, confirmation: CheckoutConfirmation, actor_id: int, *, session_id: str | None = None,
-                license_plate: str | None = None) -> ParkingSession:
+                license_plate: str | None = None, _commit: bool = True) -> ParkingSession:
         claims = _decode(confirmation.quote_token)
         if claims["actor_id"] != actor_id or (session_id is not None and claims["session_id"] != session_id):
             raise _error("checkout_confirmation_conflict", "Phiếu xem phí không thuộc lượt gửi hoặc nhân viên này.")
@@ -279,7 +279,12 @@ class CheckoutService:
             if due > 0 or credits["total"] > 0:
                 PaymentService.record_receipt(self.db, "parking_session", session.id, due,
                     actor_id if due else None, method=confirmation.payment_method if due else "transfer", created_at=at)
-            self.db.commit()
+            if _commit:
+                self.db.commit()
+            else:
+                # Camera passage persists its durable decision in this same
+                # transaction. Never leave a completed stay without that key.
+                self.db.flush()
             self.db.refresh(session)
             return session
         except HTTPException:

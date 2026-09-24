@@ -31,6 +31,12 @@ from expansion import session_payment_models  # noqa: F401 - verified parking-fe
 from expansion import vision_models  # noqa: F401 - register private camera observations
 from expansion import analytics_models  # noqa: F401 - register scoped AI history
 from expansion import support_models  # noqa: F401 - customer support threads and receipt refunds
+from expansion import simplified_customer_models  # noqa: F401 - declared holds and narrow ticket access
+from expansion import vision_passage_models  # noqa: F401 - opt-in durable camera decisions
+from expansion.simplified_customer_guards import SIMPLIFIED_SQLITE_GUARDS, SIMPLIFIED_POSTGRES_GUARD_SQL
+for _statement in SIMPLIFIED_SQLITE_GUARDS.values():
+    event.listen(Base.metadata, 'after_create', DDL(_statement).execute_if(dialect='sqlite'))
+event.listen(Base.metadata, 'after_create', DDL(SIMPLIFIED_POSTGRES_GUARD_SQL).execute_if(dialect='postgresql'))
 import expansion_demo_guards  # noqa: F401 - same demo boundary on fresh databases
 import site_finance_guards  # noqa: F401 - site attribution on fresh databases
 from finance_rollout import MONTHLY_CARD_SQLITE_TRIGGERS

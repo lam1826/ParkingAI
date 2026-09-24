@@ -82,7 +82,7 @@ def links(db=Depends(get_db), user=Depends(get_current_user)):
 
 @router.get("/catalog/vehicle-types")
 def vehicle_types(db=Depends(get_db), user=Depends(get_current_user)):
-    return {"items": [fields(row, "id", "name") for row in db.scalars(select(VehicleType).where(VehicleType.is_active.is_(True)).order_by(VehicleType.id))]}
+    return {"items": [fields(row, "id", "name", "requires_plate", "code_prefix") for row in db.scalars(select(VehicleType).where(VehicleType.is_active.is_(True)).order_by(VehicleType.id))]}
 
 
 @router.post("/me/vehicle-requests")
@@ -234,7 +234,8 @@ def notification_read(identity: str, db=Depends(get_db), user=Depends(get_curren
 
 @router.get("/me/receipts")
 def receipts(limit: int = Query(50, ge=1, le=100), offset: int = Query(0, ge=0), db=Depends(get_db), user=Depends(get_current_user)):
-    customer = service.get_linked_customer(db, user)
+    customer = db.scalar(select(Customer).join(PortalAccountLink, PortalAccountLink.customer_id == Customer.id)
+        .where(PortalAccountLink.user_id == user.id))
     from expansion import refund_service
     from expansion.customer_ownership import owned_receipt_predicate
     rows = db.scalars(select(Payment).where(owned_receipt_predicate(user, customer))
@@ -247,13 +248,17 @@ def receipts(limit: int = Query(50, ge=1, le=100), offset: int = Query(0, ge=0),
 
 @router.get("/me/receipts/{identity}/pdf")
 def receipt_pdf(identity: str, db=Depends(get_db), user=Depends(get_current_user)):
-    customer = service.get_linked_customer(db, user)
+    customer = db.scalar(select(Customer).join(PortalAccountLink, PortalAccountLink.customer_id == Customer.id)
+        .where(PortalAccountLink.user_id == user.id))
     from expansion.customer_ownership import owned_receipt
     receipt = owned_receipt(db, user, customer, identity)
     if receipt is None:
         raise HTTPException(404, "Không tìm thấy chứng từ của bạn.")
     from expansion.portal_documents import build_receipt_pdf
     label = "DEMO-" if receipt.method == "demo" else ""
+    if customer is None:
+        from types import SimpleNamespace
+        customer = SimpleNamespace(full_name=user.full_name or user.username)
     return Response(build_receipt_pdf(receipt, customer), media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="ParkingAI-{label}{receipt.id}.pdf"',
             "Cache-Control": "private, no-store"})

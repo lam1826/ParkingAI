@@ -22,10 +22,14 @@ def own_order_ids(user, customer):
 def owned_receipt_predicate(user, customer):
     """Receipts and refunds whose source belongs to this verified customer."""
     from expansion.session_payment_models import SessionFeeCredit
+    from expansion.ticket_payment_access import own_credit_receipts
+    if customer is None:
+        return own_credit_receipts(user)
     own_periods = select(cast(MonthlyPass.id, String)).where(MonthlyPass.customer_id == customer.id)
     own_sessions = own_session_ids(customer)
     own_credits = select(SessionFeeCredit.id).where(SessionFeeCredit.session_id.in_(own_sessions))
     return or_(
+        own_credit_receipts(user),
         (Payment.source_type == "session_credit") & Payment.source_id.in_(own_credits),
         (Payment.source_type == "portal_order") & Payment.source_id.in_(own_order_ids(user, customer)),
         (Payment.source_type == "monthly_pass") & Payment.source_id.in_(own_periods),

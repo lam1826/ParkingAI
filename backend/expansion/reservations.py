@@ -123,8 +123,9 @@ def has_slot_commitment(slot_id, now):
     Actual admission still locks and rechecks the slot and the driver's rights.
     """
     from expansion.timed_parking_service import live_hold
+    from expansion.declared_bookings import commitment
     return or_(exists().where(live_hold(slot_id, now)), exists().where(_reservation_commitment(slot_id, now)),
-               exists().where(_allocation_commitment(slot_id, now)))
+               exists().where(_allocation_commitment(slot_id, now)), commitment(slot_id, now))
 
 
 def _slot_rows(db, slot_id, now):
@@ -158,7 +159,12 @@ def admission_allowed(db, slot_id, *, vehicle_id=None, at=None, lock=True):
     own_allocations = [r for r in allocations if r.vehicle_id == vehicle_id and r.customer_id == owner_id
                        and owner_id is not None and r.start_at <= now < r.end_at]
     entitlement = eligible + own_allocations
-    end = max((r.end_at for r in entitlement), default=None)
+    from expansion.declared_bookings import rows_for_slot, matches
+    declared = rows_for_slot(db, slot_id, now)
+    own_declared = [row for row in declared if matches(row, vehicle, now)]
+    end = max((r.end_at for r in entitlement + own_declared), default=None)
+    if any(row not in own_declared and (end is None or row.start_at < end) for row in declared):
+        return False
     from expansion.timed_parking_service import live_hold
     from expansion.timed_parking_models import ParkingCapacityHold
     holds = select(ParkingCapacityHold.id).where(live_hold(slot_id, now))
@@ -187,6 +193,8 @@ def record_admission(db, session):
         ParkingSlot, ParkingSlot.zone_id == Zone.id,
     ).where(ParkingSlot.id == session.parking_slot_id))
     vehicle = db.get(Vehicle, session.vehicle_id)
+    from expansion.declared_bookings import consume as consume_declared
+    consume_declared(db, session, actual_site_id, vehicle)
     row = db.scalar(select(ParkingReservation).where(
         ParkingReservation.site_id == actual_site_id,
         ParkingReservation.vehicle_id == session.vehicle_id,
@@ -259,6 +267,9 @@ def _overlaps(db, slot, start, end, vehicle_id, now, *, customer_id, allocation=
         ParkingSession.parking_slot_id == slot.id, ParkingSession.status.in_(["active", "checking_out"]),
     )))
     if occupied:
+        return True
+    from expansion.declared_bookings import overlaps as declared_overlaps
+    if declared_overlaps(db, slot.id, start, end, now):
         return True
     from expansion.timed_parking_service import hold_overlaps
     if hold_overlaps(db, slot.id, start, end, now):

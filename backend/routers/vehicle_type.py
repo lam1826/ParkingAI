@@ -10,6 +10,22 @@ from crud import vehicle_type as crud_vt
 
 router = APIRouter()
 
+
+def _write_conflict(error: IntegrityError) -> HTTPException:
+    # The DB remains authoritative, including races after a preflight lookup.
+    # Inspect only known constraint identifiers; never expose SQL/parameters.
+    constraint = getattr(getattr(error.orig, "diag", None), "constraint_name", None)
+    prefix_conflict = (
+        constraint == "uq_vehicle_types_code_prefix"
+        or "UNIQUE constraint failed: vehicle_types.code_prefix" in str(error.orig)
+    )
+    detail = (
+        "Tiền tố mã loại xe đã tồn tại. Hãy chọn mã khác."
+        if prefix_conflict else "Tên hoặc tiền tố mã loại xe đã tồn tại."
+    )
+    return HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail)
+
+
 @router.get("", response_model=List[vt_schema.VehicleTypeResponse])
 def read_vehicle_types(
     skip: int = Query(0, ge=0),
@@ -37,11 +53,8 @@ def create_vehicle_type(vt_in: vt_schema.VehicleTypeCreate, db: Session = Depend
 
     try:
         return crud_vt.create_vehicle_type(db=db, vt_in=vt_in)
-    except IntegrityError:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Tên loại xe đã tồn tại.",
-        )
+    except IntegrityError as error:
+        raise _write_conflict(error) from error
 
 @router.put("/{id}", response_model=vt_schema.VehicleTypeResponse,
             dependencies=[Depends(RoleChecker("manager"))])
@@ -60,11 +73,8 @@ def update_vehicle_type(id: int, vt_in: vt_schema.VehicleTypeUpdate, db: Session
 
     try:
         return crud_vt.update_vehicle_type(db=db, db_vt=db_vt, vt_in=vt_in)
-    except IntegrityError:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Tên loại xe đã tồn tại.",
-        )
+    except IntegrityError as error:
+        raise _write_conflict(error) from error
 
 @router.delete("/{id}", status_code=status.HTTP_204_NO_CONTENT,
                dependencies=[Depends(RoleChecker("manager"))])

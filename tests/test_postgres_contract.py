@@ -185,6 +185,8 @@ def test_fly_config_runs_migrations_and_keeps_one_machine_warm():
     assert config["http_service"]["force_https"] is True
     assert config["http_service"]["min_machines_running"] == 1
     assert config["http_service"]["checks"][0]["path"] == "/ready"
+    assert config["env"]["PARKINGAI_SHOWCASE_MODE"] == "false"
+    assert config["env"]["DEMO_PAYMENTS_ENABLED"] == "false"
     assert "DATABASE_URL" not in raw
     assert "SECRET_KEY" not in raw
 

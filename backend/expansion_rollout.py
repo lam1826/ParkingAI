@@ -152,6 +152,8 @@ def validate_zone_site_assignment(connection) -> None:
 
 
 EXPANSION_TABLES = frozenset({
+    'session_ticket_credentials', 'session_payment_access', 'declared_parking_reservations',
+    'vision_automation_policies', 'vision_passage_events',
     "session_fee_quotes", "session_fee_credits",
     "parking_capacity_holds", "timed_parking_passes",
     "online_payment_links", "online_payment_inbox", "online_payment_processing", "online_payment_review_decisions",

@@ -948,6 +948,8 @@ def run_sqlite_migrations(target_engine=engine) -> None:
     """
     if not str(target_engine.url).startswith("sqlite"):
         return
+    from expansion.simplified_customer_rollout import migrate_simplified_customer
+    migrate_simplified_customer(target_engine)
     from expansion.session_credit_rollout import ensure_credit_tables
     ensure_credit_tables(target_engine)
     with target_engine.begin() as conn:

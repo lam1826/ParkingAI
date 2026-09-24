@@ -2,7 +2,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, CheckConstraint, DateTime, Float, ForeignKey, JSON, LargeBinary, String, UniqueConstraint
+from sqlalchemy import Boolean, CheckConstraint, DateTime, Float, ForeignKey, JSON, LargeBinary, String, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from core.clock import business_now
@@ -43,6 +43,7 @@ class VisionObservation(Base):
     image_height: Mapped[int]
     observed_at: Mapped[datetime] = mapped_column(DateTime, default=business_now)
     captured_at: Mapped[datetime] = mapped_column(DateTime)
+    capture_source: Mapped[str] = mapped_column(String(16), default="manual_upload", server_default=text("'manual_upload'"))
     expires_at: Mapped[datetime] = mapped_column(DateTime, index=True)
     ocr_status: Mapped[str] = mapped_column(String(20))
     suggested_plate: Mapped[str | None] = mapped_column(String(20))

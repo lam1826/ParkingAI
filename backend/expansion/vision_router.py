@@ -199,6 +199,7 @@ async def _read_upload(request):
         await form.close()
 
 
+@router.post("/vision/live-frames", status_code=201, dependencies=[Depends(_admit_upload), Depends(RoleChecker("staff"))])
 @router.post(
     "/vision/observations",
     status_code=201,
@@ -218,7 +219,8 @@ async def upload_observation(request: Request, response: Response, db: Session =
     db.rollback()
     prepared = await run_in_threadpool(prepare_observation, metadata, content, mime)
     camera = _camera(db, actor, metadata.camera_id)
-    observation = await run_in_threadpool(ingest_observation, db, camera, metadata, prepared)
+    source = "live_camera" if request.url.path.endswith("/vision/live-frames") else "manual_upload"
+    observation = await run_in_threadpool(ingest_observation, db, camera, metadata, prepared, capture_source=source)
     response.headers["Cache-Control"] = "no-store"
     return serialize_observation(observation, camera)
 
@@ -238,7 +240,7 @@ async def edge_observation(request: Request, response: Response, db: Session = D
     camera = db.get(Camera, metadata.camera_id)
     if camera is None:
         raise HTTPException(401, "Khóa camera không hợp lệ.")
-    observation = await run_in_threadpool(ingest_observation, db, camera, metadata, prepared, digest)
+    observation = await run_in_threadpool(ingest_observation, db, camera, metadata, prepared, digest, capture_source="edge")
     response.headers["Cache-Control"] = "no-store"
     # A capture token can write only to its camera, never read image/plate data.
     return {"id": observation.id, "event_id": observation.event_id, "received": True}

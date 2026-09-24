@@ -82,6 +82,10 @@ def test_scoped_ai_grounds_context_and_replays_without_another_provider_call(env
     assert result.status_code == 201, result.text
     row = result.json()
     assert row["site_id"] == env.a.id and row["kind"] == kind
+    assert row["input"]["total_arrivals"] == 1
+    assert env.vehicle.license_plate not in json.dumps(row["input"])
+    if row["input"]["data_scope"] == "operations":
+        assert row["input"]["revenue"] is None
     prompt = mock_ai_provider_client.return_value.models.generate_content.call_args.kwargs["contents"]
     assert "PARKING_DATA" in prompt and "QUESTION_JSON" in prompt
     assert '"total_arrivals": 1' in prompt and env.vehicle.license_plate not in prompt
@@ -99,6 +103,7 @@ def test_scoped_ai_grounds_context_and_replays_without_another_provider_call(env
     assert env.client.post(endpoint, json={**body, "period": "week" if period == "day" else "day"}).status_code == 409
     history = env.client.get(endpoint).json()
     assert history[0]["id"] == row["id"] and "prompt_used" not in history[0]
+    assert history[0]["input"] == row["input"]
     assert env.client.get(f"/api/v2/sites/{env.b.id}/ai/analyses/{row['id']}").status_code == 403
     env.actor["user"] = env.account
     assert env.client.get(endpoint).status_code == 403

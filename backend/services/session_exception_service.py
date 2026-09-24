@@ -85,6 +85,9 @@ class SessionExceptionService:
             return "Lượt gắn quyền vé tháng hoặc hồ sơ khách đã xác minh; hãy xử lý qua quy trình trả xe."
         if self.db.scalar(select(ParkingReservation.id).where(ParkingReservation.session_id == session.id).limit(1)):
             return "Lượt đã xác nhận đến theo đặt chỗ; hãy xử lý qua quy trình đặt chỗ hoặc trả xe."
+        from expansion.simplified_customer_models import DeclaredParkingReservation
+        if self.db.scalar(select(DeclaredParkingReservation.id).where(DeclaredParkingReservation.session_id == session.id).limit(1)):
+            return 'Lượt đã nhận theo đặt trước của khách; hãy xử lý qua quy trình trả xe.'
         if self.db.scalar(select(GuaranteedAllocation.id).where(
             GuaranteedAllocation.slot_id == session.parking_slot_id,
             GuaranteedAllocation.status == "active", GuaranteedAllocation.end_at > session.check_in_time,
@@ -94,6 +97,11 @@ class SessionExceptionService:
 
     def _vehicle_bound(self, vehicle):
         if vehicle.customer_id is not None:
+            return True
+        from expansion.simplified_customer_models import DeclaredParkingReservation
+        from core.vehicle_identity import canonical_identity
+        if self.db.scalar(select(DeclaredParkingReservation.id).where(
+            DeclaredParkingReservation.normalized_plate == canonical_identity(vehicle.license_plate)).limit(1)):
             return True
         return any(self.db.scalar(select(model.id).where(model.vehicle_id == vehicle.id).limit(1)) is not None
                    for model in (MonthlyPass, PortalVehicleOwnership, FleetVehicle, ParkingReservation, GuaranteedAllocation))
@@ -167,6 +175,9 @@ class SessionExceptionService:
             self.db.refresh(vehicle)
             before = _snapshot(session, vehicle)
             replacement = None
+            if action == 'lost_ticket':
+                from expansion.ticket_payment_access import revoke_ticket_payment_access
+                revoke_ticket_payment_access(self.db, session.id)
             if action != "lost_ticket":
                 slot = lock_slot(self.db, session.parking_slot_id) if session.parking_slot_id is not None else None
                 reason = self._correction_block(session) if action == "plate_corrected" else self._cancel_block(session)

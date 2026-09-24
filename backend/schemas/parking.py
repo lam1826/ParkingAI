@@ -15,7 +15,7 @@ class CheckInRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     license_plate: str = Field(
-        ..., min_length=4, max_length=15, description="Biển số xe"
+        default="", max_length=20, description="Biển số hoặc mã xe; để trống để cấp mã cho loại không biển số"
     )
     vehicle_type_id: int = Field(..., description="ID loại phương tiện")
     zone_id: Optional[int] = Field(
@@ -43,7 +43,7 @@ class CheckOutRequest(CheckoutConfirmation):
     model_config = ConfigDict(extra="forbid")
 
     license_plate: str = Field(
-        ..., min_length=4, max_length=15,
+        ..., min_length=4, max_length=20,
         description="Biển số xe cần rời bãi"
     )
 
@@ -86,6 +86,7 @@ class ZoneSlotSummaryResponse(BaseModel):
     total_slots: int
     occupied_slots: int
     available_slots: int
+    reserved_slots: int = 0
     available_slots_list: List[SlotItemResponse]
 
     model_config = ConfigDict(from_attributes=True)
@@ -96,6 +97,7 @@ class AvailableSlotsOverviewResponse(BaseModel):
     total_slots: int
     total_occupied: int
     total_available: int
+    total_reserved: int = 0
     zones: List[ZoneSlotSummaryResponse]
 
     model_config = ConfigDict(from_attributes=True)

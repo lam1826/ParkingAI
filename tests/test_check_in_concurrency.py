@@ -317,9 +317,15 @@ def test_same_vehicle_two_slots_service_flow(env):
         service_check_in, ("51C-33333", env.slot_a), ("51C-33333", env.slot_b)
     )
 
-    assert _statuses(a, b) == [201, 409], f"A={a} B={b}"
+    # The canonical-identity lock precedes the lookup, so the second request
+    # observes the committed stay and follows the existing already-parked API
+    # contract (400), rather than colliding at the session INSERT (409).
+    assert _statuses(a, b) == [201, 400], f"A={a} B={b}"
+    denied = a if a[1] == 400 else b
+    assert denied == ("HTTP", 400, "Xe đang ở trong bãi.")
     audit = env.audit()
     assert audit["active_total"] == 1
+    assert audit["vehicles"] == 1
     assert list(audit["per_vehicle"].values()) == [1]
     # Slot của transaction thua phải còn trống
     occupied_slots = [s for s, occ in audit["occupied"].items() if occ]
@@ -380,20 +386,20 @@ def test_auto_allocation_single_slot_one_wins(env):
 
 
 def test_same_new_license_plate_concurrent(env):
-    # Race cần kiểm: cả hai request cùng thấy "biển số chưa tồn tại" rồi cùng
-    # tạo xe mới -> đồng bộ ngay TRƯỚC INSERT INTO vehicles (write đầu tiên
-    # của nhánh xe mới). Request thua unique(license_plate) phải dùng lại bản
-    # ghi có sẵn và trả lỗi nghiệp vụ, không được 500.
+    # Identity locking now writes before the vehicle lookup/INSERT. Both
+    # requests must meet before that first write; a barrier at INSERT would
+    # wait while holding SQLite's writer lock and manufacture a lock timeout.
+    # The losing request must reuse the identity and reject the active stay.
     a, b = env.run_pair(
         service_check_in,
         ("51F-66666", env.slot_a),
         ("51F-66666", env.slot_b),
-        sync_on=("INSERT INTO VEHICLES",),
     )
 
     statuses = _statuses(a, b)
-    assert 201 in statuses, f"A={a} B={b}"
-    assert 500 not in statuses, f"Không được trả 500: A={a} B={b}"
+    assert statuses == [201, 400], f"A={a} B={b}"
+    denied = a if a[1] == 400 else b
+    assert denied == ("HTTP", 400, "Xe đang ở trong bãi.")
     audit = env.audit()
     assert audit["vehicles"] == 1, "Chỉ được tạo đúng một bản ghi vehicle"
     assert audit["active_total"] == 1

@@ -59,6 +59,10 @@ def update_vehicle_type(db: Session, db_vt: VehicleType, vt_in: vt_schema.Vehicl
     db_vt = lock_vehicle_type(db, db_vt.id)
     if db_vt is None:
         raise HTTPException(404, "Loại xe không còn tồn tại.")
+    if 'requires_plate' in update_data and update_data['requires_plate'] != db_vt.requires_plate:
+        from models.vehicle import Vehicle
+        if db.scalar(select(Vehicle.id).where(Vehicle.vehicle_type_id == db_vt.id).limit(1)) is not None:
+            raise HTTPException(409, 'Loại xe đã có hồ sơ; hãy tạo loại mới để đổi cách nhận dạng.')
     if update_data.get("is_active") is False:
         from models.parking_session import ParkingSession
         from models.vehicle import Vehicle

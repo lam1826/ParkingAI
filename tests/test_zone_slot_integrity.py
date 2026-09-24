@@ -160,6 +160,7 @@ def test_available_slot_summary_excludes_inactive_zones(
         "total_slots": 0,
         "total_occupied": 0,
         "total_available": 0,
+        "total_reserved": 0,
         "zones": [],
     }
 

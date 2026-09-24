@@ -39,6 +39,8 @@ def get_ticket(db, session_id):
     vehicle = db.get(Vehicle, session.vehicle_id)
     slot = db.get(ParkingSlot, session.parking_slot_id) if session.parking_slot_id else None
     token = ticket_token(session.id)
+    from expansion.ticket_payment_access import ticket_payment_code
+    payment_code = ticket_payment_code(db, session)
     widget = QrCodeWidget(token, barLevel="M", barBorder=4)
     bounds = widget.getBounds()
     size = 240
@@ -49,4 +51,5 @@ def get_ticket(db, session_id):
             "slot": slot.slot_name if slot else None, "check_in_time": session.check_in_time,
             "check_out_time": session.check_out_time, "status": session.status,
             "parking_fee": session.parking_fee, "qr_payload": token,
+            "payment_access_code": payment_code,
             "qr_svg": renderSVG.drawToString(drawing)}

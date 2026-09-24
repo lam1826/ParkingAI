@@ -18,13 +18,14 @@ from time import perf_counter
 
 from fastapi import HTTPException
 from PIL import Image, ImageOps, UnidentifiedImageError
-from sqlalchemy import case, delete, func, select, update
+from sqlalchemy import and_, case, delete, exists, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 
 from core.clock import BUSINESS_TZ, business_now
 from expansion.site_scope import require_public_site
 from expansion.site_models import ParkingSite
 from expansion.vision_models import Camera, VisionObservation
+from expansion.vision_passage_models import VisionPassageEvent
 
 MAX_IMAGE_BYTES = 2 * 1024 * 1024
 MAX_IMAGE_PIXELS = 12_000_000
@@ -290,15 +291,30 @@ def purge_expired(db, site_id=None):
     return db.execute(delete(VisionObservation).where(VisionObservation.id.in_(expired_ids))).rowcount
 
 
-def _evict_reviewed_observations(db, site_id, count):
+def _evict_resolved_observations(db, site_id, count, now):
+    """Release resolved images without deleting durable decisions or pending review."""
     if count <= 0:
         return 0
+    automatic = and_(
+        # Retain the full rate-limit window: deleting newer automatic frames
+        # would let a busy camera evade its 30-observations/minute limit.
+        VisionObservation.observed_at <= now - timedelta(minutes=1),
+        exists().where(
+            VisionPassageEvent.observation_id == VisionObservation.id,
+            VisionPassageEvent.observation_key == VisionObservation.id,
+            VisionPassageEvent.event_id == VisionObservation.event_id,
+            VisionPassageEvent.camera_id == VisionObservation.camera_id,
+            VisionPassageEvent.site_id == VisionObservation.site_id,
+            VisionPassageEvent.state.in_(("entered", "already_entered", "exited")),
+            VisionPassageEvent.session_id.is_not(None),
+        ),
+    )
     rejected_first = case((VisionObservation.review_status == "rejected", 0), else_=1)
     observation_ids = db.scalars(
         select(VisionObservation.id)
         .where(
             VisionObservation.site_id == site_id,
-            VisionObservation.review_status.in_(("rejected", "accepted")),
+            or_(VisionObservation.review_status.in_(("rejected", "accepted")), automatic),
         )
         .order_by(rejected_first, VisionObservation.observed_at, VisionObservation.id)
         .limit(count)
@@ -306,6 +322,16 @@ def _evict_reviewed_observations(db, site_id, count):
     if not observation_ids:
         return 0
     return db.execute(delete(VisionObservation).where(VisionObservation.id.in_(observation_ids))).rowcount
+
+
+def _reject_retired_event(db, camera_id, event_id):
+    # Image eviction must not recycle a durable passage's identity. Processing
+    # the original observation ID remains replayable via observation_key.
+    if db.scalar(select(VisionPassageEvent.id).where(
+        VisionPassageEvent.camera_id == camera_id,
+        VisionPassageEvent.event_id == str(event_id),
+    )) is not None:
+        raise HTTPException(410, "Ảnh đã hết thời hạn lưu. Hãy chụp ảnh mới.")
 
 
 def prepare_observation(metadata, content, mime):
@@ -325,7 +351,7 @@ def prepare_observation(metadata, content, mime):
     )
 
 
-def ingest_observation(db, camera, metadata, prepared, edge_token_hash=None):
+def ingest_observation(db, camera, metadata, prepared, edge_token_hash=None, *, capture_source="manual_upload"):
     now = business_now()
     require_public_site(db, camera.site_id)
     if not camera.is_active:
@@ -333,11 +359,12 @@ def ingest_observation(db, camera, metadata, prepared, edge_token_hash=None):
     existing = db.scalar(select(VisionObservation).where(VisionObservation.camera_id == camera.id,
                           VisionObservation.event_id == str(metadata.event_id)))
     if existing:
-        if existing.image_hash != prepared.image_hash:
+        if existing.image_hash != prepared.image_hash or existing.capture_source != capture_source:
             raise HTTPException(409, "Mã ảnh đã được dùng cho nội dung khác.")
         if existing.expires_at <= now:
             raise HTTPException(410, "Ảnh đã hết thời hạn lưu.")
         return existing
+    _reject_retired_event(db, camera.id, metadata.event_id)
     count = db.scalar(select(func.count()).select_from(VisionObservation).where(
         VisionObservation.camera_id == camera.id, VisionObservation.observed_at > now - timedelta(minutes=1)))
     if count >= 30:
@@ -359,9 +386,10 @@ def ingest_observation(db, camera, metadata, prepared, edge_token_hash=None):
     existing = db.scalar(select(VisionObservation).where(VisionObservation.camera_id == camera.id,
                          VisionObservation.event_id == str(metadata.event_id)))
     if existing:
-        if existing.image_hash != prepared.image_hash:
+        if existing.image_hash != prepared.image_hash or existing.capture_source != capture_source:
             raise HTTPException(409, "Mã ảnh đã được dùng cho nội dung khác.")
         return existing
+    _reject_retired_event(db, camera.id, metadata.event_id)
     count = db.scalar(select(func.count()).select_from(VisionObservation).where(
         VisionObservation.camera_id == camera.id, VisionObservation.observed_at > now - timedelta(minutes=1)))
     if count >= 30:
@@ -370,7 +398,7 @@ def ingest_observation(db, camera, metadata, prepared, edge_token_hash=None):
     count = db.scalar(select(func.count()).select_from(VisionObservation).where(VisionObservation.site_id == camera.site_id))
     if count >= MAX_SITE_OBSERVATIONS:
         required = count - MAX_SITE_OBSERVATIONS + 1
-        removed = _evict_reviewed_observations(db, camera.site_id, required)
+        removed = _evict_resolved_observations(db, camera.site_id, required, now)
         if removed < required:
             raise HTTPException(
                 409,
@@ -379,7 +407,7 @@ def ingest_observation(db, camera, metadata, prepared, edge_token_hash=None):
     observation = VisionObservation(camera_id=camera.id, site_id=camera.site_id, event_id=str(metadata.event_id),
         image_hash=prepared.image_hash, image_bytes=prepared.image_bytes,
         image_width=prepared.image_width, image_height=prepared.image_height,
-        observed_at=now, captured_at=prepared.captured_at,
+        observed_at=now, captured_at=prepared.captured_at, capture_source=capture_source,
         expires_at=now + timedelta(hours=camera.retention_hours), **prepared.recognition)
     db.add(observation)
     try:
@@ -388,7 +416,7 @@ def ingest_observation(db, camera, metadata, prepared, edge_token_hash=None):
         db.rollback()
         winner = db.scalar(select(VisionObservation).where(VisionObservation.camera_id == camera.id,
                            VisionObservation.event_id == str(metadata.event_id)))
-        if winner is None or winner.image_hash != prepared.image_hash:
+        if winner is None or winner.image_hash != prepared.image_hash or winner.capture_source != capture_source:
             raise HTTPException(409, "Ảnh vừa được ghi hoặc cấu hình đã thay đổi. Hãy tải lại.")
         return winner
     db.refresh(observation)
@@ -401,6 +429,7 @@ def serialize_observation(observation, camera):
     return {"id": observation.id, "camera_id": observation.camera_id, "site_id": observation.site_id,
             "event_id": observation.event_id, "observed_at": stamp(observation.observed_at),
             "captured_at": stamp(observation.captured_at),
+            "capture_source": observation.capture_source,
             "expires_at": stamp(min(observation.expires_at, observation.observed_at + timedelta(hours=camera.retention_hours))),
             "ocr_status": observation.ocr_status, "engine": observation.engine,
             "suggested_plate": observation.suggested_plate, "confidence": observation.confidence,

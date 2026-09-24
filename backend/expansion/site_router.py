@@ -246,12 +246,12 @@ def sessions(site_id: int, limit: int = Query(100, ge=1, le=100), offset: int = 
 @router.post("/sites/{site_id}/check-in", status_code=201)
 def check_in(site_id: int, body: SiteCheckIn, db: Session = Depends(get_db), actor: User = Depends(get_current_user)):
     require_site_access(db, actor, site_id)
-    slot = db.scalar(select(ParkingSlot).join(Zone).where(ParkingSlot.id == body.parking_slot_id, Zone.site_id == site_id))
-    if slot is None:
+    slot = db.scalar(select(ParkingSlot).join(Zone).where(ParkingSlot.id == body.parking_slot_id, Zone.site_id == site_id)) if body.parking_slot_id is not None else None
+    if body.parking_slot_id is not None and slot is None:
         raise HTTPException(404, "Vị trí không thuộc bãi này.")
     from services.parking_service import ParkingService
     return ParkingService(db).check_in(body.license_plate, body.vehicle_type_id, actor.id,
-                                      parking_slot_id=slot.id, _expected_site_id=site_id)
+                                      parking_slot_id=slot.id if slot else None, _expected_site_id=site_id)
 
 
 @router.get("/sites/{site_id}/sessions/{session_id}/checkout-quote", response_model=CheckoutQuoteResponse)
