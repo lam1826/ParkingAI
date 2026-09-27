@@ -178,12 +178,14 @@ def request_vehicle(db, user, data):
 
 def resolve_vehicle(db, actor, identity, approve):
     check_permission(actor, "manager")
-    # Serialize the reviewer/request, then share admission's identity lock so
-    # formatting variants cannot create another vehicle or bypass its owner.
+    # Match admission's identity-first order before locking the reviewer. Entry
+    # holds this identity while its session FK takes a key-share lock on User.
     item = db.get(PortalVehicleRequest, identity)
     if item is None:
         raise HTTPException(404, "Không tìm thấy yêu cầu.")
     _require_independent_reviewer(db, actor, customer_id=item.customer_id)
+    if approve:
+        lock_identity(db, item.vehicle_type_id, item.license_plate)
     lock_cash_operator(db, actor.id)
     item = _locked(db, PortalVehicleRequest, identity)
     if item.status != "pending":
@@ -192,7 +194,6 @@ def resolve_vehicle(db, actor, identity, approve):
         return item
     try:
         if approve:
-            lock_identity(db, item.vehicle_type_id, item.license_plate)
             vehicle = resolve_vehicle_identity(db, item.license_plate)
             if vehicle is None:
                 vehicle = Vehicle(license_plate=item.license_plate, vehicle_type_id=item.vehicle_type_id,

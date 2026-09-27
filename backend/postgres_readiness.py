@@ -17,7 +17,7 @@ from expansion_demo_guards import validate_demo_ledger
 from expansion_rollout import validate_zone_site_assignment
 
 
-POSTGRES_SCHEMA_REVISION = "20260923_09"
+POSTGRES_SCHEMA_REVISION = "20260927_10"
 
 REQUIRED_COLUMN_CONTRACTS = frozenset({
     "parking_sessions.billing_policy_version:character varying:32:YES",
@@ -789,6 +789,23 @@ REQUIRED_TRIGGERS |= frozenset(['trg_declared_blocks_guaranteed_allocations',
  'trg_type_identity_mode',
  'trg_type_requires_plate_insert',
  'trg_type_requires_plate_update'])
+
+# Historical PAP1 intervals are additive; schema09 application checks remain valid.
+REQUIRED_TABLES |= frozenset({'session_payment_access_history'})
+REQUIRED_COLUMN_CONTRACTS |= frozenset({
+    'session_payment_access_history.access_id:character varying:36:NO',
+    'session_payment_access_history.created_at:timestamp without time zone::NO',
+    'session_payment_access_history.expires_at:timestamp without time zone::NO',
+    'session_payment_access_history.credential_version:character varying:32:NO',
+    'session_payment_access_history.vehicle_id:integer::NO',
+    'session_payment_access_history.customer_snapshot_id:integer::YES',
+    'session_payment_access_history.revoked_at:timestamp without time zone::YES',
+})
+REQUIRED_CONSTRAINTS |= frozenset({'ck_session_payment_access_history_expiry'})
+REQUIRED_TRIGGERS |= frozenset({
+    'trg_ticket_access_archive', 'trg_ticket_access_history_revoke', 'trg_ticket_access_history_guard',
+})
+
 
 def _require_all(kind: str, actual: Iterable[str], expected: frozenset[str]) -> None:
     missing = sorted(expected - set(actual))

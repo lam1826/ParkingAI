@@ -5,9 +5,10 @@ from sqlalchemy import inspect
 def migrate_simplified_customer(target_engine):
     if target_engine.dialect.name != 'sqlite':
         return
-    from expansion.simplified_customer_models import DeclaredParkingReservation, SessionPaymentAccess, SessionTicketCredential
+    from expansion.simplified_customer_models import DeclaredParkingReservation, SessionPaymentAccess, SessionPaymentAccessHistory, SessionTicketCredential
     from expansion.vision_passage_models import CameraAutomationPolicy, VisionPassageEvent
     from expansion.simplified_customer_guards import SIMPLIFIED_SQLITE_GUARDS
+    from expansion.ticket_access_history_guards import TICKET_ACCESS_HISTORY_SQLITE_GUARDS
     from models.vehicle_type import VehicleType
     with target_engine.begin() as conn:
         names = set(inspect(conn).get_table_names())
@@ -26,11 +27,13 @@ def migrate_simplified_customer(target_engine):
                     index.create(bind=conn, checkfirst=True)
         parents = {'parking_sessions','parking_sites','parking_slots','users','vehicle_types','vehicles','zones'}
         if parents <= names:
-            for model in (SessionTicketCredential, SessionPaymentAccess, DeclaredParkingReservation):
+            for model in (SessionTicketCredential, SessionPaymentAccess, SessionPaymentAccessHistory, DeclaredParkingReservation):
                 model.__table__.create(bind=conn, checkfirst=True)
             if {'vision_cameras','vision_observations'} <= names:
                 for model in (CameraAutomationPolicy, VisionPassageEvent):
                     model.__table__.create(bind=conn, checkfirst=True)
             if {'parking_reservations','guaranteed_allocations','parking_capacity_holds','roles'} <= names:
                 for statement in SIMPLIFIED_SQLITE_GUARDS.values():
+                    conn.exec_driver_sql(statement)
+                for statement in TICKET_ACCESS_HISTORY_SQLITE_GUARDS.values():
                     conn.exec_driver_sql(statement)

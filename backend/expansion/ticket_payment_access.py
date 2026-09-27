@@ -11,7 +11,7 @@ from core.clock import BUSINESS_TZ, business_now
 from core.config import settings
 from core.vehicle_identity import canonical_identity, identity_expression
 from expansion.portal_models import PortalAccountLink, PortalSessionGrant
-from expansion.simplified_customer_models import SessionPaymentAccess, SessionTicketCredential
+from expansion.simplified_customer_models import SessionPaymentAccess, SessionPaymentAccessHistory, SessionTicketCredential
 from models.audit_log import AuditLog
 from models.parking_session import ParkingSession
 from models.parking_slot import ParkingSlot
@@ -85,13 +85,25 @@ def valid_access(db, user, session, vehicle, *, at=None):
     if not user.is_active or not user.role or user.role.name != 'customer' or session.status != 'active':
         return None
     now = business_now() if at is None else at
+    interval = (SessionPaymentAccess.created_at <= now) & (SessionPaymentAccess.expires_at > now)
+    if at is not None:
+        # Only fulfillment may use a prior interval. Browser authority still
+        # expires, and the gap before a later verification grants no access.
+        previous = select(SessionPaymentAccessHistory.access_id).where(
+            SessionPaymentAccessHistory.access_id == SessionPaymentAccess.id,
+            SessionPaymentAccessHistory.credential_version == SessionTicketCredential.version,
+            SessionPaymentAccessHistory.vehicle_id == vehicle.id,
+            SessionPaymentAccessHistory.customer_snapshot_id == vehicle.customer_id,
+            SessionPaymentAccessHistory.revoked_at.is_(None),
+            SessionPaymentAccessHistory.created_at <= now,
+            SessionPaymentAccessHistory.expires_at > now).correlate(SessionPaymentAccess, SessionTicketCredential).exists()
+        interval = interval | previous
     row = db.scalar(select(SessionPaymentAccess).join(SessionTicketCredential,
         SessionTicketCredential.session_id == SessionPaymentAccess.session_id).where(
         SessionPaymentAccess.user_id == user.id, SessionPaymentAccess.session_id == session.id,
         SessionPaymentAccess.vehicle_id == vehicle.id,
         SessionPaymentAccess.customer_snapshot_id == vehicle.customer_id,
-        SessionPaymentAccess.revoked_at.is_(None), SessionPaymentAccess.created_at <= now,
-        SessionPaymentAccess.expires_at > now,
+        SessionPaymentAccess.revoked_at.is_(None), interval,
         SessionTicketCredential.revoked_at.is_(None),
         SessionTicketCredential.version == SessionPaymentAccess.credential_version))
     return row
@@ -146,7 +158,8 @@ def fee_lookup(db, user, data, config):
             db.add(access)
         access.credential_version, access.vehicle_id = credential.version, vehicle.id
         access.customer_snapshot_id = vehicle.customer_id
-        access.created_at, access.expires_at, access.revoked_at = business_now(), business_now() + timedelta(hours=24), None
+        granted_at = business_now()
+        access.created_at, access.expires_at, access.revoked_at = granted_at, granted_at + timedelta(hours=24), None
         db.flush()
     status = payment_status(db, user, session.id, config)
     result = {'session': {'id': session.id, 'license_plate': vehicle.license_plate,

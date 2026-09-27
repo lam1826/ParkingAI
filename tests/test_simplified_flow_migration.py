@@ -66,7 +66,9 @@ def test_frozen_guards_and_schema_chain_are_explicit_and_readiness_tracks_new_co
     assert customer["down_revision"] == "20260916_07"
     assert camera["down_revision"] == customer["revision"]
     assert SIMPLIFIED_POSTGRES_GUARD_SQL in customer["UPGRADE_SQL"]
-    assert readiness.POSTGRES_SCHEMA_REVISION == camera["revision"]
+    history = frozen("20260927_10")
+    assert history["down_revision"] == camera["revision"]
+    assert readiness.POSTGRES_SCHEMA_REVISION == history["revision"]
     assert CUSTOMER | CAMERA <= readiness.REQUIRED_TABLES
     assert set(re.findall(r"CREATE TRIGGER (\w+)", SIMPLIFIED_POSTGRES_GUARD_SQL)) <= readiness.REQUIRED_TRIGGERS
     assert {"vehicle_types.requires_plate:boolean::NO", "vehicle_types.code_prefix:character varying:8:YES",

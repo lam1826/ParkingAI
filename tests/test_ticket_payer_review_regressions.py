@@ -26,6 +26,94 @@ def ticket_payer(ctx):
     return response.json()
 
 
+def reverify_ticket(ctx):
+    proof = get_ticket(ctx.db, ctx.session_id)['payment_access_code']
+    response = ctx.client.post('/api/v2/me/fee-lookup', json={
+        'site_id': ctx.site.id, 'license_plate': '30A12345',
+        'vehicle_type_id': ctx.portal[4].id, 'ticket_proof': proof})
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+@pytest.mark.parametrize('renewals', [1, 2])
+def test_timely_payment_survives_ticket_reverification(parking_online, renewals):
+    ctx = parking_online
+    ticket_payer(ctx)
+    ctx.clock[0] += timedelta(hours=23, minutes=59)
+    code = link(ctx, quote(ctx))
+    ctx.clock[0] += timedelta(seconds=30)
+    identity = receive(ctx, code)
+    ctx.clock[0] += timedelta(seconds=60)
+    for renewal in range(renewals):
+        if renewal:
+            ctx.clock[0] += timedelta(hours=25)
+        reverify_ticket(ctx)
+    online_payment_service.process_inbox(ctx.db, identity, ctx.config, ctx.fee_gateway)
+    assert ctx.db.get(OnlinePaymentProcessing, identity).status == 'processed'
+    assert ctx.db.scalar(select(func.count()).select_from(SessionFeeCredit)) == 1
+    response = ctx.client.get(f'/api/v2/me/sessions/{ctx.session_id}/payment-status')
+    assert response.status_code == 200, response.text
+    assert response.json()['online_paid'] > 0
+    online_payment_service.process_inbox(ctx.db, identity, ctx.config, ctx.fee_gateway)
+    assert ctx.db.scalar(select(func.count()).select_from(SessionFeeCredit)) == 1
+
+
+@pytest.mark.parametrize('seconds_after_quote', [60, 75])
+def test_reverification_does_not_authorize_money_received_in_expired_gap(parking_online, seconds_after_quote):
+    ctx = parking_online
+    ticket_payer(ctx)
+    ctx.clock[0] += timedelta(hours=23, minutes=59)
+    code = link(ctx, quote(ctx))
+    ctx.clock[0] += timedelta(seconds=seconds_after_quote)
+    identity = receive(ctx, code)  # Exactly at expiry, or in the gap before renewal.
+    ctx.clock[0] += timedelta(seconds=90 - seconds_after_quote)
+    reverify_ticket(ctx)
+    online_payment_service.process_inbox(ctx.db, identity, ctx.config, ctx.fee_gateway)
+    processing = ctx.db.get(OnlinePaymentProcessing, identity)
+    assert processing.status == 'review'
+    assert processing.reason == 'session_payment_access_revoked'
+    assert ctx.db.scalar(select(func.count()).select_from(SessionFeeCredit)) == 0
+
+
+@pytest.mark.parametrize('change', ['access_revoked', 'rotated', 'lost_ticket', 'owner_changed_back'])
+def test_new_grant_cannot_restore_revoked_historical_payment_authority(parking_online, change):
+    from expansion.ticket_payment_access import revoke_ticket_payment_access, rotate_ticket_payment_code
+    from models.parking_session import ParkingSession
+    from models.vehicle import Vehicle
+    ctx = parking_online
+    ticket_payer(ctx)
+    ctx.clock[0] += timedelta(hours=23, minutes=59)
+    code = link(ctx, quote(ctx))
+    ctx.clock[0] += timedelta(seconds=30)
+    identity = receive(ctx, code)
+    ctx.clock[0] += timedelta(seconds=60)
+    reverify_ticket(ctx)
+    session = ctx.db.get(ParkingSession, ctx.session_id)
+    if change == 'access_revoked':
+        access = ctx.db.scalar(select(SessionPaymentAccess).where(SessionPaymentAccess.session_id == ctx.session_id))
+        access.revoked_at = ctx.clock[0]
+        ctx.db.commit()
+    else:
+        if change == 'lost_ticket':
+            revoke_ticket_payment_access(ctx.db, ctx.session_id)
+            ctx.db.commit()
+        elif change == 'owner_changed_back':
+            vehicle = ctx.db.get(Vehicle, session.vehicle_id)
+            owner = vehicle.customer_id
+            vehicle.customer_id = None
+            ctx.db.commit()
+            vehicle.customer_id = owner
+            ctx.db.commit()
+        rotate_ticket_payment_code(ctx.db, session)
+    ctx.clock[0] += timedelta(seconds=1)
+    reverify_ticket(ctx)  # Current browser access is valid again, old evidence is not.
+    online_payment_service.process_inbox(ctx.db, identity, ctx.config, ctx.fee_gateway)
+    processing = ctx.db.get(OnlinePaymentProcessing, identity)
+    assert processing.status == 'review'
+    assert processing.reason == 'session_payment_access_revoked'
+    assert ctx.db.scalar(select(func.count()).select_from(SessionFeeCredit)) == 0
+
+
 @pytest.mark.parametrize('creator', ['owner', 'staff'])
 def test_ticket_status_does_not_offer_someone_elses_quote(parking_online, creator):
     ctx = parking_online

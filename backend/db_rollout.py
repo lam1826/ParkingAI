@@ -127,6 +127,7 @@ from expansion.timed_parking_guards import TIMED_SQLITE_GUARDS
 from expansion.online_payment_guards import ONLINE_PAYMENT_SQLITE_GUARDS
 from expansion.session_payment_guards import SESSION_PAYMENT_SQLITE_GUARDS
 from expansion.simplified_customer_guards import SIMPLIFIED_SQLITE_GUARDS
+from expansion.ticket_access_history_guards import TICKET_ACCESS_HISTORY_SQLITE_GUARDS
 from expansion.session_credit_rollout import PRE_CREDIT_GUARDS, migrate_session_credit
 from expansion.timed_parking_rollout import PRE_TIMED_TRIGGER_SQL, migrate_timed_parking, validate_timed_parking
 from sqlalchemy.schema import CreateIndex
@@ -266,6 +267,7 @@ _REQUIRED_TRIGGER_SQL = {
 _REQUIRED_TRIGGER_SQL.update(BOOLEAN_DOMAIN_TRIGGER_SQL)
 _REQUIRED_TRIGGER_SQL.update(BILLING_SQLITE_GUARDS)
 _REQUIRED_TRIGGER_SQL.update(SIMPLIFIED_SQLITE_GUARDS)
+_REQUIRED_TRIGGER_SQL.update(TICKET_ACCESS_HISTORY_SQLITE_GUARDS)
 _REQUIRED_TRIGGER_SQL.update(SESSION_EVENT_SQLITE_GUARDS)
 _REQUIRED_TRIGGER_SQL.update(TIMED_SQLITE_GUARDS)
 _REQUIRED_TRIGGER_SQL.update(SESSION_PAYMENT_SQLITE_GUARDS)

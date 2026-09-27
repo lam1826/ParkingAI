@@ -2,7 +2,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, Integer, String, UniqueConstraint
+from sqlalchemy import CheckConstraint, DDL, DateTime, ForeignKey, Index, Integer, String, UniqueConstraint, event
 from sqlalchemy.orm import Mapped, mapped_column
 
 from core.clock import business_now
@@ -34,6 +34,21 @@ class SessionPaymentAccess(Base):
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime)
 
 
+class SessionPaymentAccessHistory(Base):
+    """Exact expired grants retained when the same proof is verified again."""
+    __tablename__ = 'session_payment_access_history'
+    __table_args__ = (
+        CheckConstraint('expires_at>created_at', name='ck_session_payment_access_history_expiry'),
+    )
+    access_id: Mapped[str] = mapped_column(ForeignKey('session_payment_access.id'), primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, primary_key=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime)
+    credential_version: Mapped[str] = mapped_column(String(32))
+    vehicle_id: Mapped[int] = mapped_column(ForeignKey('vehicles.id'))
+    customer_snapshot_id: Mapped[int | None] = mapped_column(Integer)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+
 class DeclaredParkingReservation(Base):
     __tablename__ = 'declared_parking_reservations'
     __table_args__ = (
@@ -57,3 +72,10 @@ class DeclaredParkingReservation(Base):
     session_id: Mapped[str | None] = mapped_column(ForeignKey('parking_sessions.id'), unique=True)
     request_id: Mapped[str] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=business_now)
+
+
+from expansion.ticket_access_history_guards import TICKET_ACCESS_HISTORY_SQLITE_GUARDS, TICKET_ACCESS_HISTORY_POSTGRES_SQL
+
+for sql in TICKET_ACCESS_HISTORY_SQLITE_GUARDS.values():
+    event.listen(Base.metadata, 'after_create', DDL(sql).execute_if(dialect='sqlite'))
+event.listen(Base.metadata, 'after_create', DDL(TICKET_ACCESS_HISTORY_POSTGRES_SQL).execute_if(dialect='postgresql'))
