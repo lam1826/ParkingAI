@@ -20,7 +20,7 @@ function SiteFees({ site }) {
   const [result, setResult] = useState(null);
   const [paymentOpen, setPaymentOpen] = useState(false);
   const choices = (types.data || []).filter((row) => row.is_active !== false);
-  const vehicleTypeId = form.vehicle_type_id || String(choices[0]?.id || "");
+  const vehicleTypeId = form.vehicle_type_id;
   const type = choices.find((row) => String(row.id) === vehicleTypeId);
   const edit = (key) => (event) => { setResult(null); setForm((old) => ({ ...old, [key]: event.target.value })); };
   const lookup = (event) => {
@@ -59,15 +59,17 @@ function SiteFees({ site }) {
           {types.error && <Alert severity="error" action={<Button onClick={types.reload}>Thử lại</Button>}>{types.error}</Alert>}
           <form onSubmit={lookup}>
             <div className="field"><label htmlFor="customer-plate">{type?.requires_plate === false ? "Mã xe" : "Biển số xe"}</label><input id="customer-plate" value={form.license_plate} onChange={edit("license_plate")} placeholder={type?.requires_plate === false ? "Mã xe nhận tại bãi" : "Ví dụ: 59A-123.45"} maxLength={20} required autoComplete="off" disabled={action.busy} /></div>
-            <div className="field"><label htmlFor="customer-type">Loại xe</label><select id="customer-type" required value={vehicleTypeId} onChange={edit("vehicle_type_id")} disabled={action.busy || types.loading || !!types.error}>{choices.map((row) => <option key={row.id} value={row.id}>{row.name}</option>)}</select></div>
+            <div className="field"><label htmlFor="customer-type">Loại xe</label><select id="customer-type" required value={vehicleTypeId} onChange={edit("vehicle_type_id")} aria-describedby="customer-lookup-help" disabled={action.busy || types.loading || !!types.error}><option value="" disabled>Chọn đúng loại xe trên vé</option>{choices.map((row) => <option key={row.id} value={row.id}>{row.name}</option>)}</select></div>
+            <p id="customer-lookup-help" className="muted" style={{ fontSize: 13, marginBottom: 16 }}>Tra phí cho xe đang gửi tại bãi này. Chọn đúng loại xe trên vé; biển số có thể nhập có hoặc không có dấu chấm, gạch ngang.</p>
             <button className="button primary full" type="submit" disabled={action.busy || types.loading || !!types.error || !vehicleTypeId}><PrototypeIcon name="search" />{action.busy ? "Đang tra phí…" : "Tra phí gửi xe"}</button>
           </form>
           <p className="muted" style={{ fontSize: 12, marginTop: 16 }}>Xe chưa liên kết? <button className="button quiet small" type="button" disabled={action.busy} onClick={() => { setProofOpen((old) => !old); setForm((old) => ({ ...old, ticket_proof: "" })); }}>Dùng mã trên vé</button></p>
+          <p className="muted" style={{ fontSize: 13 }}>Xe đã ra bãi? <Link to="/portal?tab=tickets">Xem vé và lịch sử của bạn</Link>.</p>
         </section>
         {action.error && <div role="alert" className="inline-note warning">{action.error}</div>}
         {proofOpen && !result && <section className="surface">
           <h2>Xác nhận lượt gửi của bạn</h2>
-          <p className="muted" style={{ fontSize: 13, marginTop: 8 }}>Nhập mã tra phí riêng được giao khi xe vào bãi để xác minh lượt gửi. Không cần đăng ký sở hữu xe.</p>
+          <p className="muted" style={{ fontSize: 13, marginTop: 8 }}>Kiểm tra lại biển số và loại xe đã chọn. Nếu xe chưa liên kết tài khoản, nhập mã tra phí riêng trên vé của lượt đang gửi; đây là mã khác với mã lượt dành cho nhân viên.</p>
           <form onSubmit={lookup} style={{ marginTop: 18 }}>
             <div className="field"><label htmlFor="ticket">Mã vé</label><input id="ticket" type="password" value={form.ticket_proof} onChange={edit("ticket_proof")} placeholder="Mã tra phí riêng trên vé" maxLength={160} required autoComplete="off" disabled={action.busy} /></div>
             <button className="button primary" type="submit" disabled={action.busy || !vehicleTypeId || !form.license_plate.trim()}>Xác nhận vé</button>

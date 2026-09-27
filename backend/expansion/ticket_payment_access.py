@@ -81,16 +81,17 @@ def rotate_ticket_payment_code(db, session):
     return result
 
 
-def valid_access(db, user, session, vehicle):
+def valid_access(db, user, session, vehicle, *, at=None):
     if not user.is_active or not user.role or user.role.name != 'customer' or session.status != 'active':
         return None
-    now = business_now()
+    now = business_now() if at is None else at
     row = db.scalar(select(SessionPaymentAccess).join(SessionTicketCredential,
         SessionTicketCredential.session_id == SessionPaymentAccess.session_id).where(
         SessionPaymentAccess.user_id == user.id, SessionPaymentAccess.session_id == session.id,
         SessionPaymentAccess.vehicle_id == vehicle.id,
         SessionPaymentAccess.customer_snapshot_id == vehicle.customer_id,
-        SessionPaymentAccess.revoked_at.is_(None), SessionPaymentAccess.expires_at > now,
+        SessionPaymentAccess.revoked_at.is_(None), SessionPaymentAccess.created_at <= now,
+        SessionPaymentAccess.expires_at > now,
         SessionTicketCredential.revoked_at.is_(None),
         SessionTicketCredential.version == SessionPaymentAccess.credential_version))
     return row

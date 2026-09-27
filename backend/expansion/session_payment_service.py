@@ -68,19 +68,23 @@ def _load_session(db, session_id):
     return row
 
 
-def authorize_session(db, user, session_id, *, site_id=None):
+def _owns_session(db, user, session, vehicle):
+    owner = db.scalar(select(PortalAccountLink.customer_id).where(PortalAccountLink.user_id == user.id))
+    grant = db.get(PortalSessionGrant, session.id)
+    return bool(user.is_active and owner is not None and grant is not None
+        and grant.customer_id == owner and vehicle.customer_id == owner)
+
+
+def authorize_session(db, user, session_id, *, site_id=None, access_at=None):
     session, vehicle, actual_site = _load_session(db, session_id)
     if site_id is not None:
         if site_id != actual_site:
             raise HTTPException(404, "Không tìm thấy lượt gửi tại bãi.")
         require_site_access(db, user, site_id)
     else:
-        customer_id = db.scalar(select(PortalAccountLink.customer_id).where(PortalAccountLink.user_id == user.id))
-        grant = db.get(PortalSessionGrant, session_id)
-        if (not user.is_active or customer_id is None or grant is None or grant.customer_id != customer_id
-                or vehicle.customer_id != customer_id):
+        if not _owns_session(db, user, session, vehicle):
             from expansion.ticket_payment_access import valid_access
-            if valid_access(db, user, session, vehicle) is None:
+            if valid_access(db, user, session, vehicle, at=access_at) is None:
                 raise HTTPException(404, "Không tìm thấy lượt gửi được xác nhận thuộc hồ sơ của bạn.")
     return session, vehicle, actual_site
 
@@ -92,9 +96,7 @@ def authorize_quote(db, user, quote_id):
     operational = user.role and user.role.name in {"staff", "manager", "admin"}
     session, vehicle, _ = authorize_session(db, user, quote.session_id, site_id=quote.site_id if operational else None)
     if not operational and quote.created_by_id != user.id:
-        owner = db.scalar(select(PortalAccountLink.customer_id).where(PortalAccountLink.user_id == user.id))
-        grant = db.get(PortalSessionGrant, session.id)
-        if owner is None or grant is None or grant.customer_id != owner or vehicle.customer_id != owner:
+        if not _owns_session(db, user, session, vehicle):
             raise HTTPException(404, 'Không tìm thấy đề nghị thanh toán của bạn.')
     return quote
 
@@ -155,8 +157,11 @@ def _unresolved_quotes(session_id, now):
 def payment_status(db, user, session_id, config, *, site_id=None):
     session, vehicle, actual_site = authorize_session(db, user, session_id, site_id=site_id)
     fee, credits, basis = _totals(db, session, vehicle, business_now())
-    latest = db.scalar(select(SessionFeeQuote).where(SessionFeeQuote.session_id == session_id)
-        .order_by(SessionFeeQuote.quoted_at.desc(), SessionFeeQuote.id.desc()).limit(1))
+    all_quotes_visible = bool(user.role and user.role.name in {"staff", "manager", "admin"}) or _owns_session(db, user, session, vehicle)
+    visible_quotes = select(SessionFeeQuote).where(SessionFeeQuote.session_id == session_id)
+    if not all_quotes_visible:
+        visible_quotes = visible_quotes.where(SessionFeeQuote.created_by_id == user.id)
+    latest = db.scalar(visible_quotes.order_by(SessionFeeQuote.quoted_at.desc(), SessionFeeQuote.id.desc()).limit(1))
     unresolved = db.scalar(_unresolved_quotes(session_id, business_now()).limit(1))
     supported = basis is not None and session.billing_policy_version in {"entry-v1", "prepaid-window-v1"}
     enabled = config.PAYOS_ENABLED and config.PAYOS_SITE_ID == actual_site
@@ -167,7 +172,10 @@ def payment_status(db, user, session_id, config, *, site_id=None):
     elif not enabled:
         message = "Thanh toán payOS chưa được bật; bạn vẫn có thể thanh toán tại bãi."
     elif unresolved:
-        message = "Đã có đề nghị đang chờ hoặc cần đối soát. Hãy kiểm tra đề nghị hiện tại trước khi trả thêm."
+        if all_quotes_visible or unresolved.created_by_id == user.id:
+            message = "Đã có đề nghị đang chờ hoặc cần đối soát. Hãy kiểm tra đề nghị hiện tại trước khi trả thêm."
+        else:
+            message = "Lượt gửi đã có đề nghị thanh toán đang chờ hoặc cần đối soát. Vui lòng liên hệ người tạo đề nghị hoặc nhân viên trước khi trả thêm."
     if session.status == "completed":
         message = "Lượt gửi đã kết thúc. Số liệu bên dưới là phí và các khoản thanh toán của lượt này."
     elif session.status == "cancelled":
@@ -249,7 +257,9 @@ def fulfillment_problem(db, quote, evidence):
     creator = db.get(User, quote.created_by_id)
     if creator is not None and creator.role and creator.role.name == 'customer':
         try:
-            authorize_session(db, creator, session.id)
+            # A timely signed event remains timely when the worker runs later.
+            # Current revocation, ownership and credential-version checks still apply.
+            authorize_session(db, creator, session.id, access_at=evidence.received_at)
         except HTTPException:
             return 'session_payment_access_revoked'
     credits = credit_snapshot(db, session.id)

@@ -15,7 +15,7 @@ import CustomerFees from "./CustomerFees";
 import { portalTab } from "./customerFlow";
 import { refundAction, supportStatusLabel } from "./supportState";
 import { paymentModeLabel } from "./onlinePaymentState";
-import { combineRemotes, dateOnly, dateTime, endpoint, formLayout, items, money, PageControls, read, Records, refreshAll, RemoteSection, Section, send, StateChip, useAction, usePage, useRemote, Workspace } from "./shared";
+import { combineRemotes, dateOnly, dateTime, endpoint, formLayout, items, money, PageControls, read, Records, refreshAll, RemoteSection, Section, send, SitePicker, StateChip, useAction, usePage, useRemote, useSites, Workspace } from "./shared";
 
 const sessionColumns = [
   { key: "license_plate", label: "Biển số" }, { key: "slot_name", label: "Vị trí" },
@@ -109,6 +109,7 @@ function TicketOverview() {
 const supportSubjects = [["receipt", "Thanh toán & hoàn tiền"], ["order", "Đặt chỗ trước"], ["session", "Mất vé / không tìm thấy lượt"]];
 
 function SupportOverview() {
+  const sites = useSites();
   const identity = useRemote(loadIdentity);
   const linked = Boolean(identity.data?.linked);
   const loadRequests = useCallback(() => linked ? read("/me/support-requests").then(items) : Promise.resolve([]), [linked]);
@@ -120,17 +121,21 @@ function SupportOverview() {
   const action = useAction(refreshAll(requests, detail));
   const submit = (event) => {
     event.preventDefault();
-    void action.run(() => send("/me/support-requests", { subject: supportSubjects.find(([key]) => key === category)[1], category, message: message.trim() }), "Đã gửi yêu cầu. Quản lý sẽ phản hồi trong mục này.", () => setMessage(""));
+    if (sites.loading || sites.error || !sites.siteId || !linked) return;
+    void action.run(() => send("/me/support-requests", { site_id: Number(sites.siteId), subject: supportSubjects.find(([key]) => key === category)[1], category, message: message.trim() }), "Đã gửi yêu cầu. Quản lý sẽ phản hồi trong mục này.", () => setMessage(""));
   };
   return <>
     <PageHeader title="Bạn cần hỗ trợ?" description="Gửi yêu cầu để quản lý bãi tiếp nhận." />
     <CompactRemoteState remote={identity} label="hồ sơ" />
+    <CompactRemoteState remote={sites} label="bãi tiếp nhận" />
+    {!sites.loading && !sites.error && !sites.siteId && <Alert severity="info">Chưa có bãi đang hoạt động để tiếp nhận hỗ trợ.</Alert>}
     <div className="content-grid">
       <section className="surface">
         <form onSubmit={submit}>
+          {!sites.singleSiteMode && <SitePicker sites={sites} label="Bãi tiếp nhận" disabled={action.busy} sx={{ mb: 2, width: "100%" }} />}
           <div className="field"><label htmlFor="support-subject">Vấn đề cần hỗ trợ</label><select id="support-subject" value={category} onChange={(event) => setCategory(event.target.value)} disabled={action.busy}>{supportSubjects.map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></div>
           <div className="field"><label htmlFor="support-message">Nội dung</label><textarea id="support-message" placeholder="Mô tả vấn đề để quản lý hỗ trợ bạn…" required maxLength={2000} value={message} onChange={(event) => setMessage(event.target.value)} disabled={action.busy} /></div>
-          <button className="button primary" type="submit" disabled={action.busy || !linked || !message.trim()}>Gửi yêu cầu</button>
+          <button className="button primary" type="submit" disabled={action.busy || !linked || !message.trim() || sites.loading || !!sites.error || !sites.siteId}>Gửi yêu cầu</button>
         </form>
         {identity.data?.linked === false && <p className="inline-note">Liên kết hồ sơ để bãi tiếp nhận hỗ trợ cho đúng khách hàng. <Link to="/portal?tab=tickets&view=profile">Mở hồ sơ</Link></p>}
         {action.error && <p role="alert" className="inline-note warning">{action.error}</p>}

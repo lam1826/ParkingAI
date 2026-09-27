@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react";
 import { Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, MenuItem, Stack, TextField, Typography } from "@mui/material";
-import { dateTime, formLayout, items, money, read, Records, RemoteSection, Section, send, StateChip, useAction, useRemote } from "./shared";
+import { dateTime, formLayout, items, money, read, Records, RemoteSection, Section, send, SitePicker, StateChip, useAction, useRemote, useSites } from "./shared";
 import { categoryLabel, channelLabel, LINK_LABEL, refundStatusLabel, SUPPORT_CATEGORIES, supportStatusLabel } from "./supportState";
 
 const EMPTY = { subject: "", category: "general", message: "", linked_type: "", linked_id: "" };
@@ -16,6 +16,7 @@ function Thread({ detail }) {
 
 /** Customer side: create support requests (optionally linked to own order/session/receipt), follow replies, see refund requests. */
 export default function CustomerSupportPanel({ linked, orders, sessions, receipts, refunds, onChanged }) {
+  const sites = useSites();
   const [form, setForm] = useState(EMPTY);
   const [selected, setSelected] = useState(null);
   const [reply, setReply] = useState("");
@@ -31,21 +32,26 @@ export default function CustomerSupportPanel({ linked, orders, sessions, receipt
     refund_request: (refunds?.data || []).filter((row) => !row.legacy).map((row) => ({ id: row.id, label: `${refundStatusLabel(row)} · ${row.reason.slice(0, 40)}` })) };
   const submit = (event) => {
     event.preventDefault();
+    if (!form.linked_type && (sites.loading || sites.error || !sites.siteId)) return;
     const body = { subject: form.subject.trim(), category: form.category, message: form.message.trim() };
     if (form.linked_type) { body.linked_type = form.linked_type; body.linked_id = form.linked_id; }
+    else body.site_id = Number(sites.siteId);
     void action.run(() => send("/me/support-requests", body), "Đã gửi yêu cầu hỗ trợ. Quản lý sẽ phản hồi trong mục này và qua Thông báo.", (result) => { setForm(EMPTY); setSelected(result.id); });
   };
   return <Stack spacing={3}>
     {action.error && <Alert severity="error">{action.error}</Alert>}
     {action.notice && <Alert severity="success" role="status">{action.notice}</Alert>}
     <Section title="Gửi yêu cầu hỗ trợ" description="Mô tả vấn đề và, nếu cần, gắn đơn vé, lượt gửi, chứng từ hoặc yêu cầu hoàn của bạn. Chỉ tài nguyên thuộc tài khoản của bạn mới gắn được.">
+      {!form.linked_type && sites.error && <Alert severity="error" action={<Button onClick={sites.reload}>Thử lại</Button>}>{sites.error}</Alert>}
+      {!form.linked_type && !sites.loading && !sites.error && !sites.siteId && <Alert severity="info">Chưa có bãi đang hoạt động để tiếp nhận hỗ trợ.</Alert>}
       <Box component="form" sx={formLayout} onSubmit={submit}>
+        {!form.linked_type && !sites.singleSiteMode && <SitePicker sites={sites} label="Bãi tiếp nhận" disabled={action.busy} />}
         <TextField required label="Tiêu đề" value={form.subject} onChange={change("subject")} slotProps={{ htmlInput: { minLength: 3, maxLength: 150 } }} />
         <TextField select label="Chủ đề" value={form.category} onChange={change("category")}>{SUPPORT_CATEGORIES.map(([key, label]) => <MenuItem key={key} value={key}>{label}</MenuItem>)}</TextField>
         <TextField select label="Gắn với" value={form.linked_type} onChange={change("linked_type")}><MenuItem value="">Không gắn</MenuItem>{Object.entries(LINK_LABEL).map(([key, label]) => <MenuItem key={key} value={key} disabled={!candidates[key]?.length}>{label}</MenuItem>)}</TextField>
         {form.linked_type && <TextField select required label={LINK_LABEL[form.linked_type]} value={form.linked_id} onChange={change("linked_id")}>{candidates[form.linked_type].map((row) => <MenuItem key={row.id} value={row.id}>{row.label}</MenuItem>)}</TextField>}
         <TextField required label="Nội dung" value={form.message} onChange={change("message")} multiline minRows={3} sx={{ gridColumn: "1 / -1" }} slotProps={{ htmlInput: { maxLength: 2000 } }} />
-        <Button type="submit" variant="contained" disabled={action.busy || !linked || (form.linked_type && !form.linked_id)}>Gửi yêu cầu</Button>
+        <Button type="submit" variant="contained" disabled={action.busy || !linked || (form.linked_type ? !form.linked_id : sites.loading || !!sites.error || !sites.siteId)}>Gửi yêu cầu</Button>
       </Box>
     </Section>
     <RemoteSection remote={requests} title="Yêu cầu hỗ trợ của tôi" description="Trạng thái đổi khi quản lý phản hồi hoặc đóng yêu cầu; bạn cũng nhận thông báo trong ứng dụng.">

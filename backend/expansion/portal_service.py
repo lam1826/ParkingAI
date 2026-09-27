@@ -11,6 +11,7 @@ from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 
 from core.clock import business_now
+from core.vehicle_identity import lock_identity, resolve_vehicle as resolve_vehicle_identity
 from expansion.gateway import DemoGateway
 from expansion.portal_models import (
     PortalAccountLink, PortalLinkRequest, PortalVehicleRequest, PortalVehicleOwnership,
@@ -177,8 +178,8 @@ def request_vehicle(db, user, data):
 
 def resolve_vehicle(db, actor, identity, approve):
     check_permission(actor, "manager")
-    # Serialize managers before FK writes and plate creation. The unique plate is
-    # the final cross-manager race guard; no approval ever reassigns another owner.
+    # Serialize the reviewer/request, then share admission's identity lock so
+    # formatting variants cannot create another vehicle or bypass its owner.
     item = db.get(PortalVehicleRequest, identity)
     if item is None:
         raise HTTPException(404, "Không tìm thấy yêu cầu.")
@@ -191,7 +192,8 @@ def resolve_vehicle(db, actor, identity, approve):
         return item
     try:
         if approve:
-            vehicle = db.scalar(select(Vehicle).where(Vehicle.license_plate == item.license_plate).with_for_update())
+            lock_identity(db, item.vehicle_type_id, item.license_plate)
+            vehicle = resolve_vehicle_identity(db, item.license_plate)
             if vehicle is None:
                 vehicle = Vehicle(license_plate=item.license_plate, vehicle_type_id=item.vehicle_type_id,
                     customer_id=item.customer_id)

@@ -4,6 +4,7 @@ from sqlalchemy import case, func, null, select
 
 from core.money import require_exact_vnd
 from core.clock import day_bounds
+from core.vehicle_identity import canonical_identity, identity_expression
 from crud import parking_session as session_crud
 from expansion.reservations import has_slot_commitment, serialize
 from expansion.site_models import (
@@ -94,7 +95,7 @@ def site_sessions(db, actor, site_id, *, limit=100, offset=0, license_plate=None
     if session_id:
         query = query.where(ParkingSession.id == session_id.strip())
     if license_plate:
-        query = query.where(Vehicle.license_plate == license_plate.strip().upper())
+        query = query.where(identity_expression(Vehicle.license_plate) == canonical_identity(license_plate))
     if status:
         query = query.where(ParkingSession.status == status)
     try:

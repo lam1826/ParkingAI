@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, Button } from "@mui/material";
 import CameraOperations from "./CameraOperations.jsx";
 import OperationIcon from "./OperationIcon";
@@ -48,6 +48,9 @@ export default function OperationsPanel({ site, availability, vehicleTypes, sess
   const [queryKind, setQueryKind] = useState("plate");
   const [chooseSlot, setChooseSlot] = useState(false);
   const lookup = useAction();
+  const lookupGeneration = useRef(0);
+  useEffect(() => () => { lookupGeneration.current += 1; }, []);
+  const selectStay = row => { lookupGeneration.current += 1; onSelect(row); };
   const choices = admissionChoices(vehicleTypes.data || [], availability.data?.slots || [], form.vehicle_type_id, form.parking_slot_id);
   const admissionAvailable = !availability.loading && !availability.error && !vehicleTypes.loading && !vehicleTypes.error && !!choices.typeId && (!form.parking_slot_id || !!choices.slotId);
   const ready = admissionAvailable && (!choices.requiresPlate || !!form.license_plate.trim());
@@ -57,30 +60,38 @@ export default function OperationsPanel({ site, availability, vehicleTypes, sess
     event.preventDefault();
     if (!ready || action.busy) return;
     void action.run(() => send(`/sites/${site.id}/check-in`, { license_plate: form.license_plate.trim().toUpperCase(), vehicle_type_id: Number(choices.typeId), ...(form.parking_slot_id ? { parking_slot_id: Number(choices.slotId) } : {}) }), "Đã ghi nhận xe vào.", row => {
-      onSelect({ ...row, id: row.session_id || row.id }); setForm(old => ({ ...old, license_plate: "", parking_slot_id: "" }));
+      selectStay({ ...row, id: row.session_id || row.id }); setForm(old => ({ ...old, license_plate: "", parking_slot_id: "" }));
     });
   };
   const submitLookup = event => {
-    event.preventDefault(); onSelect(null);
+    event.preventDefault();
+    if (lookup.busy) return;
+    selectStay(null);
+    const turn = lookupGeneration.current;
     void lookup.run(async () => {
-      const found = items(await read(`/sites/${site.id}/sessions`, operationLookup(query, queryKind)));
-      if (found.length !== 1) throw new Error(found.length ? "Có nhiều lượt phù hợp. Hãy dùng mã vé để xác định đúng lượt." : "Không tìm thấy xe đang gửi. Kiểm tra biển số hoặc mã vé; lượt đã ra nằm trong Lịch sử xe.");
-      onSelect(found[0]); return found[0];
-    }, "Đã tìm thấy lượt gửi.");
+      try {
+        const found = items(await read(`/sites/${site.id}/sessions`, operationLookup(query, queryKind)));
+        if (turn !== lookupGeneration.current) return;
+        if (found.length !== 1) throw new Error(found.length ? "Có nhiều lượt phù hợp. Hãy dùng mã vé để xác định đúng lượt." : "Không tìm thấy xe đang gửi. Kiểm tra biển số hoặc mã vé; lượt đã ra nằm trong Lịch sử xe.");
+        return found[0];
+      } catch (error) {
+        if (turn === lookupGeneration.current) throw error;
+      }
+    }, "", row => { if (row && turn === lookupGeneration.current) onSelect(row); });
   };
   return <>
-    <div className="page-head"><div><h1>Vận hành bãi</h1><p>Nhận xe, kiểm tra phí và xử lý xe ra tại một nơi.</p></div><div className="head-actions"><div className="segments" aria-label="Cách nhận xe">{[["manual", "car", "Nhập tay"], ["camera", "camera", "Camera"]].map(([value, icon, label]) => <button key={value} className={mode === value ? "active" : ""} aria-pressed={mode === value} onClick={() => setMode(value)}><OperationIcon name={icon} style={{ width: 20, height: 20 }} />{label}</button>)}</div></div></div>
+    <div className="page-head"><div><h1>Vận hành bãi</h1><p>Nhận xe, kiểm tra phí và xử lý xe ra tại một nơi.</p></div><div className="head-actions"><div className="segments" aria-label="Cách nhận xe">{[["manual", "car", "Nhập tay"], ["camera", "camera", "Camera"]].map(([value, icon, label]) => <button key={value} className={mode === value ? "active" : ""} aria-pressed={mode === value} onClick={() => { lookupGeneration.current += 1; setMode(value); }}><OperationIcon name={icon} style={{ width: 20, height: 20 }} />{label}</button>)}</div></div></div>
     <div className="stat-strip" aria-label="Tình trạng bãi"><span className="stat-item"><strong>{availability.data?.occupied ?? "—"}</strong> xe đang gửi</span>{choices.types.map(type => <span className="stat-item" key={type.id}><strong>{availability.data ? (availability.data.slots || []).filter(slot => slot.vehicle_type_id === type.id && slot.available_now).length : "—"}</strong> chỗ {type.name.toLowerCase()}</span>)}</div>
     <div className="content-grid">
       <section className="surface">
-        <div className="toolbar"><h2>{mode === "manual" ? "Nhập thông tin xe" : "Đọc biển số"}</h2><div className="segments" aria-label="Hướng xe">{[["entry", "Xe vào"], ["exit", "Xe ra"]].map(([value, label]) => <button key={value} className={direction === value ? "active" : ""} aria-pressed={direction === value} onClick={() => setDirection(value)}>{label}</button>)}</div></div>
+        <div className="toolbar"><h2>{mode === "manual" ? "Nhập thông tin xe" : "Đọc biển số"}</h2><div className="segments" aria-label="Hướng xe">{[["entry", "Xe vào"], ["exit", "Xe ra"]].map(([value, label]) => <button key={value} className={direction === value ? "active" : ""} aria-pressed={direction === value} onClick={() => { lookupGeneration.current += 1; setDirection(value); }}>{label}</button>)}</div></div>
         {mode === "camera" ? <CameraOperations key={direction} site={site} direction={direction} onCheckout={onCheckout} onManual={(plate, lane) => {
-          setMode("manual"); setDirection(lane === "exit" ? "exit" : "entry"); setForm(old => ({ ...old, license_plate: plate })); setQueryKind("plate"); setQuery(plate); onSelect(null);
+          setMode("manual"); setDirection(lane === "exit" ? "exit" : "entry"); setForm(old => ({ ...old, license_plate: plate })); setQueryKind("plate"); setQuery(plate); selectStay(null);
         }} onPassage={(result, { updateSelection = true } = {}) => {
           if (["entered", "exited"].includes(result.state)) void onRefresh();
           if (!updateSelection) return;
-          if (result.state === "exited") onSelect(null);
-          else if (result.session_id) onSelect({ id: result.session_id, license_plate: result.license_plate, status: "active" });
+          if (result.state === "exited") selectStay(null);
+          else if (result.session_id) selectStay({ id: result.session_id, license_plate: result.license_plate, status: "active" });
         }} /> : direction === "entry" ? <form onSubmit={submitEntry}>
           <div className="field"><label htmlFor="operation-plate">{choices.requiresPlate ? "Biển số xe" : "Mã xe / mã vé"}</label><input id="operation-plate" placeholder={choices.requiresPlate ? "Ví dụ: 51K-246.80" : "Để trống để tự cấp mã xe"} required={choices.requiresPlate} maxLength={20} autoComplete="off" value={form.license_plate} onChange={event => setForm(old => ({ ...old, license_plate: event.target.value }))} disabled={action.busy} />{!choices.requiresPlate && <small>Để trống để hệ thống cấp mã xe trên vé.</small>}</div>
           <div className="field"><label htmlFor="operation-type">Loại xe</label><select id="operation-type" required value={choices.typeId} disabled={vehicleTypes.loading || !!vehicleTypes.error || action.busy} onChange={event => setForm(old => ({ ...old, vehicle_type_id: event.target.value, parking_slot_id: "" }))}><option value="" disabled>Chọn loại xe</option>{choices.types.map(type => <option key={type.id} value={type.id}>{type.name}</option>)}</select>{form.vehicle_type_id && !choices.typeId && <small>Loại đã chọn ngừng nhận xe. Hãy chọn lại.</small>}</div>
@@ -89,10 +100,10 @@ export default function OperationsPanel({ site, availability, vehicleTypes, sess
           {(availability.error || vehicleTypes.error) && <Alert severity="error">{availability.error || vehicleTypes.error}</Alert>}
           <button className="button primary full" type="submit" disabled={!admissionAvailable || action.busy}>{action.busy ? "Đang nhận xe…" : "Ghi nhận xe vào"}<OperationIcon name="arrow" /></button>
         </form> : <form onSubmit={submitLookup}>
-          <div className="field"><label htmlFor="operation-query">{queryKind === "ticket" ? "Mã lượt trên vé" : "Biển số / mã xe"}</label><input id="operation-query" required value={query} autoComplete="off" placeholder={queryKind === "ticket" ? "Nhập đầy đủ mã lượt trên vé" : "Ví dụ: 51K-246.80"} maxLength={queryKind === "ticket" ? 36 : 20} onChange={event => setQuery(event.target.value)} /></div>
+          <div className="field"><label htmlFor="operation-query">{queryKind === "ticket" ? "Mã lượt trên vé" : "Biển số / mã xe"}</label><input id="operation-query" required value={query} autoComplete="off" placeholder={queryKind === "ticket" ? "Nhập đầy đủ mã lượt trên vé" : "Ví dụ: 51K-246.80"} maxLength={queryKind === "ticket" ? 36 : 20} onChange={event => { selectStay(null); setQuery(event.target.value); }} /></div>
           {lookup.error && <Alert severity="error">{lookup.error}</Alert>}
           <button className="button primary full" type="submit" disabled={lookup.busy}>{lookup.busy ? "Đang tra cứu…" : "Tra phí & xử lý xe ra"}<OperationIcon name="arrow" /></button>
-          <button className="button quiet small" type="button" style={{ marginTop: 12 }} onClick={() => { setQueryKind(old => old === "plate" ? "ticket" : "plate"); setQuery(""); }}>{queryKind === "plate" ? "Tra bằng mã vé" : "Tra bằng biển số / mã xe"}</button>
+          <button className="button quiet small" type="button" style={{ marginTop: 12 }} onClick={() => { selectStay(null); setQueryKind(old => old === "plate" ? "ticket" : "plate"); setQuery(""); }}>{queryKind === "plate" ? "Tra bằng mã vé" : "Tra bằng biển số / mã xe"}</button>
         </form>}
       </section>
       <SelectedStay key={current?.id || "empty"} session={current} vehicleTypes={vehicleTypes.data || []} slots={availability.data?.slots || []} adapters={adapters} onCheckout={onCheckout} onDetail={onDetail} onTicket={onTicket} />
@@ -100,9 +111,9 @@ export default function OperationsPanel({ site, availability, vehicleTypes, sess
     <section className="surface" style={{ marginTop: 24 }}><div className="section-head"><div><h2>Xe đang trong bãi <span className="badge neutral">{availability.data?.occupied ?? rows.length}</span></h2><p>Chọn một xe để xem phí, thu tiền hoặc cho xe ra. Xe không có biển số dùng mã xe/mã vé.</p></div></div>
       {sessions.error && <Alert severity="error" action={<Button onClick={sessions.reload}>Thử lại</Button>}>{sessions.error}</Alert>}
       {sessions.loading && <p role="status" className="muted">Đang tải xe đang gửi…</p>}
-      <div className="table-wrap"><table className="data-table"><thead><tr><th>Biển số / mã xe</th><th>Loại xe</th><th>Giờ vào</th><th>Vị trí</th><th>Còn trả</th><th style={{ position: "relative" }}><span className="sr-only">Thao tác</span></th></tr></thead><tbody>{rows.map(row => <tr key={row.id}><td className="plate">{row.license_plate}</td><td>{operationTypeName(row, vehicleTypes.data || [], availability.data?.slots || [])}</td><td title={dateTime(row.check_in_time)}>{time(row.check_in_time)}</td><td>{row.slot_name}</td><td title="Chọn Xem phí để lấy phí hiện tại">—</td><td><button className="button quiet small" onClick={() => onSelect(row)}>{current?.id === row.id ? "Đang chọn" : "Xem phí"}</button></td></tr>)}</tbody></table>{!rows.length && !sessions.loading && <div className="empty">Bãi chưa có xe.</div>}</div>
+      <div className="table-wrap"><table className="data-table"><thead><tr><th>Biển số / mã xe</th><th>Loại xe</th><th>Giờ vào</th><th>Vị trí</th><th>Còn trả</th><th style={{ position: "relative" }}><span className="sr-only">Thao tác</span></th></tr></thead><tbody>{rows.map(row => <tr key={row.id}><td className="plate">{row.license_plate}</td><td>{operationTypeName(row, vehicleTypes.data || [], availability.data?.slots || [])}</td><td title={dateTime(row.check_in_time)}>{time(row.check_in_time)}</td><td>{row.slot_name}</td><td title="Chọn Xem phí để lấy phí hiện tại">—</td><td><button className="button quiet small" onClick={() => selectStay(row)}>{current?.id === row.id ? "Đang chọn" : "Xem phí"}</button></td></tr>)}</tbody></table>{!rows.length && !sessions.loading && <div className="empty">Bãi chưa có xe.</div>}</div>
       {(page.page > 0 || rows.length >= page.size) && <PageControls page={page.page} count={rows.length} size={page.size} busy={sessions.loading || action.busy} onChange={page.setPage} />}
     </section>
-    <details className="demo-help"><summary>Tiếp nhận đặt chỗ & thao tác bổ sung</summary><div className="demo-tools"><button className="button secondary small" onClick={onReservations}>Tiếp nhận xe đã đặt chỗ</button><button className="button secondary small" onClick={() => { setMode("manual"); setDirection("entry"); setChooseSlot(old => !old); }}>{chooseSlot ? "Tự xếp chỗ" : "Chọn vị trí nhận xe"}</button><button className="button quiet small" onClick={onRefresh}>Làm mới dữ liệu</button></div></details>
+    <details className="demo-help"><summary>Tiếp nhận đặt chỗ & thao tác bổ sung</summary><div className="demo-tools"><button className="button secondary small" onClick={onReservations}>Tiếp nhận xe đã đặt chỗ</button><button className="button secondary small" onClick={() => { lookupGeneration.current += 1; setMode("manual"); setDirection("entry"); setChooseSlot(old => !old); }}>{chooseSlot ? "Tự xếp chỗ" : "Chọn vị trí nhận xe"}</button><button className="button quiet small" onClick={onRefresh}>Làm mới dữ liệu</button></div></details>
   </>;
 }

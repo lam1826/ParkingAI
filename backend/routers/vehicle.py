@@ -102,12 +102,13 @@ def read_vehicle(id: int, db: Session = Depends(get_db)):
 @router.post("", response_model=vehicle_schema.VehicleResponse, status_code=status.HTTP_201_CREATED)
 def create_vehicle(vehicle_in: vehicle_schema.VehicleCreate, db: Session = Depends(get_db)):
     """Đăng ký phương tiện mới"""
+    from core.vehicle_identity import lock_identity, resolve_vehicle
+    validate_vehicle_relations(db, vehicle_in.vehicle_type_id, vehicle_in.customer_id)
+    lock_identity(db, vehicle_in.vehicle_type_id, vehicle_in.license_plate)
     # Kiểm tra biển số xe đã tồn tại chưa
-    existing_vehicle = crud_vehicle.get_vehicle_by_license_plate(db, license_plate=vehicle_in.license_plate)
+    existing_vehicle = resolve_vehicle(db, vehicle_in.license_plate)
     if existing_vehicle:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Biển số xe đã tồn tại")
-    validate_vehicle_relations(db, vehicle_in.vehicle_type_id, vehicle_in.customer_id)
-
     try:
         return crud_vehicle.create_vehicle(db=db, vehicle_in=vehicle_in)
     except IntegrityError:
@@ -123,8 +124,10 @@ def update_vehicle(id: int, vehicle_in: vehicle_schema.VehicleUpdate, db: Sessio
     
     # Kiểm tra nếu đổi biển số thì biển mới có bị trùng với xe khác không
     if vehicle_in.license_plate and vehicle_in.license_plate != db_vehicle.license_plate:
-        existing_vehicle = crud_vehicle.get_vehicle_by_license_plate(db, license_plate=vehicle_in.license_plate)
-        if existing_vehicle:
+        from core.vehicle_identity import lock_identity, resolve_vehicle
+        lock_identity(db, vehicle_in.vehicle_type_id or db_vehicle.vehicle_type_id, vehicle_in.license_plate)
+        existing_vehicle = resolve_vehicle(db, vehicle_in.license_plate)
+        if existing_vehicle and existing_vehicle.id != db_vehicle.id:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Biển số xe đã được sử dụng")
 
     validate_vehicle_relations(db, vehicle_in.vehicle_type_id, vehicle_in.customer_id)
