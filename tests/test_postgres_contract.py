@@ -140,7 +140,7 @@ def test_delivery_requires_recovery_point_before_migration_and_pins_runtime_inpu
     workflow = (root / ".github" / "workflows" / "delivery.yml").read_text(encoding="utf-8")
     dockerfile = (root / "backend" / "Dockerfile").read_text(encoding="utf-8")
 
-    assert workflow.index("Require a current Supabase recovery point") < workflow.index("flyctl deploy")
+    assert workflow.index("Require a verified database recovery point") < workflow.index("flyctl deploy")
     assert "SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}" in workflow
     assert "/database/backups" in workflow
     assert "supabase_backup_gate.py" in workflow

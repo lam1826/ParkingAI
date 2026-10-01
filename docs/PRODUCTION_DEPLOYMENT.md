@@ -69,7 +69,7 @@ khi CI của `main` xanh, Continuous Delivery sẽ:
 
 1. khóa SHA release và xác minh SHA thuộc `origin/main`;
 2. build frontend với `VITE_API_URL=https://api.parkingai.am` làm bằng chứng;
-3. xác nhận PITR đang bật hoặc có backup Supabase hoàn tất trong 36 giờ gần nhất;
+3. xác minh recovery point theo chế độ đã cấu hình (mặc định Supabase; xem bên dưới);
 4. chạy `flyctl deploy --remote-only` từ thư mục `backend`;
 5. chạy Alembic release command trên Supabase trước rollout;
 6. gắn `RELEASE_ID=<git-sha>` vào Machine;
@@ -77,6 +77,22 @@ khi CI của `main` xanh, Continuous Delivery sẽ:
 
 Có thể chạy lại chính xác một commit đã thuộc `main` bằng `workflow_dispatch`
 và input `commit_sha`.
+
+### Recovery point cho Supabase Free
+
+Mặc định `PARKINGAI_RECOVERY_MODE=supabase` giữ nguyên yêu cầu PITR hoặc backup
+Supabase hoàn tất trong 36 giờ. Không tự chuyển chế độ khi API lỗi hoặc backup
+quá hạn. Với dự án dùng bản sao lưu riêng, người vận hành có thể chọn chế độ
+`signed-local` theo [quy trình sao lưu và thử khôi phục](FREE_RECOVERY.md).
+Chế độ này yêu cầu bằng chứng có chữ ký Ed25519, đúng commit sắp triển khai,
+đúng DB nguồn và đã thử phục hồi; snapshot không quá hai giờ.
+
+GitHub Environment `production` chứa biến `PARKINGAI_RECOVERY_MODE`, biến
+`PARKINGAI_RECOVERY_PUBLIC_KEY` và secret `PARKINGAI_RECOVERY_ATTESTATION`.
+`SUPABASE_PROJECT_REF` vẫn cần để đối chiếu DB nguồn. Private key và bản sao DB
+giữ ngoài repository và GitHub Actions. CI tin người giữ khóa ký đã thực hiện
+kiểm chứng; CI không có bản sao để tự thử khôi phục. Thiếu, sai hoặc hết hạn bằng
+chứng sẽ chặn trước Fly deploy. Lần phát hành sau cần bằng chứng mới.
 
 ## 4. Cloudflare Pages và domain
 
@@ -151,8 +167,9 @@ flyctl releases rollback <version> -a parkingai-api-lam1826
 Migration phải theo expand/contract và tương thích ngược ít nhất một release.
 Không rollback destructive migration chỉ bằng cách đổi image. Trước migration
 contract, xác nhận Supabase backup/PITR và hoàn tất thời gian quan sát release
-expand. Workflow dừng trước `flyctl deploy` nếu không đọc được metadata backup,
-PITR chưa bật và không có backup hoàn tất trong 36 giờ. Khi backend rollback,
+expand. Workflow dừng trước `flyctl deploy` nếu chế độ Supabase không đọc được
+metadata backup, PITR chưa bật và không có backup hoàn tất trong 36 giờ; chế độ
+`signed-local` dừng nếu bằng chứng không hợp lệ hoặc quá hai giờ. Khi backend rollback,
 giữ `VITE_API_URL` và DNS không đổi.
 
 Frontend: mở Cloudflare Dashboard → **Workers & Pages** → project ParkingAI →
