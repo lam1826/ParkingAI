@@ -16,7 +16,7 @@ from services.ticket_service import resolve_ticket, ticket_token
 
 
 def headers(user):
-    token = AuthService().create_access_token(user_id=user.id, username=user.username, role=user.role.name)
+    token = AuthService().create_access_token(user_id=user.id, username=user.username, role=user.role.name, password_hash=user.password_hash)
     return {"Authorization": f"Bearer {token}"}
 
 

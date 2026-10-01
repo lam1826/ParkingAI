@@ -12,7 +12,7 @@ from routers import user as user_router
 
 
 def _headers(user):
-    return {"Authorization": "Bearer " + AuthService().create_access_token(user.id, user.username, user.role.name)}
+    return {"Authorization": "Bearer " + AuthService().create_access_token(user.id, user.username, user.role.name, password_hash=user.password_hash)}
 
 
 @pytest.fixture

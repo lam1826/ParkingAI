@@ -415,13 +415,25 @@ def cancel(db, actor, row, *, customer=False):
 
 def arrive(db, actor, row):
     require_site_access(db, actor, row.site_id)
+    from core.vehicle_identity import canonical_identity, lock_identity
     from services.payment_service import lock_cash_operator
     from services.monthly_subscription_service import _lock_vehicle
     from crud.vehicle_type import require_active_vehicle_type
+    vehicle = db.get(Vehicle, row.vehicle_id)
+    if vehicle is None:
+        raise HTTPException(404, "Không tìm thấy phương tiện.")
+    identity = canonical_identity(vehicle.license_plate), vehicle.vehicle_type_id
+    # Direct admission locks identity before the vehicle and eventually needs
+    # the operator FK. Arrival must not hold either row while waiting for that
+    # same identity, or concurrent admission creates a PostgreSQL lock cycle.
+    lock_identity(db, vehicle.vehicle_type_id, vehicle.license_plate)
     lock_cash_operator(db, actor.id)
     _lock_vehicle(db, row.vehicle_id)
-    vehicle = db.get(Vehicle, row.vehicle_id)
     db.refresh(vehicle)
+    if (canonical_identity(vehicle.license_plate), vehicle.vehicle_type_id) != identity:
+        # Do not acquire a different identity after row locks if the vehicle
+        # was edited while this request waited. A fresh request can retry safely.
+        raise HTTPException(409, "Thông tin xe vừa thay đổi. Hãy tải lại đặt chỗ trước khi nhận xe.")
     require_active_vehicle_type(db, vehicle.vehicle_type_id)
     lock_slot(db, row.slot_id)
     db.refresh(row)

@@ -14,7 +14,7 @@ def ai_auth_headers(manager_user: User) -> dict[str, str]:
     token = AuthService().create_access_token(
         user_id=manager_user.id,
         username=manager_user.username,
-        role=manager_user.role.name,
+        role=manager_user.role.name, password_hash=manager_user.password_hash,
     )
     return {"Authorization": f"Bearer {token}"}
 

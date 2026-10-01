@@ -17,7 +17,7 @@ def test_duplicate_prefix_has_correct_message_and_keeps_records_unchanged(
     second_id = second.id
     initial_count = db_session.scalar(select(func.count(VehicleType.id)))
     token = AuthService().create_access_token(
-        user_id=manager_user.id, username=manager_user.username, role=manager_user.role.name,
+        user_id=manager_user.id, username=manager_user.username, role=manager_user.role.name, password_hash=manager_user.password_hash,
     )
     payload = {"name": "Tên loại xe hoàn toàn mới", "requires_plate": False, "code_prefix": "CYCLE"}
     request = client.post if operation == "create" else client.put

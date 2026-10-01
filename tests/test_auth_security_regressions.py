@@ -105,7 +105,7 @@ def admin_race_client(tmp_path):
 
 
 def _headers(user_id):
-    token = AuthService().create_access_token(user_id, f"admin_{user_id}", "admin")
+    token = AuthService().create_access_token(user_id, f"admin_{user_id}", "admin", password_hash="unused")
     return {"Authorization": "Bearer " + token}
 
 

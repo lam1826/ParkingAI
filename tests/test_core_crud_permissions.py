@@ -31,7 +31,7 @@ def core_access(db_session, vehicle_type, zone, parking_slot, vehicle, customer,
         if role_name != "admin":
             db_session.add(SiteMembership(site_id=site.id, user_id=user.id, role=role_name))
         # A forged elevated role claim must not bypass the database role.
-        token = AuthService().create_access_token(user.id, user.username, "admin")
+        token = AuthService().create_access_token(user.id, user.username, "admin", password_hash=user.password_hash)
         actors[role_name] = {"Authorization": f"Bearer {token}"}
     period = MonthlyPass(customer_id=customer.id, vehicle_id=vehicle.id,
                          pass_code="CORE-EXISTING", price=100000,

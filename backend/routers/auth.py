@@ -1,6 +1,7 @@
 from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
+from sqlalchemy import update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session  # Sử dụng Session đồng bộ
 
@@ -117,7 +118,8 @@ def login(  # Bỏ async vì hàm service xử lý đồng bộ
     access_token = auth_service.create_access_token(
         user_id=user.id,
         username=user.username,
-        role=str(user.role.name) if user.role else ""
+        role=str(user.role.name) if user.role else "",
+        password_hash=user.password_hash,
     )
     
     return {
@@ -145,6 +147,7 @@ def oauth_login(
             user_id=user.id,
             username=user.username,
             role=str(user.role.name) if user.role else "",
+            password_hash=user.password_hash,
         ),
         "token_type": "bearer",
     }
@@ -217,6 +220,7 @@ def change_password(
     db: Annotated[Session, Depends(get_db)],
 ):
     auth_service = AuthService()
+    expected_hash = current_user.password_hash
     if not auth_service.verify_password(body.current_password, current_user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -228,6 +232,17 @@ def change_password(
             detail="Mật khẩu mới phải khác mật khẩu hiện tại",
         )
 
-    current_user.password_hash = auth_service.get_password_hash(body.new_password)
+    new_hash = auth_service.get_password_hash(body.new_password)
+    # The password validated above may have changed in a concurrent admin reset.
+    # Compare-and-swap prevents a stale request from overwriting that newer reset.
+    result = db.execute(update(User).where(
+        User.id == current_user.id,
+        User.password_hash == expected_hash,
+        User.is_active.is_(True),
+    ).values(password_hash=new_hash).execution_options(synchronize_session=False))
+    if result.rowcount != 1:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT,
+                            detail="Thông tin đăng nhập đã thay đổi. Vui lòng đăng nhập lại.")
     db.commit()
-    return {"message": "Đổi mật khẩu thành công"}
+    return {"message": "Đổi mật khẩu thành công. Vui lòng đăng nhập lại trên các thiết bị."}

@@ -57,7 +57,7 @@ jobs:
       - name: Run PostgreSQL integration tests
         env:
           POSTGRES_TEST_URL: postgresql+psycopg://parkingai_test:parkingai_test@127.0.0.1:5432/parkingai_test
-        run: python -m pytest tests/test_postgres_integration.py tests/test_round3_postgres.py tests/test_portal_admission_lock_regression.py tests/test_ticket_access_history_postgres.py -q
+        run: python -m pytest tests/test_postgres_integration.py tests/test_round3_postgres.py tests/test_portal_admission_lock_regression.py tests/test_ticket_access_history_postgres.py tests/test_reservation_arrival_lock_regression.py -q
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -138,3 +138,16 @@ jobs:
 
       - name: Run Windows rollout safety tests
         run: python -m pytest tests/test_release_safety.py -q --durations=20
+
+      - name: Verify native camera access under frontend document policy
+        run: python tests/browser/camera_native_policy.py
+
+      - name: Preserve native camera test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-camera-policy
+          path: |
+            backend/artifacts/camera-native-policy/**/results.json
+            backend/artifacts/camera-native-policy/**/chrome.log
+          if-no-files-found: ignore

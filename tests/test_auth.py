@@ -294,7 +294,7 @@ def auth_headers_for(user: User) -> dict[str, str]:
     token = AuthService().create_access_token(
         user_id=user.id,
         username=user.username,
-        role=user.role.name,
+        role=user.role.name, password_hash=user.password_hash,
     )
     return {"Authorization": f"Bearer {token}"}
 

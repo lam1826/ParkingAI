@@ -22,7 +22,7 @@ def auth_headers(test_user: User) -> dict:
     token = auth_service.create_access_token(
         user_id=test_user.id,
         username=test_user.username,
-        role=str(test_user.role)
+        role=str(test_user.role), password_hash=test_user.password_hash
     )
     return {"Authorization": f"Bearer {token}"}
 

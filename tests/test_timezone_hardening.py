@@ -63,7 +63,7 @@ def business_reference_now() -> datetime:
 
 def make_headers(user) -> dict:
     token = AuthService().create_access_token(
-        user_id=user.id, username=user.username, role=str(user.role)
+        user_id=user.id, username=user.username, role=str(user.role), password_hash=user.password_hash
     )
     return {"Authorization": f"Bearer {token}"}
 

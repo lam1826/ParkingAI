@@ -8,13 +8,15 @@ import { ObservationImage } from "./VisionPage";
 import { prepareCameraPhoto } from "./imageUpload";
 import { captureCameraPhoto, cameraRecognitionMessage, playCameraPreview } from "./cameraCapture.js";
 import { cameraHealthText } from "./visionCameraState";
-import { framesForAutomation, passageLabels } from "./cameraAutomationState.js";
+import { framesForAutomation, hasRecentEdgeFrames, passageLabels } from "./cameraAutomationState.js";
 import { automationPolicyUpdate, canStartCameraAutomation, startCameraAutomation } from "./cameraAutomationStart.js";
 import { endpoint, items, read, send, requestKey, dateTime, useRemote, useAction } from "./shared";
 
 export default function CameraOperations({ site, direction = "entry", onManual, onPassage, onCheckout }) {
   const [choice, setChoice] = useState("");
   const [running, setRunning] = useState(false);
+  const [source, setSource] = useState("live_camera");
+  const [edgeReceiving, setEdgeReceiving] = useState(false);
   const [streaming, setStreaming] = useState(false);
   const [opening, setOpening] = useState(false);
   const [starting, setStarting] = useState(false);
@@ -33,7 +35,8 @@ export default function CameraOperations({ site, direction = "entry", onManual, 
   const laneCameras = useMemo(() => (cameras.data || []).filter(row => row.direction === direction), [cameras.data, direction]);
   const camera = laneCameras.find(row => String(row.id) === String(choice)) || laneCameras[0];
   const cameraId = camera?.id;
-  const hasAutomationSource = streaming || camera?.edge_enabled;
+  const edgeSource = source === "edge" && Boolean(camera?.edge_enabled);
+  const hasAutomationSource = edgeSource || streaming;
   const loadPolicy = useCallback(() => cameraId ? read(`/cameras/${cameraId}/automation`) : Promise.resolve(null), [cameraId]);
   const policy = useRemote(loadPolicy);
   const loadFrames = useCallback(() => read("/vision/observations", { site_id: site.id, limit: 25 }).then(items), [site.id]);
@@ -74,16 +77,18 @@ export default function CameraOperations({ site, direction = "entry", onManual, 
   const toggleAutomation = async () => {
     if (running) { setRunning(false); return; }
     if (startingRef.current || opening || busy.current || action.busy || policy.loading || !canStartCameraAutomation(camera, policy.data, canManage)) return;
-    startingRef.current = true; setStarting(true); setError(""); setLatest(null);
+    startingRef.current = true; setStarting(true); setError(""); setLatest(null); setEdgeReceiving(false);
     try {
       const started = await startCameraAutomation({
         policy: policy.data, canManage,
-        hasSource: Boolean(media.current || camera.edge_enabled), openSource: startWebcam,
+        // An external feed is an explicit polling choice, not proof of a live
+        // camera. A saved edge token must never bypass the default webcam.
+        hasSource: edgeSource || Boolean(media.current?.getVideoTracks().some(track => track.readyState === "live")), openSource: startWebcam,
         enablePolicy: async update => (await api.put(endpoint(`/cameras/${cameraId}/automation`), update)).data,
         reloadPolicy: policy.reload, isActive: () => active.current,
       });
       if (active.current && started) {
-        if (!camera.edge_enabled && !media.current?.getVideoTracks().some(track => track.readyState === "live")) {
+        if (!edgeSource && !media.current?.getVideoTracks().some(track => track.readyState === "live")) {
           throw new Error("Camera đã ngắt kết nối. Hãy mở lại webcam rồi bật tự động.");
         }
         setRunning(true);
@@ -133,7 +138,7 @@ export default function CameraOperations({ site, direction = "entry", onManual, 
       if (document.visibilityState !== "visible" || busy.current) { timer = window.setTimeout(tick, 4000); return; }
       busy.current = true; setScanning(true);
       try {
-        if (media.current && video.current?.readyState >= 2) {
+        if (!edgeSource && media.current && video.current?.readyState >= 2) {
           const { file, capturedAt } = await captureCameraPhoto(video.current);
           if (stopped) return;
           const payload = new FormData(); payload.append("file", file); payload.append("camera_id", cameraId);
@@ -143,7 +148,9 @@ export default function CameraOperations({ site, direction = "entry", onManual, 
         }
         if (stopped) return;
         const rows = items(await read("/vision/observations", { site_id: site.id, limit: 25 }));
-        for (const row of framesForAutomation(rows, cameraId, processed.current, Date.now(), policy.data.max_age_seconds)) {
+        if (stopped) return;
+        setEdgeReceiving(edgeSource && hasRecentEdgeFrames(rows, cameraId));
+        for (const row of framesForAutomation(rows, cameraId, processed.current, Date.now(), policy.data.max_age_seconds, edgeSource ? "edge" : "live_camera")) {
           if (stopped) break;
           const result = await send(`/vision/observations/${row.id}/process`);
           processed.current.add(row.id);
@@ -153,18 +160,30 @@ export default function CameraOperations({ site, direction = "entry", onManual, 
           if (!stopped) { setLatest(result); setSelected(row); setPlate(row.suggested_plate || ""); }
         }
         if (!stopped) { setError(""); void reloadFrames(); }
-      } catch (failure) { if (!stopped) setError(getErrorMessage(failure, "Tự động chưa xử lý được ảnh. Hệ thống sẽ kiểm tra lại.")); }
+      } catch (failure) {
+        if (!stopped) {
+          const detail = failure?.response?.data?.detail;
+          if (failure?.response?.status === 409) {
+            // A persistent quota/configuration conflict needs operator action,
+            // not endless uploads. Keep the preview and all stored evidence.
+            stopped = true; setRunning(false);
+          }
+          setError(detail?.code === "camera_review_required" ? detail.message
+            : getErrorMessage(failure, "Tự động chưa xử lý được ảnh. Hệ thống sẽ kiểm tra lại."));
+        }
+      }
       finally { busy.current = false; if (active.current) setScanning(false); if (!stopped) timer = window.setTimeout(tick, 4000); }
     };
     void tick();
     return () => { stopped = true; window.clearTimeout(timer); };
-  }, [running, cameraId, policy.data, hasAutomationSource, site.id, reloadFrames]);
+  }, [running, cameraId, policy.data, hasAutomationSource, edgeSource, site.id, reloadFrames]);
   const current = selected?.camera_id === cameraId ? selected : null;
   const recognition = cameraRecognitionMessage(current);
   const automationHint = !camera?.is_active ? "Cần camera đang hoạt động tại làn này để bật tự động."
     : policy.loading ? "Đang tải quyền tự động của camera…"
     : !policy.data ? "Chưa tải được quyền tự động. Hãy thử tải lại cài đặt camera."
     : !policy.data.enabled && !canManage ? "Cần Admin hoặc Manager cho phép tự động ở camera này. Bạn vẫn có thể quét biển số để kiểm tra."
+    : edgeSource ? "Camera ngoài cần gửi ảnh mới bằng khóa đã cấp. Màn hình sẽ chờ nếu thiết bị chưa kết nối hoặc ngừng gửi ảnh."
     : !policy.data.enabled ? "Bấm Bật tự động để cho phép camera nhận / trả xe với ảnh đủ điều kiện. Webcam sẽ mở nếu chưa có nguồn ảnh."
     : !hasAutomationSource ? "Bấm Bật tự động để mở webcam và xử lý ảnh mới."
     : "Tự động chỉ xử lý ảnh đủ điều kiện; ảnh chưa rõ vẫn cần nhân viên kiểm tra.";
@@ -179,17 +198,18 @@ export default function CameraOperations({ site, direction = "entry", onManual, 
       <div className="camera-label" style={{ zIndex: 1 }}>{camera?.name || "Camera"} · Làn {direction === "entry" ? "vào" : "ra"}</div>
       <video ref={video} muted playsInline onLoadedData={() => setVideoReady(true)} style={{ display: streaming ? "block" : "none", width: "100%", height: 290, objectFit: "contain" }} />
       {!streaming && (current ? <div style={{ padding: "44px 12px 60px" }}><ObservationImage observation={current} /></div> : <div style={{ minHeight: 260, display: "grid", placeContent: "center", justifyItems: "center", gap: 12, color: "#dce8f3", fontSize: 13 }}><OperationIcon name="camera" style={{ width: 42, height: 42 }} /><span>{cameras.loading ? "Đang tải camera…" : camera ? "Camera chưa bật" : "Chưa có camera tại làn này"}</span></div>)}
-      <div className="camera-result"><span>{latest ? passageLabels[latest.state] : streaming ? "Webcam đang mở" : camera ? cameraHealthText(camera) : "Cần cấu hình camera"}</span><span className={`badge ${running ? "success" : "neutral"}`}>{scanning ? "Đang đọc ảnh…" : running ? "Tự động đang bật" : "Tự động tắt"}</span></div>
+      <div className="camera-result"><span>{running && edgeSource && !edgeReceiving ? "Đang chờ ảnh từ camera ngoài" : latest ? passageLabels[latest.state] : streaming ? "Webcam đang mở" : camera ? cameraHealthText(camera) : "Cần cấu hình camera"}</span><span className={`badge ${running && (!edgeSource || edgeReceiving) ? "success" : "neutral"}`}>{running && edgeSource && !edgeReceiving ? "Chờ nguồn ảnh" : scanning ? "Đang đọc ảnh…" : running ? "Tự động đang bật" : "Tự động tắt"}</span></div>
     </div>
+    {camera?.edge_enabled && <div className="field" style={{ marginTop: 12 }}><label htmlFor="camera-capture-source">Nguồn ảnh</label><select id="camera-capture-source" value={source} disabled={running || starting || opening || scanning || review.busy} onChange={event => { stopMedia(); setStreaming(false); setVideoReady(false); setSelected(null); setLatest(null); setEdgeReceiving(false); setSource(event.target.value); }}><option value="live_camera">Webcam / camera thiết bị này</option><option value="edge">Camera ngoài gửi ảnh</option></select></div>}
     <div className="camera-controls" style={{ flexWrap: "wrap" }}>
-      <button className="button secondary" disabled={!camera?.is_active || running || opening || scanning || starting || review.busy} onClick={streaming ? () => { stopMedia(); setStreaming(false); setVideoReady(false); } : startWebcam}>{opening ? "Đang mở camera…" : streaming ? "Tắt webcam" : "Dùng webcam"}</button>
+      <button className="button secondary" disabled={!camera?.is_active || edgeSource || running || opening || scanning || starting || review.busy} onClick={streaming ? () => { stopMedia(); setStreaming(false); setVideoReady(false); } : startWebcam}>{opening ? "Đang mở camera…" : streaming ? "Tắt webcam" : "Dùng webcam"}</button>
       <button className="button primary" disabled={!camera?.is_active || !streaming || !videoReady || running || scanning || starting || review.busy} aria-busy={scanning} onClick={scanWebcam}>{scanning ? "Đang đọc ảnh…" : "Quét biển số"}</button>
       <button className="button secondary" disabled={!running && (starting || opening || scanning || action.busy || review.busy || policy.loading || !canStartCameraAutomation(camera, policy.data, canManage))} aria-busy={starting} aria-describedby="camera-automation-hint" onClick={() => void toggleAutomation()}>{running ? "Dừng tự động" : starting ? "Đang bật tự động…" : "Bật tự động"}</button>
     </div>
     {streaming && !running && !current && <p role="status" className="muted" style={{ fontSize: 12, marginTop: 12 }}>Đặt biển số rõ trong khung hình rồi bấm Quét biển số.</p>}
     <p id="camera-automation-hint" className="muted" style={{ fontSize: 12, marginTop: 12 }}>{automationHint}</p>
     <p className="muted" style={{ fontSize: 12, marginTop: 16 }}>Loại xe lấy từ hồ sơ phương tiện. Ảnh chưa rõ hoặc xe còn phí chờ nhân viên kiểm tra.</p>
-    {running && <p role="status" className="muted" style={{ fontSize: 12, marginTop: 8 }}>Đang xử lý ảnh mới. Tự động tạm dừng khi tab bị ẩn.</p>}
+    {running && <p role="status" className="muted" style={{ fontSize: 12, marginTop: 8 }}>{edgeSource && !edgeReceiving ? "Chưa có ảnh mới từ camera ngoài. Kiểm tra thiết bị và kết nối; hệ thống vẫn đang chờ ảnh." : "Đang xử lý ảnh mới."} Tự động tạm dừng khi tab bị ẩn.</p>}
     {latest && <Alert sx={{ mt: 2 }} severity={["entered", "exited", "already_entered"].includes(latest.state) ? "success" : "info"}>
       <strong>{passageLabels[latest.state]}{latest.license_plate ? ` · ${latest.license_plate}` : ""}</strong><p>{latest.reason}</p>
       {latest.state === "waiting_payment" && latest.session_id && <Button onClick={() => onCheckout(latest.session_id)}>Xem phí & thanh toán</Button>}

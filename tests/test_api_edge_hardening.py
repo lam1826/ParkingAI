@@ -17,7 +17,7 @@ def staff_headers(test_user: User) -> dict[str, str]:
     token = AuthService().create_access_token(
         user_id=test_user.id,
         username=test_user.username,
-        role=test_user.role.name,
+        role=test_user.role.name, password_hash=test_user.password_hash,
     )
     return {"Authorization": f"Bearer {token}"}
 
@@ -29,7 +29,7 @@ def manager_headers(db_session: Session, test_user: User) -> dict[str, str]:
     token = AuthService().create_access_token(
         user_id=test_user.id,
         username=test_user.username,
-        role=test_user.role.name,
+        role=test_user.role.name, password_hash=test_user.password_hash,
     )
     return {"Authorization": f"Bearer {token}"}
 

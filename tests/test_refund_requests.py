@@ -212,13 +212,15 @@ def test_concurrent_approvals_and_requests_never_double_refund(portal, tmp_path)
         target.close()
     factory = sessionmaker(bind=engine, expire_on_commit=False)
     barrier = Barrier(2)
-    manager_id, customer_id = users[0].id, users[1].id
+    # Commit expires ORM attributes. Resolve every fixture identity on this
+    # thread; each worker must use only its own Session and scalar IDs.
+    manager_id, customer_id, site_id = users[0].id, users[1].id, site.id
 
     def approve():
         with factory() as session:
             actor = session.get(User, manager_id)
             barrier.wait(timeout=10)
-            item = refund_service.approve(session, actor, site.id, request["id"], note="race")
+            item = refund_service.approve(session, actor, site_id, request["id"], note="race")
             return item.refund_payment_id
 
     def request_again():

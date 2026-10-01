@@ -31,7 +31,7 @@ def clock(monkeypatch, business_reference_now):
 
 def headers_for(user):
     token = AuthService().create_access_token(
-        user_id=user.id, username=user.username, role=str(user.role)
+        user_id=user.id, username=user.username, role=str(user.role), password_hash=user.password_hash
     )
     return {"Authorization": f"Bearer {token}"}
 

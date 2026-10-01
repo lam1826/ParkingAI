@@ -41,7 +41,7 @@ def test_slow_audit_storage_does_not_block_the_event_loop(monkeypatch):
     token = AuthService().create_access_token(
         user_id=1,
         username="audit-test",
-        role="admin",
+        role="admin", password_hash="unused",
     )
     headers = {"Authorization": f"Bearer {token}"}
 

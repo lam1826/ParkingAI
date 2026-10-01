@@ -276,7 +276,7 @@ def test_inference_does_not_hold_the_only_database_connection(vision, tmp_path, 
     token = AuthService().create_access_token(
         user_id=user.id,
         username=user.username,
-        role=user.role.name,
+        role=user.role.name, password_hash=user.password_hash,
     )
     headers = {"Authorization": f"Bearer {token}"}
     try:

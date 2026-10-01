@@ -68,10 +68,19 @@ export const AuthProvider = ({ children }) => {
   };
 
   const logout = () => {
-    localStorage.removeItem("token");
-    localStorage.removeItem("user");
-    void session.refresh().catch(() => {});
+    session.end();
     navigate("/login");
+  };
+
+  const changePassword = async (passwords) => {
+    const requestToken = localStorage.getItem("token");
+    const result = await authService.changePassword(passwords);
+    if (session.end(requestToken)) {
+      navigate("/login", { replace: true, state: {
+        message: result.message || "Đổi mật khẩu thành công. Vui lòng đăng nhập lại.",
+      } });
+    }
+    return result;
   };
 
   if (loading) {
@@ -79,7 +88,7 @@ export const AuthProvider = ({ children }) => {
   }
 
   return (
-    <AuthContext.Provider key={sessionVersion} value={{ user, login, logout, refreshUser }}>
+    <AuthContext.Provider key={sessionVersion} value={{ user, login, logout, refreshUser, changePassword }}>
       {children}
     </AuthContext.Provider>
   );

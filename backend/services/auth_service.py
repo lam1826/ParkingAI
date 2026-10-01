@@ -1,5 +1,7 @@
 import datetime
 import bcrypt
+import hashlib
+import hmac
 import jwt
 import secrets
 from typing import Annotated
@@ -44,8 +46,19 @@ class AuthService:
         """Băm (hash) mật khẩu trước khi lưu vào DB."""
         return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
-    def create_access_token(self, user_id: int, username: str, role: str) -> str:
-        """Tạo JWT Access Token."""
+    @staticmethod
+    def credential_version(user_id: int, password_hash: str) -> str:
+        """Bind sessions to credentials without exposing the stored bcrypt hash.
+
+        A new salted password hash (including an admin reset to the same password)
+        invalidates previous tokens without a timestamp race or a schema change.
+        Domain separation keeps this MAC distinct from JWT signing and other keys.
+        """
+        message = f"parkingai:credential-version:v1\0{user_id}\0{password_hash}"
+        return hmac.new(settings.SECRET_KEY.encode("utf-8"), message.encode("utf-8"), hashlib.sha256).hexdigest()
+
+    def create_access_token(self, user_id: int, username: str, role: str, *, password_hash: str) -> str:
+        """Issue a bearer bound to the password snapshot authenticated at login."""
         expire = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(
             minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES
         )
@@ -54,6 +67,7 @@ class AuthService:
             "sub": str(user_id),
             "username": username,
             "role": role,
+            "credential_version": self.credential_version(user_id, password_hash),
             "exp": expire
         }
         
@@ -136,7 +150,7 @@ def get_current_user(
         )
         user_id_str: str | None = payload.get("sub")
         
-        if user_id_str is None:
+        if not isinstance(user_id_str, str) or not user_id_str.isascii() or not user_id_str.isdecimal():
             raise credentials_exception
             
     except InvalidTokenError:
@@ -144,13 +158,24 @@ def get_current_user(
         
     try:
         user_id = int(user_id_str)
-    except ValueError:
+    except (ValueError, TypeError):
+        raise credentials_exception
+
+    # Avoid sending malformed/oversized subjects into a database integer column.
+    if not 0 < user_id <= 2**63 - 1:
         raise credentials_exception
 
     # Truy vấn đồng bộ
     user = db.query(User).filter(User.id == user_id).first()
     
     if user is None or not user.is_active:
+        raise credentials_exception
+
+    credential_version = payload.get("credential_version")
+    if (not isinstance(credential_version, str)
+            or not credential_version.isascii()
+            or not hmac.compare_digest(credential_version, AuthService.credential_version(user.id, user.password_hash))):
+        # Legacy unbound tokens fail closed as well; login issues a bound token.
         raise credentials_exception
         
     return user

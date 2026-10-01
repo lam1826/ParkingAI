@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 import hashlib
 import json
 from pathlib import Path
@@ -12,10 +12,14 @@ from database import create_database_engine
 from expansion.single_lot_seed import create_single_lot_demo
 
 
-@pytest.fixture(scope="module")
-def seeded_demo(tmp_path_factory):
+@pytest.fixture(scope="module", params=[12, 0], ids=["midday", "after_midnight"])
+def seeded_demo(tmp_path_factory, request):
     target = tmp_path_factory.mktemp("single-lot") / "academic.db"
-    result = create_single_lot_demo(target)
+    # Exercise both sides of the previous-day boundary without depending on
+    # when CI happens to run. The two active stays start twenty minutes earlier.
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr("core.clock.business_now", lambda: datetime(2026, 10, 2, request.param, 5))
+        result = create_single_lot_demo(target)
     return target, result
 
 
@@ -95,8 +99,15 @@ def test_one_lot_roles_can_open_core_workspace_and_reports_include_empty_week(se
             assert not legacy_workspace_allowed(db, actors["customer_demo"])
             last_day = date.fromisoformat(result["history_end"])
             stats = summarize(db, actors["manager_demo"], result["single_site_id"], "week", last_day)
-            assert stats["total_arrivals"] > 0
-            assert stats["total_arrivals"] == stats["total_departures"]
+            # The fixed Fri–Thu week has five weekdays (40 each) and two
+            # weekend days (19 each): 238 completed stays. Just after midnight,
+            # both currently parked vehicles entered in that historical week.
+            carried_in = 2 if datetime.fromisoformat(result["generated_at"]).hour == 0 else 0
+            assert stats["total_departures"] == 238
+            assert stats["total_arrivals"] == 238 + carried_in
+            assert stats["total_movements"] == 476 + carried_in
+            assert stats["hourly_traffic"][23]["arrivals"] == carried_in
+            assert stats["hourly_traffic"][23]["departures"] == 0
             assert stats["revenue"]["total_revenue"] > 0
             assert stats["peak_hours"] == ["17:00"]
             assert stats["current_availability"]["total"] == 36

@@ -83,7 +83,7 @@ def test_order_replay_releases_sqlite_writer_before_audit(portal, tmp_path):
     token = AuthService().create_access_token(
         user_id=user.id,
         username=user.username,
-        role=user.role.name,
+        role=user.role.name, password_hash=user.password_hash,
     )
     app = FastAPI()
     app.include_router(router, prefix="/api/v2")

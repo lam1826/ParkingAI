@@ -13,7 +13,7 @@ from services.parking_service import ParkingService
 
 
 def headers(user):
-    token = AuthService().create_access_token(user_id=user.id, username=user.username, role=user.role.name)
+    token = AuthService().create_access_token(user_id=user.id, username=user.username, role=user.role.name, password_hash=user.password_hash)
     return {"Authorization": f"Bearer {token}"}
 
 

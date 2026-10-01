@@ -41,7 +41,7 @@ from services.parking_service import ParkingService
 @pytest.fixture
 def auth_headers(test_user: User) -> dict:
     token = AuthService().create_access_token(
-        user_id=test_user.id, username=test_user.username, role=str(test_user.role)
+        user_id=test_user.id, username=test_user.username, role=str(test_user.role), password_hash=test_user.password_hash
     )
     return {"Authorization": f"Bearer {token}"}
 

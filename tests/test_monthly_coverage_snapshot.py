@@ -15,7 +15,7 @@ from services.monthly_subscription_service import create_subscription, renew_sub
 
 
 def _headers(user):
-    return {"Authorization": "Bearer " + AuthService().create_access_token(user_id=user.id, username=user.username, role=user.role.name)}
+    return {"Authorization": "Bearer " + AuthService().create_access_token(user_id=user.id, username=user.username, role=user.role.name, password_hash=user.password_hash)}
 
 
 @pytest.fixture

@@ -30,6 +30,9 @@ from expansion.vision_passage_models import VisionPassageEvent
 MAX_IMAGE_BYTES = 2 * 1024 * 1024
 MAX_IMAGE_PIXELS = 12_000_000
 MAX_SITE_OBSERVATIONS = 500
+# No plate can mean a detector miss, so retain the evidence and apply pressure
+# to that feed rather than deleting pending images or filling the whole site.
+MAX_CAMERA_UNREADABLE_LIVE_OBSERVATIONS = 20
 _engine_lock = threading.Lock()
 _inference_lock = threading.Lock()
 _engine = None
@@ -395,6 +398,21 @@ def ingest_observation(db, camera, metadata, prepared, edge_token_hash=None, *, 
     if count >= 30:
         raise HTTPException(429, "Camera đạt giới hạn 30 ảnh/phút. Vui lòng đợi.")
     purge_expired(db, camera.site_id)
+    if capture_source in {"live_camera", "edge"} and prepared.recognition.get("ocr_status") == "no_plate":
+        unreadable = db.scalar(select(func.count()).select_from(VisionObservation).where(
+            VisionObservation.camera_id == camera.id,
+            VisionObservation.site_id == camera.site_id,
+            VisionObservation.capture_source.in_(("live_camera", "edge")),
+            VisionObservation.ocr_status == "no_plate",
+            VisionObservation.review_status == "pending",
+        ))
+        if unreadable >= MAX_CAMERA_UNREADABLE_LIVE_OBSERVATIONS:
+            raise HTTPException(409, detail={
+                "code": "camera_review_required",
+                "message": "Camera có 20 ảnh chưa đọc được biển số đang chờ kiểm tra. "
+                           "Tự động tạm dừng để giữ ảnh đối chiếu. Kiểm tra và xác nhận hoặc loại ảnh "
+                           "trong lịch sử camera, rồi bật tự động lại.",
+            })
     count = db.scalar(select(func.count()).select_from(VisionObservation).where(VisionObservation.site_id == camera.site_id))
     if count >= MAX_SITE_OBSERVATIONS:
         required = count - MAX_SITE_OBSERVATIONS + 1

@@ -15,7 +15,7 @@ def auth_headers(manager_user: User) -> dict:
     token = auth_service.create_access_token(
         user_id=manager_user.id,
         username=manager_user.username,
-        role=str(manager_user.role)
+        role=str(manager_user.role), password_hash=manager_user.password_hash
     )
     return {"Authorization": f"Bearer {token}"}
 

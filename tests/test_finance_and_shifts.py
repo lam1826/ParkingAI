@@ -67,7 +67,7 @@ def manager(db_session):
 
 
 def headers(user):
-    return {"Authorization": "Bearer " + AuthService().create_access_token(user_id=user.id, username=user.username, role=user.role.name)}
+    return {"Authorization": "Bearer " + AuthService().create_access_token(user_id=user.id, username=user.username, role=user.role.name, password_hash=user.password_hash)}
 
 
 def test_receipt_is_idempotent_and_caller_owns_transaction(db_session, test_user):

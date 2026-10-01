@@ -14,7 +14,6 @@ import DeleteIcon from "@mui/icons-material/Delete";
 import LockIcon from "@mui/icons-material/Lock";
 import LogoutIcon from "@mui/icons-material/Logout";
 import { AuthContext } from "../../context/AuthContext";
-import authService from "../../services/authService";
 import PasswordField from "../../components/common/PasswordField";
 
 const initialPasswords = {
@@ -24,7 +23,7 @@ const initialPasswords = {
 };
 
 export default function SettingPage() {
-  const { logout } = useContext(AuthContext);
+  const { logout, changePassword } = useContext(AuthContext);
   const [passwords, setPasswords] = useState(initialPasswords);
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState(null);
@@ -45,12 +44,11 @@ export default function SettingPage() {
 
     setSaving(true);
     try {
-      const result = await authService.changePassword({
+      await changePassword({
         current_password: passwords.current_password,
         new_password: passwords.new_password,
       });
       setPasswords(initialPasswords);
-      setNotice({ severity: "success", message: result.message || "Đổi mật khẩu thành công." });
     } catch (error) {
       const detail = error.response?.data?.detail;
       setNotice({ severity: "error", message: typeof detail === "string" ? detail : "Không thể đổi mật khẩu." });
@@ -79,7 +77,7 @@ export default function SettingPage() {
               <LockIcon color="primary" />
               <Box>
                 <Typography variant="h6" fontWeight={700}>Đổi mật khẩu</Typography>
-                <Typography variant="body2" color="text.secondary">Mật khẩu mới phải có ít nhất 8 ký tự.</Typography>
+                <Typography variant="body2" color="text.secondary">Mật khẩu mới phải có ít nhất 8 ký tự. Sau khi đổi, bạn cần đăng nhập lại trên các thiết bị.</Typography>
               </Box>
             </Stack>
 

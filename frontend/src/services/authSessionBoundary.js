@@ -73,6 +73,15 @@ export function createAuthSessionBoundary({ storage, eventTarget, fetchProfile, 
 
   return {
     refresh,
+    end(expectedToken) {
+      // A delayed password-change response belongs to the session that sent it.
+      // It must not log out an account signed in meanwhile in another tab.
+      if (stopped || (expectedToken !== undefined && storage.getItem("token") !== expectedToken)) return false;
+      storage.removeItem("token");
+      storage.removeItem("user");
+      void refresh().catch(() => {});
+      return true;
+    },
     beginLogin() {
       const attempt = ++loginVersion;
       const previousToken = storage.getItem("token");

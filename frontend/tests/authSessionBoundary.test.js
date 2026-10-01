@@ -38,6 +38,33 @@ function fixture() {
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 
+test("password-change completion clears the current session, profile and chat", async () => {
+  const f = fixture();
+  f.storage.setItem("token", "before-password-change");
+  const started = f.boundary.start();
+  f.pending[0].resolve({ id: 1, username: "account-a" });
+  await started;
+  saveAIChat(f.chats, 1, [{ id: "private", role: "user", content: "private-chat" }]);
+  assert.equal(f.boundary.end("before-password-change"), true);
+  assert.equal(f.storage.getItem("token"), null);
+  assert.equal(f.storage.getItem("user"), null);
+  assert.equal(f.state.user, null);
+  assert.equal(f.state.loading, false);
+  assert.deepEqual(readAIChat(f.chats, 1), []);
+  f.boundary.stop();
+});
+
+test("late password-change completion cannot sign out a newer account or stopped view", async () => {
+  const f = fixture();
+  await f.boundary.start();
+  f.storage.setItem("token", "new-account");
+  assert.equal(f.boundary.end("old-account"), false);
+  assert.equal(f.storage.getItem("token"), "new-account");
+  f.boundary.stop();
+  assert.equal(f.boundary.end("new-account"), false);
+  assert.equal(f.storage.getItem("token"), "new-account");
+});
+
 test("unauthenticated and old-account 401 responses never expire the current session", () => {
   assert.equal(isCurrentAuthFailure(undefined, "current"), false);
   assert.equal(isCurrentAuthFailure("Bearer old", "current"), false);

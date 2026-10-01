@@ -77,7 +77,7 @@ def serialize(db, row):
 def create(db, user, data):
     customer_only(user)
     require_public_site(db, data.site_id)
-    from expansion.reservations import local_time, lock_slot, _overlaps
+    from expansion.reservations import live_reservation, local_time, lock_slot, _overlaps
     # Serialize this account's limit and idempotent key, without creating a
     # Customer/Vehicle/Ownership row for an unverified declaration.
     if db.get_bind().dialect.name == 'sqlite':
@@ -113,8 +113,12 @@ def create(db, user, data):
         raise HTTPException(409, 'Biển số/mã xe và loại xe chưa phù hợp; hãy kiểm tra tại bãi.')
     from expansion.site_models import ParkingReservation, GuaranteedAllocation
     if vehicle is not None:
-        for model, statuses in ((ParkingReservation, ('confirmed', 'arrived')), (GuaranteedAllocation, ('active',))):
-            if db.scalar(select(model.id).where(model.vehicle_id == vehicle.id, model.status.in_(statuses),
+        # Expiry can be evaluated before a slot writer updates stored status;
+        # an arrived row remains history after checkout. Share capacity's live
+        # predicate while preserving the separate recurring allocation right.
+        for model, live in ((ParkingReservation, live_reservation(now)),
+                            (GuaranteedAllocation, GuaranteedAllocation.status == 'active')):
+            if db.scalar(select(model.id).where(model.vehicle_id == vehicle.id, live,
                 model.start_at < end, model.end_at > start).limit(1)):
                 raise HTTPException(409, 'Xe đã có cam kết chỗ trong khoảng này; hãy kiểm tra đặt chỗ hiện có.')
     candidates = db.scalars(select(ParkingSlot.id).join(Zone).where(Zone.site_id == data.site_id,

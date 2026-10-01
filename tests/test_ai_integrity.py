@@ -11,7 +11,7 @@ from services.auth_service import AuthService
 @pytest.fixture
 def headers(manager_user):
     token = AuthService().create_access_token(
-        user_id=manager_user.id, username=manager_user.username, role="staff"
+        user_id=manager_user.id, username=manager_user.username, role="staff", password_hash=manager_user.password_hash
     )
     return {"Authorization": f"Bearer {token}"}
 
