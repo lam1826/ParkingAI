@@ -24,7 +24,7 @@ def main():
     run = ROOT / "backend/artifacts/camera-native-policy" / uuid4().hex[:8]
     run.mkdir(parents=True)
     header = next(line.strip().partition(": ")[2]
-        for line in (ROOT / "frontend/public/_headers").read_text().splitlines()
+        for line in (ROOT / "frontend/public/_headers").read_text(encoding="utf-8").splitlines()
         if "Permissions-Policy:" in line)
 
     class Handler(BaseHTTPRequestHandler):
@@ -43,23 +43,33 @@ def main():
     profile = run / "profile"
     chrome = os.getenv("CHROME_BIN") or shutil.which("google-chrome") or shutil.which("chromium") or r"C:\Program Files\Google\Chrome\Application\chrome.exe"
     results = []
+    startup = {"browser_path": chrome, "timeout_seconds": 30, "ready": False}
+    started_at = time.monotonic()
     with (run / "chrome.log").open("w") as log:
         proc = subprocess.Popen([chrome, "--headless=new", "--no-first-run", "--no-default-browser-check",
             "--disable-background-networking", "--disable-component-update", "--disable-sync",
+            "--enable-logging", "--v=1",
             "--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream",
             "--remote-debugging-address=127.0.0.1", "--remote-debugging-port=0",
             "--user-data-dir=" + str(profile), "about:blank"], stdout=log, stderr=log,
+            env={**os.environ, "CHROME_LOG_FILE": str(run / "chrome-debug.log")},
             creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
         try:
-            for _ in range(100):
+            # A cold CI browser needs a bounded readiness wait, not an assumption
+            # that Popen means CDP is already listening. Keep failures diagnostic.
+            while time.monotonic() - started_at < startup["timeout_seconds"]:
+                if proc.poll() is not None:
+                    raise RuntimeError(f"Chrome exited before CDP startup: {proc.returncode}")
                 portfile = profile / "DevToolsActivePort"
                 if portfile.exists():
                     port = portfile.read_text().splitlines()[0]
+                    startup["ready"] = True
+                    startup["ready_seconds"] = round(time.monotonic() - started_at, 3)
                     break
                 time.sleep(.1)
             else:
-                raise RuntimeError("Chrome failed to start")
-            targets = json.load(urllib.request.urlopen("http://127.0.0.1:" + port + "/json"))
+                raise RuntimeError("Chrome CDP startup timed out; inspect startup.json and chrome-debug.log")
+            targets = json.load(urllib.request.urlopen("http://127.0.0.1:" + port + "/json", timeout=10))
             with connect(next(t["webSocketDebuggerUrl"] for t in targets if t["type"] == "page")) as ws:
                 seq = 0
 
@@ -80,6 +90,7 @@ def main():
                         raise RuntimeError("Native browser evaluation failed")
                     return result["result"].get("value")
 
+                startup["browser_version"] = call("Browser.getVersion", {})["product"]
                 for path in ("denied", "configured"):
                     url = f"http://127.0.0.1:{server.server_port}/{path}"
                     call("Page.navigate", {"url": url})
@@ -102,6 +113,11 @@ def main():
                         return result;
                     })()""")})
         finally:
+            startup["exit_code_before_cleanup"] = proc.poll()
+            startup["elapsed_seconds"] = round(time.monotonic() - started_at, 3)
+            startup["profile_entries"] = sorted(path.name for path in profile.iterdir()) if profile.exists() else []
+            (run / "startup.json").write_text(json.dumps(startup, indent=2), encoding="utf-8")
+            print(json.dumps({"startup": startup}, ensure_ascii=True))
             proc.terminate()
             try:
                 proc.wait(timeout=10)

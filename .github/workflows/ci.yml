@@ -136,11 +136,11 @@ jobs:
       - name: Install backend dependencies
         run: python -m pip install -r backend/requirements.txt
 
-      - name: Run Windows rollout safety tests
-        run: python -m pytest tests/test_release_safety.py -q --durations=20
-
       - name: Verify native camera access under frontend document policy
         run: python tests/browser/camera_native_policy.py
+
+      - name: Run Windows rollout safety tests
+        run: python -m pytest tests/test_release_safety.py -q --durations=20
 
       - name: Preserve native camera test evidence
         if: always()
@@ -150,4 +150,6 @@ jobs:
           path: |
             backend/artifacts/camera-native-policy/**/results.json
             backend/artifacts/camera-native-policy/**/chrome.log
+            backend/artifacts/camera-native-policy/**/chrome-debug.log
+            backend/artifacts/camera-native-policy/**/startup.json
           if-no-files-found: ignore
