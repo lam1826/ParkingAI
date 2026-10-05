@@ -20,6 +20,9 @@ class UserBase(BaseModel):
 
 class UserCreate(UserBase):
     password: str = Field(min_length=8, max_length=72)
+    # Lot assignment for a new staff/manager account. Admin may choose the lot;
+    # omitted, the only active lot is assigned (as the Manager path does).
+    site_id: Optional[int] = Field(default=None, gt=0)
 
     @field_validator("password")
     @classmethod
@@ -49,8 +52,14 @@ class UserUpdate(BaseModel):
         return value
 
 
-class UserResponse(UserBase):
+# Read model only: like RoleResponse it does not inherit the write validators,
+# so one legacy/bootstrap row cannot turn the whole account list into a 500.
+class UserResponse(BaseModel):
     id: int
+    username: str
+    full_name: str
+    is_active: bool = True
+    role_id: int
     created_at: Optional[datetime] = None
     role: RoleResponse
 

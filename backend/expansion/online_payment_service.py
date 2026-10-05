@@ -16,7 +16,7 @@ import uuid
 import secrets
 
 from fastapi import HTTPException
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import object_session
 
@@ -151,10 +151,18 @@ def _view(order, link, config):
         "review": "Có khoản thanh toán cần quản lý đối soát. Chưa cấp thêm vé hoặc tự hoàn tiền.",
     }
     message = messages[state] if enabled else "Thanh toán payOS chưa được bật cho bãi này."
+    db = object_session(order)
+    open_evidence = bool(link and db is not None and state in {"paid", "review"} and open_review_evidence(db, link.id))
+    reviewed_closed = bool(link and state == "review" and db is not None and not open_evidence
+        and _link_review_resolved(db, link))
     if isinstance(order, SessionFeeQuote) and state == "paid":
         message = "Đã ghi nhận tiền online cho lượt gửi. Nhân viên sẽ kiểm tra số dư và xác nhận xe ra."
     elif isinstance(order, SessionFeeQuote) and state == "review":
         message = "Khoản thanh toán cần quản lý đối soát; chưa ghi thêm tiền vào lượt gửi."
+    if state == "paid" and open_evidence:
+        message += " Có khoản chuyển thêm đang chờ quản lý đối soát; không chuyển thêm tiền."
+    elif reviewed_closed:
+        message = "Quản lý đã đối soát và xác nhận hoàn khoản chuyển này ngoài hệ thống. Không chuyển thêm tiền theo liên kết này."
     if source_problem == "site_inactive":
         message = "Bãi đã tạm ngừng nhận thanh toán. Không chuyển thêm tiền; khoản đã chuyển vẫn được đối soát."
     elif source_problem == "session_no_longer_active":
@@ -179,7 +187,7 @@ def _view(order, link, config):
         checkout_url=link.checkout_url if show_code else None, qr_code=link.qr_code if show_code else None, qr_svg=qr_svg,
         review_reason=link.review_reason if link else None, message=message,
         can_create=enabled and payable and link is None,
-        can_refresh=bool(enabled and link and not busy and link.state != "paid"),
+        can_refresh=bool(enabled and link and not busy and link.state != "paid" and not reviewed_closed),
         can_cancel=bool(enabled and not busy and order.status in {"pending", "expired"}
             and ((link and link.state in {"ready", "unknown", "creating"})
                 or (link is None and isinstance(order, SessionFeeQuote)))))
@@ -262,6 +270,38 @@ def _authorized_view(db, user, source_id, config, *, session_fee=False):
     return result
 
 
+NEVER_DELIVERED_GRACE = timedelta(minutes=5)
+
+
+def never_delivered_link_clause(now):
+    """SQL predicate on OnlinePaymentLink: payOS never confirmed this link and no QR or
+    checkout URL ever reached the payer (create failed or crashed), it is past its own
+    expiry plus a grace period, no operation is running and no transfer evidence exists.
+    Nothing can have been paid through such a link, so it must not block forever.
+    """
+    return and_(OnlinePaymentLink.state.in_(["creating", "unknown"]),
+        OnlinePaymentLink.payment_link_id.is_(None), OnlinePaymentLink.checkout_url.is_(None),
+        OnlinePaymentLink.qr_code.is_(None), OnlinePaymentLink.expires_at <= now - NEVER_DELIVERED_GRACE,
+        or_(OnlinePaymentLink.operation_until.is_(None), OnlinePaymentLink.operation_until <= now),
+        ~select(OnlinePaymentInbox.id).where(OnlinePaymentInbox.link_id == OnlinePaymentLink.id).exists())
+
+
+def close_never_delivered_link(db, source, link, now=None):
+    """Flush-only; caller holds the source and link locks and commits."""
+    now = now or business_now()
+    db.flush()
+    if db.scalar(select(OnlinePaymentLink.id).where(OnlinePaymentLink.id == link.id,
+            never_delivered_link_clause(now))) is None:
+        return False
+    link.state = "expired"
+    if source.status == "pending":
+        if not isinstance(source, SessionFeeQuote):
+            from expansion.timed_parking_service import release_hold
+            release_hold(db, source, expired=True)
+        source.status = "expired"
+    return True
+
+
 def _create_source_link(db, order, config, gateway):
     require_online_order_config(db, order.site_id, config)
     session_fee = isinstance(order, SessionFeeQuote)
@@ -336,6 +376,62 @@ def _related_evidence(db, evidence):
     return min([evidence] + exact, key=lambda row: row.received_at), len(exact) != len(others)
 
 
+def _refund_recorded_for_reference():
+    """Correlated predicate: one bank transfer (channel, reference) has a recorded external refund.
+
+    Twin evidence rows of one transfer (signed webhook plus provider GET) share the
+    decision, so one manager resolution closes every row of that transfer.
+    """
+    return select(OnlinePaymentReviewDecision.id).where(
+        OnlinePaymentReviewDecision.channel == OnlinePaymentInbox.channel,
+        OnlinePaymentReviewDecision.payment_reference == OnlinePaymentInbox.reference,
+        OnlinePaymentReviewDecision.action == "confirmed_external_refund").exists()
+
+
+def open_review_evidence(db, link_id):
+    """True while any review evidence of this link still waits for a manager resolution."""
+    return db.scalar(select(OnlinePaymentInbox.id).join(OnlinePaymentProcessing,
+        OnlinePaymentProcessing.id == OnlinePaymentInbox.id).where(OnlinePaymentInbox.link_id == link_id,
+        OnlinePaymentProcessing.status == "review", ~_refund_recorded_for_reference()).limit(1)) is not None
+
+
+def _review_resolved(db, link_id):
+    """Every review row of the link has a recorded external refund and nothing waits for processing."""
+    statuses = set(db.scalars(select(OnlinePaymentProcessing.status).join(OnlinePaymentInbox,
+        OnlinePaymentInbox.id == OnlinePaymentProcessing.id).where(OnlinePaymentInbox.link_id == link_id)))
+    return "review" in statuses and "received" not in statuses and not open_review_evidence(db, link_id)
+
+
+def _link_review_resolved(db, link):
+    """A link in review is closed only when resolved evidence explains that review.
+
+    The review must come from an evidence row of the link (same reason) and every
+    review row must have a recorded external refund. A provider mismatch on the link
+    itself (GET/create reported another amount or link id) has no evidence row and
+    stays open even if an unrelated extra transfer of the link was refunded.
+    """
+    reasons = set(db.scalars(select(OnlinePaymentProcessing.reason).join(OnlinePaymentInbox,
+        OnlinePaymentInbox.id == OnlinePaymentProcessing.id).where(OnlinePaymentInbox.link_id == link.id,
+        OnlinePaymentProcessing.status == "review")))
+    return link.review_reason in reasons and _review_resolved(db, link.id)
+
+
+def link_under_reconciliation(db, link):
+    """Refund gate for a receipt issued through `link`.
+
+    A settled link keeps its receipt valid; unresolved review evidence on the link
+    (an extra or conflicting transfer) blocks refunds until a manager records the
+    external refund for that transfer. A link that is itself in review (for example a
+    provider mismatch after settlement) keeps blocking unless resolved evidence
+    fully explains that review.
+    """
+    if link is None:
+        return False
+    if link.state == "review" and (link.receipt_id is None or not _link_review_resolved(db, link)):
+        return True
+    return open_review_evidence(db, link.id)
+
+
 def _record(db, *, config, data, source, verification_issue=None):
     """Flush-only. Caller owns commit; do not mutate even duplicate evidence."""
     existing = db.scalar(select(OnlinePaymentInbox).where(OnlinePaymentInbox.channel == config.channel,
@@ -395,6 +491,16 @@ def _record_snapshot(db, link, provider, config):
             "code": "00", "desc": "Verified provider reconciliation"}
         wire["payloadDigest"] = _digest(json.dumps(wire, sort_keys=True, ensure_ascii=False, separators=(",", ":")))
         evidence = VerifiedWebhook.model_validate(wire)
+        # The same bank transfer already recorded (signed webhook or earlier GET)
+        # is not recorded again: a twin row would become a second review item.
+        key = (evidence.order_code, evidence.payment_link_id, evidence.amount, evidence.currency,
+            _digest(evidence.account_number))
+        twin = next((row for row in db.scalars(select(OnlinePaymentInbox).where(
+            OnlinePaymentInbox.channel == config.channel, OnlinePaymentInbox.reference == evidence.reference)
+            .order_by(OnlinePaymentInbox.received_at, OnlinePaymentInbox.id)) if _evidence_key(row) == key), None)
+        if twin is not None:
+            identities.append(twin.id)
+            continue
         issue = "account_mismatch" if _digest(transaction.account_number) != link.receiver_digest else None
         row = _record(db, config=config, data=evidence, source="reconcile", verification_issue=issue)
         identities.append(row.id)
@@ -403,7 +509,10 @@ def _record_snapshot(db, link, provider, config):
 
 def _quarantine(db, order, link, processing, reason):
     processing.status, processing.reason, processing.processed_at = "review", reason, business_now()
-    link.state, link.review_reason = "review", reason
+    if link.state != "paid" or link.receipt_id is None:
+        # A settled link keeps its issued receipt valid; the extra or conflicting
+        # transfer is tracked on its own review evidence row only.
+        link.state, link.review_reason = "review", reason
     # A second transfer must not invalidate an already issued entitlement.
     if order.status not in {"fulfilled", "refunded"}:
         if not isinstance(order, SessionFeeQuote):
@@ -412,12 +521,26 @@ def _quarantine(db, order, link, processing, reason):
         order.status, order.review_reason = "review", reason
 
 
+def _monthly_order(source):
+    return isinstance(source, PortalOrder) and source.product_kind == "monthly"
+
+
 def _may_retry_provider(source, evidence):
     deadline = source.expires_at
-    if isinstance(source, SessionFeeQuote) and evidence.received_at < deadline:
+    if (isinstance(source, SessionFeeQuote) or _monthly_order(source)) and evidence.received_at < deadline:
         # This window only waits for a provider projection, not extra parking time.
+        # A monthly order holds no capacity, so on-time money gets the same grace.
         deadline += timedelta(minutes=5)
     return business_now() < deadline
+
+
+def _late_or_closed_portal_order(order, evidence, earliest):
+    if _monthly_order(order):
+        # Timeliness is when the money was received, not when the worker runs. An
+        # order expired meanwhile by maintenance is still payable, as on the DEMO path.
+        return order.status not in {"pending", "expired"} or earliest.received_at >= order.expires_at
+    # Timed orders hold a slot whose hold genuinely lapses at expires_at.
+    return order.status != "pending" or evidence.received_at >= order.expires_at or business_now() >= order.expires_at
 
 
 def process_inbox(db, identity, config, gateway, *, provider_snapshot=None):
@@ -509,10 +632,11 @@ def process_inbox(db, identity, config, gateway, *, provider_snapshot=None):
     elif isinstance(order, SessionFeeQuote):
         from expansion.session_payment_service import fulfillment_problem
         reason = fulfillment_problem(db, order, earliest)
-    elif order.status != "pending" or evidence.received_at >= order.expires_at or business_now() >= order.expires_at:
+    elif _late_or_closed_portal_order(order, evidence, earliest):
         reason = "late_or_closed_order"
     else:
-        reason = portal_service._fulfillment_problem(db, order, paid_at=evidence.received_at)
+        reason = portal_service._fulfillment_problem(db, order,
+            paid_at=earliest.received_at if _monthly_order(order) else evidence.received_at)
     _provider_state(link, provider)
     if reason:
         _quarantine(db, order, link, processing, reason)
@@ -586,8 +710,11 @@ def _reconcile_link(db, order_id, config, gateway, *, user=None, cancel_reason=N
             link.last_error, link.last_checked_at = error.code, business_now()
             if isinstance(error, PayOSMismatchError):
                 link.state, link.review_reason = "review", error.reason
-            elif link.state not in {"paid", "review"}:
+            elif link.state not in {"paid", "review", "expired", "cancelled"}:
+                # A failed GET never reopens a verified terminal state.
                 link.state = "unknown"
+                # A link payOS never created cannot block its quote/order forever.
+                close_never_delivered_link(db, order, link)
         db.commit()
         return _authorized_view(db, user, order_id, config, session_fee=session_fee)
     order, link = _locked_link(db, link_id)
@@ -617,7 +744,20 @@ def list_review(db, actor, site_id, *, limit=50, offset=0):
     decisions = {}
     links = {}
     session_ids = {}
+    refunded_references = set()
+    twins = {}
     if rows:
+        references = {row.reference for row, _ in rows}
+        # Resolution belongs to the bank transfer, not to one evidence row: a signed
+        # webhook and a provider GET of the same transfer are resolved together.
+        refunded_references = set(db.execute(select(OnlinePaymentReviewDecision.channel,
+            OnlinePaymentReviewDecision.payment_reference).where(
+            OnlinePaymentReviewDecision.action == "confirmed_external_refund",
+            OnlinePaymentReviewDecision.payment_reference.in_(references))).all())
+        for other_id, channel, reference in db.execute(select(OnlinePaymentInbox.id, OnlinePaymentInbox.channel,
+                OnlinePaymentInbox.reference).where(OnlinePaymentInbox.site_id == site_id,
+                OnlinePaymentInbox.reference.in_(references))):
+            twins.setdefault((channel, reference), []).append(other_id)
         link_ids = {row.link_id for row, _ in rows if row.link_id is not None}
         links = {row.id: row for row in db.scalars(select(OnlinePaymentLink).where(OnlinePaymentLink.id.in_(link_ids)))} if link_ids else {}
         quote_ids = {link.session_quote_id for link in links.values() if link.session_quote_id}
@@ -634,8 +774,8 @@ def list_review(db, actor, site_id, *, limit=50, offset=0):
         "received_at": row.received_at.replace(tzinfo=BUSINESS_TZ), "provider_transaction_time": row.transaction_time,
         "reason": processing.reason, "status": processing.status,
         "decisions": decisions.get(row.id, []),
-        "resolution": "external_refund_recorded" if any(d["action"] == "confirmed_external_refund"
-            for d in decisions.get(row.id, [])) else "open",
+        "same_reference_ids": sorted(other for other in twins.get((row.channel, row.reference), []) if other != row.id),
+        "resolution": "external_refund_recorded" if (row.channel, row.reference) in refunded_references else "open",
         "resolution_note": "Chỉ ghi nhận việc quản lý xác nhận đã hoàn ngoài hệ thống; không tự chuyển tiền."
         } for row, processing in rows]}
 
@@ -645,6 +785,21 @@ def serialize_review_decision(row):
         "reason": row.reason, "actor_id": row.actor_id, "actor_username": row.actor_username,
         "refund_amount": row.refund_amount, "external_reference": row.external_reference,
         "created_at": row.created_at.replace(tzinfo=BUSINESS_TZ)}
+
+
+def _close_refunded_review_order(db, order, link):
+    """A payOS portal order in review can never issue a ticket (no approval path for
+    real money). Once every review transfer on its link has a recorded external refund,
+    close the order so the customer and manager see a final state. Session-fee quotes
+    keep their terminal 'review' status (DB guard) and are not changed here.
+    """
+    if (not isinstance(order, PortalOrder) or order.payment_mode != "payos" or order.status != "review"
+            or open_review_evidence(db, link.id)):
+        return
+    order.status = "cancelled"
+    portal_service._notify(db, order.customer_id, f"order:{order.id}:review-closed",
+        f"Quản lý đã xác nhận hoàn khoản chuyển khoản của đơn {order.id[:8]} ngoài hệ thống. "
+        "Đơn đã đóng, chưa cấp vé; bạn có thể tạo đơn mới.")
 
 
 def record_review_decision(db, actor, site_id, identity, data):
@@ -687,6 +842,8 @@ def record_review_decision(db, actor, site_id, identity, data):
     db.add(decision)
     try:
         db.flush()
+        if data.action == "confirmed_external_refund" and evidence.link_id:
+            _close_refunded_review_order(db, order, link)
         result = serialize_review_decision(decision)
         db.commit()
         return result

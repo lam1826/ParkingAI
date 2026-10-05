@@ -6,7 +6,8 @@ uses the same transaction locks as HTTP confirmation; safe to run concurrently.
 from datetime import timedelta
 import logging
 
-from sqlalchemy import String, cast, literal, select
+from sqlalchemy import String, cast, literal, select, func
+from sqlalchemy.orm import aliased
 
 from core.clock import business_now
 from expansion.portal_models import PortalPaymentEvent, PortalOrder, PortalAccountLink, PortalNotification
@@ -71,14 +72,28 @@ def run_portal_maintenance(db, limit=100):
         order = _lock_order_context(db, identity)
         expire_slot(db, order.slot_id, business_now())
         db.commit()
+    from expansion.site_models import ParkingReservation
+    from expansion.reservations import lock_slot
+    stale_slots = list(db.scalars(select(ParkingReservation.slot_id).where(
+        ParkingReservation.status == "confirmed", ParkingReservation.arrival_deadline <= business_now())
+        .group_by(ParkingReservation.slot_id).order_by(func.min(ParkingReservation.arrival_deadline), ParkingReservation.slot_id).limit(limit)))
+    for slot_id in stale_slots:
+        lock_slot(db, slot_id)
+        result["expired"] += expire_slot(db, slot_id, business_now())
+        db.commit()
     for days in (1, 7):
         remaining = limit - result["reminders"]
         if remaining <= 0:
             break
         key = literal("pass:") + cast(MonthlyPass.id, String) + literal(f":expires:{days}")
         already_notified = select(PortalNotification.id).where(PortalNotification.event_key == key).exists()
+        continuation = aliased(MonthlyPass)
+        renewed = select(continuation.id).where(continuation.vehicle_id == MonthlyPass.vehicle_id,
+            continuation.customer_id == MonthlyPass.customer_id, continuation.is_active.is_(True),
+            continuation.start_date <= now.date() + timedelta(days=days + 1),
+            continuation.end_date > MonthlyPass.end_date).exists()
         rows = list(db.scalars(select(MonthlyPass).join(PortalAccountLink, PortalAccountLink.customer_id == MonthlyPass.customer_id)
-            .where(MonthlyPass.is_active.is_(True), MonthlyPass.end_date == now.date() + timedelta(days=days), ~already_notified)
+            .where(MonthlyPass.is_active.is_(True), MonthlyPass.end_date == now.date() + timedelta(days=days), ~already_notified, ~renewed)
             .order_by(MonthlyPass.id).limit(remaining)))
         for period in rows:
             # Filter before LIMIT so later passes are reached on the next run.
@@ -91,9 +106,12 @@ def run_portal_maintenance(db, limit=100):
             db.refresh(period)
             event_key = f"pass:{period.id}:expires:{days}"
             if (period.is_active and period.end_date == now.date() + timedelta(days=days)
+                    and not db.scalar(select(MonthlyPass.id).where(MonthlyPass.vehicle_id == period.vehicle_id,
+                        MonthlyPass.customer_id == period.customer_id, MonthlyPass.is_active.is_(True),
+                        MonthlyPass.start_date <= period.end_date + timedelta(days=1), MonthlyPass.end_date > period.end_date).limit(1))
                     and not db.scalar(select(PortalNotification.id).where(PortalNotification.event_key == event_key))):
                 _notify(db, period.customer_id, event_key,
-                    f"Kỳ vé #{period.id} còn {days} ngày hiệu lực. Bạn có thể tạo đơn gia hạn trong cổng khách hàng.")
+                    f"Kỳ vé #{period.id} có hiệu lực đến hết {period.end_date.strftime('%d/%m/%Y')}. Bạn có thể tạo đơn gia hạn trong cổng khách hàng.")
                 result["reminders"] += 1
             db.commit()
     return result

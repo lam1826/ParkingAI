@@ -122,6 +122,12 @@ def site_support_reopen(site_id: int, identity: str, db=Depends(get_db), actor=D
     return support_service.manager_detail(db, actor, site_id, identity)
 
 
+@router.get("/sites/{site_id}/other-site-requests")
+def other_site_requests(site_id: int, db=Depends(get_db), actor=Depends(get_current_user)):
+    """Open refund/support requests filed at other sites (global admin only; others get an empty answer)."""
+    return support_service.open_elsewhere(db, actor, site_id)
+
+
 # --- refund requests ------------------------------------------------------------------
 
 @router.post("/me/receipts/{identity}/refund-requests", status_code=201)

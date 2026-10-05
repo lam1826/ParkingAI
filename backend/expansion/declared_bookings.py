@@ -112,12 +112,15 @@ def create(db, user, data):
     if vehicle is not None and vehicle.vehicle_type_id != vehicle_type.id:
         raise HTTPException(409, 'Biển số/mã xe và loại xe chưa phù hợp; hãy kiểm tra tại bãi.')
     from expansion.site_models import ParkingReservation, GuaranteedAllocation
+    from expansion.timed_parking_models import ParkingCapacityHold, TimedParkingPass
     if vehicle is not None:
         # Expiry can be evaluated before a slot writer updates stored status;
         # an arrived row remains history after checkout. Share capacity's live
         # predicate while preserving the separate recurring allocation right.
         for model, live in ((ParkingReservation, live_reservation(now)),
-                            (GuaranteedAllocation, GuaranteedAllocation.status == 'active')):
+                            (GuaranteedAllocation, GuaranteedAllocation.status == 'active'),
+                            (ParkingCapacityHold, and_(ParkingCapacityHold.status == 'held', ParkingCapacityHold.expires_at > now)),
+                            (TimedParkingPass, and_(TimedParkingPass.status == 'ready', TimedParkingPass.arrival_deadline > now))):
             if db.scalar(select(model.id).where(model.vehicle_id == vehicle.id, live,
                 model.start_at < end, model.end_at > start).limit(1)):
                 raise HTTPException(409, 'Xe đã có cam kết chỗ trong khoảng này; hãy kiểm tra đặt chỗ hiện có.')
@@ -155,4 +158,27 @@ def cancel(db, user, identity):
         raise HTTPException(409, 'Đặt chỗ đã kết thúc hoặc đã nhận xe; không thể hủy.')
     row.status = 'cancelled'
     db.flush()
+    return row
+
+
+def plate_overlaps(db, vehicle, start, end, now):
+    return db.scalar(select(Booking.id).where(Booking.normalized_plate == canonical_identity(vehicle.license_plate),
+        live_declared(now), Booking.start_at < end, Booking.end_at > start).limit(1)) is not None
+
+
+def require_arrival_window(db, vehicle, site_id, now, booking_id, *, lock=False):
+    """Validate only the declaration explicitly selected for reception."""
+    query = select(Booking).where(Booking.id == booking_id, Booking.site_id == site_id)
+    if lock:
+        query = query.with_for_update()
+    row = db.scalar(query.execution_options(populate_existing=True))
+    if row is None:
+        raise HTTPException(404, "Không tìm thấy đặt trước tại bãi này.")
+    if (row.normalized_plate != canonical_identity(vehicle.license_plate)
+            or row.vehicle_type_id != vehicle.vehicle_type_id):
+        raise HTTPException(409, "Xe thực tế không khớp đặt trước đã chọn. Hãy kiểm tra lại.")
+    if row.status != 'confirmed' or row.arrival_deadline <= now or row.end_at <= now:
+        raise HTTPException(409, "Đặt trước đã kết thúc hoặc đã nhận xe. Hãy tra lịch sử xe.")
+    if row.start_at > now:
+        raise HTTPException(409, "Đặt trước chưa đến giờ hẹn. Hãy tiếp nhận theo đúng lịch đã chọn.")
     return row

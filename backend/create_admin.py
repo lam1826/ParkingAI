@@ -1,5 +1,6 @@
 """
-Script tạo role "admin" và tài khoản admin đầu tiên cho hệ thống.
+Script tạo các vai trò chuẩn (admin, manager, staff, customer) và tài khoản
+admin đầu tiên cho hệ thống.
 
 Cách 1 - chạy tương tác (đứng trong thư mục backend/, đã kích hoạt venv):
     python create_admin.py
@@ -8,8 +9,9 @@ Cách 2 - truyền thẳng qua tham số dòng lệnh (hữu ích nếu terminal
 được password ẩn qua getpass):
     python create_admin.py --username admin --password "MatKhau123" --full-name "Quan Tri Vien"
 
-An toàn khi chạy nhiều lần: nếu role "admin" hoặc username đã tồn tại,
-script sẽ báo và không tạo trùng.
+An toàn khi chạy nhiều lần: vai trò chuẩn đã có được giữ nguyên, vai trò còn
+thiếu được bổ sung; nếu username đã tồn tại, script sẽ báo và không tạo trùng.
+Tên đăng nhập/họ tên được kiểm tra cùng quy tắc với API quản lý tài khoản.
 
 Script không tạo/migration bảng. Hãy chạy ``db_rollout.py`` và xác minh
 ``GET /ready`` trước; schema thiếu hoặc stale sẽ bị từ chối fail-closed.
@@ -19,11 +21,14 @@ import argparse
 import sys
 
 import bcrypt
+from pydantic import ValidationError
 
+from crud.role import ensure_canonical_roles
 from database import SessionLocal, engine
 from db_rollout import check_database_readiness
 from models.role import Role
 from models.user import User
+from schemas.user import UserBase
 
 
 def get_password_hash(password: str) -> str:
@@ -46,6 +51,16 @@ def prompt_password() -> str:
     return input("Password (sẽ hiện ra khi gõ): ")
 
 
+def validate_identity(username: str, full_name: str, role_id: int) -> str | None:
+    """Same username/full-name rules as POST /api/v1/users; returns an error text."""
+    try:
+        UserBase.model_validate({"username": username, "full_name": full_name, "role_id": role_id})
+    except ValidationError as exc:
+        fields = ", ".join(sorted({str(error["loc"][0]) for error in exc.errors()}))
+        return f"Thông tin không hợp lệ ({fields}): tên đăng nhập 3-50 ký tự A-Z, a-z, 0-9, _ . -; họ tên 2-100 ký tự."
+    return None
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Tạo tài khoản admin đầu tiên")
     parser.add_argument("--username", help="Username cho admin")
@@ -64,16 +79,15 @@ def main() -> None:
 
     db = SessionLocal()
     try:
-        # 1. Đảm bảo có role "admin"
-        admin_role = db.query(Role).filter(Role.name == "admin").first()
-        if admin_role is None:
-            admin_role = Role(name="admin", description="Quản trị viên hệ thống")
-            db.add(admin_role)
-            db.commit()
-            db.refresh(admin_role)
-            print(f"[OK] Đã tạo role 'admin' (id={admin_role.id})")
+        # 1. Đảm bảo đủ vai trò chuẩn (admin, manager, staff, customer) để trang
+        #    Tài khoản tạo được nhân viên ngay sau khi cài mới.
+        created_roles = ensure_canonical_roles(db)
+        db.commit()
+        if created_roles:
+            print(f"[OK] Đã tạo vai trò chuẩn: {', '.join(created_roles)}")
         else:
-            print(f"[SKIP] Role 'admin' đã tồn tại (id={admin_role.id})")
+            print("[SKIP] Các vai trò chuẩn đã tồn tại")
+        admin_role = db.query(Role).filter(Role.name == "admin").one()
 
         # 2. Lấy thông tin tài khoản admin (từ tham số dòng lệnh hoặc hỏi qua terminal)
         username = args.username or input("Username cho admin: ").strip()
@@ -87,7 +101,11 @@ def main() -> None:
             print(f"[LỖI] Username '{username}' đã tồn tại (id={existing.id}). Không tạo trùng.")
             sys.exit(1)
 
-        full_name = args.full_name or input("Họ tên hiển thị: ").strip() or username
+        full_name = (args.full_name or input("Họ tên hiển thị: ")).strip() or username
+        problem = validate_identity(username, full_name, admin_role.id)
+        if problem:
+            print(f"[LỖI] {problem}")
+            sys.exit(1)
 
         if args.password:
             password = args.password

@@ -116,6 +116,12 @@ def request_link(db, user, data):
     existing = db.scalar(select(PortalLinkRequest).where(PortalLinkRequest.user_id == user.id,
         PortalLinkRequest.status == "pending"))
     if existing:
+        # Only an identical retry is idempotent. A correction must not be dropped
+        # silently, and a pending request is not rewritten under a reviewer.
+        if (existing.phone_number, existing.note) != (data.phone_number, data.note):
+            raise HTTPException(409, "Bạn đã có yêu cầu liên kết đang chờ duyệt với thông tin khác "
+                "(số điện thoại hoặc ghi chú). Yêu cầu đang chờ không thể sửa; hãy chờ quản lý xử lý "
+                "hoặc liên hệ quản lý để từ chối yêu cầu cũ rồi gửi lại.")
         return existing
     item = PortalLinkRequest(user_id=user.id, **data.model_dump())
     db.add(item)
@@ -123,8 +129,24 @@ def request_link(db, user, data):
     return item
 
 
-def resolve_link(db, actor, identity, approve):
+def _decision_note(note, *, required):
+    note = (note or "").strip()
+    if required and not note:
+        raise HTTPException(422, "Cần ghi lý do từ chối.")
+    return note
+
+
+def _with_note(message, note, label):
+    # PortalNotification.message holds at most 500 characters.
+    return (f"{message} {label}: {note}" if note else message)[:500]
+
+
+def resolve_link(db, actor, identity, approve, note=""):
     check_permission(actor, "manager")
+    # An approval note reaches the customer in the link notification. A rejected
+    # requester has no customer profile yet, so no notification can carry a reason
+    # and none is stored: the note is optional and the UI says it is not kept.
+    note = _decision_note(note, required=False)
     item = db.get(PortalLinkRequest, identity)
     if item is None:
         raise HTTPException(404, "Không tìm thấy yêu cầu.")
@@ -150,7 +172,8 @@ def resolve_link(db, actor, identity, approve):
                 raise HTTPException(409, "Hồ sơ hoặc tài khoản đã có liên kết; không thể chuyển quyền tự động.")
             db.add(PortalAccountLink(user_id=item.user_id, customer_id=customer.id,
                 verified_by_id=actor.id, verification="manager_approved"))
-            _notify(db, customer.id, f"link:{item.id}", "Yêu cầu liên kết hồ sơ đã được quản lý duyệt.")
+            _notify(db, customer.id, f"link:{item.id}",
+                _with_note("Yêu cầu liên kết hồ sơ đã được quản lý duyệt.", note, "Ghi chú của quản lý"))
         item.status = "approved" if approve else "rejected"
         item.reviewed_by_id = actor.id
         db.commit()
@@ -169,6 +192,10 @@ def request_vehicle(db, user, data):
     existing = db.scalar(select(PortalVehicleRequest).where(PortalVehicleRequest.customer_id == customer.id,
         PortalVehicleRequest.license_plate == data.license_plate, PortalVehicleRequest.status == "pending"))
     if existing:
+        if (existing.vehicle_type_id, existing.note) != (data.vehicle_type_id, data.note):
+            raise HTTPException(409, "Biển số này đã có yêu cầu đang chờ duyệt với loại xe hoặc ghi chú khác. "
+                "Yêu cầu đang chờ không thể sửa; hãy chờ quản lý xử lý hoặc liên hệ quản lý để từ chối "
+                "yêu cầu cũ rồi gửi lại.")
         return existing
     item = PortalVehicleRequest(customer_id=customer.id, **data.model_dump())
     db.add(item)
@@ -176,8 +203,10 @@ def request_vehicle(db, user, data):
     return item
 
 
-def resolve_vehicle(db, actor, identity, approve):
+def resolve_vehicle(db, actor, identity, approve, note=""):
     check_permission(actor, "manager")
+    # The rejection reason is delivered to the customer in the notification below.
+    note = _decision_note(note, required=not approve)
     # Match admission's identity-first order before locking the reviewer. Entry
     # holds this identity while its session FK takes a key-share lock on User.
     item = db.get(PortalVehicleRequest, identity)
@@ -209,7 +238,8 @@ def resolve_vehicle(db, actor, identity, approve):
         item.status = "approved" if approve else "rejected"
         item.reviewed_by_id = actor.id
         _notify(db, item.customer_id, f"vehicle-request:{item.id}",
-            "Yêu cầu phương tiện đã được duyệt." if approve else "Yêu cầu phương tiện bị từ chối; hãy liên hệ quản lý.")
+            _with_note(f"Yêu cầu phương tiện {item.license_plate} đã được duyệt.", note, "Ghi chú của quản lý") if approve
+            else _with_note(f"Yêu cầu phương tiện {item.license_plate} bị từ chối.", note, "Lý do"))
         db.commit()
         return item
     except IntegrityError as exc:
@@ -262,6 +292,20 @@ def owned_order(db, user, identity):
     return order
 
 
+def order_has_waiting_online_payment(db, order):
+    """A monthly payOS order with signed money received before its deadline that the
+    payment worker has not processed yet. Expiring it would only hide an on-time payment.
+    """
+    if order.product_kind != "monthly" or order.payment_mode != "payos":
+        return False
+    from expansion.online_payment_models import OnlinePaymentInbox, OnlinePaymentLink, OnlinePaymentProcessing
+    return db.scalar(select(OnlinePaymentInbox.id).join(OnlinePaymentLink,
+        OnlinePaymentLink.id == OnlinePaymentInbox.link_id).join(OnlinePaymentProcessing,
+        OnlinePaymentProcessing.id == OnlinePaymentInbox.id).where(OnlinePaymentLink.order_id == order.id,
+        OnlinePaymentProcessing.status == "received", OnlinePaymentInbox.received_at < order.expires_at)
+        .limit(1)) is not None
+
+
 def _expire_order_if_due(db, order, now=None):
     now = now or business_now()
     if order.status != "pending" or order.expires_at > now:
@@ -270,6 +314,8 @@ def _expire_order_if_due(db, order, now=None):
         PortalPaymentEvent.order_id == order.id,
     ).limit(1))
     if has_event is not None and order.product_kind == "monthly":
+        return False
+    if order_has_waiting_online_payment(db, order):
         return False
     from expansion.timed_parking_service import release_hold
     release_hold(db, order, expired=True)
@@ -308,8 +354,12 @@ def create_order(db, user, data):
         from expansion.online_payment_service import require_online_order_config
         require_online_order_config(db, plan.site_id)
     now = business_now()
+    # A payOS order in review can never issue a ticket: its money is reconciled
+    # per transfer by a manager and its capacity hold is already released. Only
+    # in-flight orders and DEMO reviews (which a manager may still approve) block.
     pending = db.scalar(select(PortalOrder).where(PortalOrder.vehicle_id == vehicle.id,
-        PortalOrder.status.in_(["pending", "review"])).order_by(PortalOrder.created_at, PortalOrder.id))
+        (PortalOrder.status == "pending") | ((PortalOrder.status == "review") & (PortalOrder.payment_mode != "payos")))
+        .order_by(PortalOrder.created_at, PortalOrder.id))
     if pending is not None and pending.status == "pending":
         pending = _lock_order_context(db, pending.id)
         _expire_order_if_due(db, pending, now)
@@ -355,8 +405,11 @@ def serialize_order(order, *, owner=False, details=None):
     fields = ["id", "status", "user_id", "customer_id", "vehicle_id", "plan_id", "site_id", "amount",
         "start_date", "end_date", "payment_mode", "expires_at", "created_at", "monthly_pass_id", "receipt_id", "review_reason"]
     data = {field: getattr(order, field) for field in fields}
-    from expansion.timed_parking_service import order_details
+    from expansion.timed_parking_service import aware, order_details
     data.update(order_details(order) if details is None else details)
+    # Every product kind has a payment deadline (monthly orders included); the UI
+    # must show it, because counter collection is refused after it.
+    data["payment_deadline"] = aware(order.expires_at)
     data["payment_label"] = ("DEMO — không chuyển tiền thật" if order.payment_mode == "demo"
         else "Thanh toán qua payOS" if order.payment_mode == "payos" else "Thu tiền tại bãi")
     if owner and order.demo_token and order.status == "pending":
@@ -625,6 +678,17 @@ def cancel_order(db, user, identity):
     return order
 
 
+def manager_review_actions(order):
+    """Decisions a manager can actually complete for an order in DEMO review.
+
+    Moving an hourly/daily order to review always expires its capacity hold, and the
+    DB guards forbid re-holding it, so such an order can only be rejected.
+    """
+    if order.status != "review" or order.payment_mode != "demo":
+        return []
+    return ["approve", "reject"] if order.product_kind == "monthly" else ["reject"]
+
+
 def resolve_review(db, actor, identity, data):
     check_permission(actor, "manager")
     order = db.get(PortalOrder, identity)
@@ -637,6 +701,9 @@ def resolve_review(db, actor, identity, data):
         raise HTTPException(409, "Đơn không đang chờ xét duyệt DEMO.")
     if not data.note.strip():
         raise HTTPException(422, "Cần ghi lý do xét duyệt.")
+    if data.approve and "approve" not in manager_review_actions(order):
+        raise HTTPException(409, "Vé giờ/ngày đã mất chỗ giữ khi chuyển sang xét duyệt nên không thể duyệt; "
+            "chỉ có thể từ chối để khách tạo đơn mới.")
     event = db.scalar(select(PortalPaymentEvent).where(PortalPaymentEvent.order_id == order.id,
         PortalPaymentEvent.outcome == "success").with_for_update())
     if event is None:

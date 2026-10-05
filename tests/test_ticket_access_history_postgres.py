@@ -137,7 +137,7 @@ def test_postgres_schema09_pending_quote_survives_upgrade_and_old_style_renewal(
             before_stay = dict(connection.execute(text("SELECT * FROM parking_sessions")).mappings().one())
         _upgrade_head(engine)
         with engine.connect() as connection:
-            assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "20260927_10"
+            assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "20261005_12"
             assert dict(connection.execute(text("SELECT * FROM session_payment_access")).mappings().one()) == before_grant
             assert dict(connection.execute(text("SELECT * FROM session_fee_quotes")).mappings().one()) == before_quote
             assert dict(connection.execute(text("SELECT * FROM parking_sessions")).mappings().one()) == before_stay

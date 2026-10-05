@@ -53,16 +53,22 @@ def require_paid_booking_policy(db, site_id, vehicle, start, end, slot_id=None):
 def prepare_order(db, user, vehicle, plan, data):
     """Caller holds account/customer/vehicle. Lock tariff and slot before snapshot."""
     from expansion.reservations import local_time, lock_slot, expire_slot, _overlaps, live_reservation
-    from crud.parking_session import resolve_check_in_billing_snapshot
+    from crud.parking_session import resolve_check_in_billing_snapshot, MissingEffectiveCheckInPriceError
     if data.start_at is None:
         raise HTTPException(422, "Vé giờ/ngày cần thời gian bắt đầu có múi giờ.")
     start = local_time(data.start_at)
     require_active_vehicle_type(db, vehicle.vehicle_type_id)
     now = business_now()
-    rate = resolve_check_in_billing_snapshot(db, vehicle.vehicle_type_id, now)
+    try:
+        rate = resolve_check_in_billing_snapshot(db, vehicle.vehicle_type_id, now)
+    except MissingEffectiveCheckInPriceError as exc:
+        raise HTTPException(409, "Loại xe chưa có bảng giá đang áp dụng. Vui lòng liên hệ bãi kiểm tra bảng giá.") from exc
     if start < now or start > now + timedelta(days=30):
         raise HTTPException(422, "Chọn giờ bắt đầu trong 30 ngày tới.")
     end = start + timedelta(minutes=plan.duration_minutes)
+    from expansion.declared_bookings import plate_overlaps
+    if plate_overlaps(db, vehicle, start, end, now):
+        raise HTTPException(409, "Biển số/mã xe đã có đặt trước trong khoảng thời gian này.")
     count = db.scalar(select(func.count()).select_from(ParkingCapacityHold).where(
         ParkingCapacityHold.customer_id == vehicle.customer_id, ParkingCapacityHold.status == "held",
         ParkingCapacityHold.expires_at > now))
@@ -128,6 +134,9 @@ def fulfillment_problem(db, order):
     if db.scalar(select(ParkingSession.id).where(ParkingSession.parking_slot_id == slot.id,
             ParkingSession.status.in_(["active", "checking_out"])).limit(1)):
         return "capacity_unavailable"
+    from expansion.declared_bookings import plate_overlaps
+    if plate_overlaps(db, vehicle, order.start_at, order.end_at, now):
+        return "declared_booking_conflict"
     return None
 
 

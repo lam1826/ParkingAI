@@ -9,6 +9,7 @@ from sqlalchemy import asc, desc, extract, func, select
 from sqlalchemy.exc import DBAPIError, IntegrityError, SQLAlchemyError
 
 from core.clock import business_today, day_bounds
+from core.vehicle_identity import canonical_identity, identity_expression
 from core.errors import internal_server_error
 from core.money import MAX_EXACT_VND, sum_exact_vnd
 from core.sql_time import day_bucket
@@ -209,6 +210,7 @@ class ParkingService:
         *,
         _check_in_time: datetime | None = None,
         _expected_site_id: int | None = None,
+        _declared_booking_id: str | None = None,
         _commit: bool = True,
     ) -> Dict[str, Any]:
 
@@ -263,9 +265,16 @@ class ParkingService:
             # entitlement and billing, including the arrival deadline.
             # A reservation arrival may already have sampled it under lock.
             check_in_time = _check_in_time if _check_in_time is not None else crud_parking_session.server_now()
+            if _declared_booking_id is not None:
+                from expansion.declared_bookings import require_arrival_window
+                booking = require_arrival_window(self.db, vehicle, _expected_site_id, check_in_time,
+                                                 _declared_booking_id)
+                if parking_slot_id is not None and parking_slot_id != booking.slot_id:
+                    raise HTTPException(409, "Vị trí đã chọn không khớp đặt trước cần tiếp nhận.")
+                parking_slot_id = booking.slot_id
             if parking_slot_id is None:
-                from expansion.declared_bookings import preferred_slot
-                parking_slot_id = preferred_slot(self.db, vehicle, _expected_site_id, check_in_time)
+                from expansion.reservations import preferred_admission_slot
+                parking_slot_id = preferred_admission_slot(self.db, vehicle, _expected_site_id, check_in_time)
 
             if parking_slot_id is not None:
                 # Nhân viên chọn đích danh một vị trí đỗ -> kiểm tra đầy đủ
@@ -407,6 +416,11 @@ class ParkingService:
                                "Vui lòng thử lại."
                     )
 
+            if _declared_booking_id is not None:
+                # The slot is now locked. Cancellation/expiry must not turn
+                # explicit reception into an unrelated walk-in admission.
+                require_arrival_window(self.db, vehicle, admission_site_id, check_in_time,
+                                       _declared_booking_id, lock=True)
             session = ParkingSession(
                 vehicle_id=vehicle.id,
                 parking_slot_id=slot.id,
@@ -767,7 +781,7 @@ class ParkingService:
                 stmt = stmt.where(ParkingSession.id == session_id.strip())
             if license_plate:
                 stmt = stmt.where(
-                    Vehicle.license_plate.ilike(f"%{license_plate.strip()}%")
+                    identity_expression(Vehicle.license_plate).contains(canonical_identity(license_plate), autoescape=True)
                 )
 
             if vehicle_type_id:
@@ -813,9 +827,9 @@ class ParkingService:
             )
 
             if sort_order.lower() == "asc":
-                stmt = stmt.order_by(asc(target_column))
+                stmt = stmt.order_by(asc(target_column), ParkingSession.id.asc())
             else:
-                stmt = stmt.order_by(desc(target_column))
+                stmt = stmt.order_by(desc(target_column), ParkingSession.id.desc())
 
             # Phân trang
             offset = (page - 1) * size

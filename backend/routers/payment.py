@@ -50,10 +50,16 @@ def refund_payment(
     payment_id: str, payload: RefundCreate, db: Session = Depends(get_db),
     actor: User = Depends(RoleChecker("manager")),
 ):
+    from expansion.refund_service import direct_refund
     try:
-        payment = PaymentService.refund(db, payment_id, actor, **payload.model_dump())
+        # Same rules and entitlement revocation as Site Finance, including
+        # the customer workflow for open requests and tickets before start.
+        payment = direct_refund(db, actor, payment_id, **payload.model_dump())
         db.commit()
         return PaymentService.serialize(db, payment)
+    except HTTPException:
+        db.rollback()
+        raise
     except (IntegrityError, OperationalError) as exc:
         db.rollback()
         raise HTTPException(409, "Giao dịch đang được xử lý hoặc dữ liệu hoàn tiền không còn hợp lệ. Vui lòng tải lại.") from exc

@@ -4,7 +4,7 @@ import json
 from datetime import timedelta
 
 from fastapi import HTTPException
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import defer
 
@@ -98,7 +98,8 @@ def view(db, user, site_id, camera_id):
         "valid_until": None, "source_image_available": False, "readings": []}
     if calibration is None:
         return result
-    latest = db.scalar(select(OccupancyObservation).where(OccupancyObservation.calibration_id == calibration.id)
+    latest = db.scalar(select(OccupancyObservation).where(OccupancyObservation.calibration_id == calibration.id,
+        OccupancyObservation.measured_at <= now, _usable_observation())
         .order_by(OccupancyObservation.measured_at.desc(), OccupancyObservation.received_at.desc(), OccupancyObservation.id.desc()).limit(1))
     reference = _image(db, camera, calibration.reference_observation_id)
     source = _image(db, camera, latest.source_observation_id) if latest else None
@@ -135,6 +136,12 @@ def view(db, user, site_id, camera_id):
 
 def _hash(body):
     return hashlib.sha256(json.dumps(body, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+
+
+def _usable_observation():
+    # Old future_capture placeholders never become valid just because the
+    # clock catches up. Exclude them from latest and confirmation history.
+    return func.coalesce(OccupancyObservation.quality["reason"].as_string(), "") != "future_capture"
 
 
 def prepare_calibration(db, user, site_id, body):
@@ -207,7 +214,7 @@ def prepare_analysis(db, user, site_id, body):
         raise HTTPException(409, "Cấu hình đã thay đổi. Làm mới trước khi phân tích.")
     prior = db.scalar(select(OccupancyObservation).where(OccupancyObservation.calibration_id == calibration.id,
         OccupancyObservation.source_id_snapshot == str(body.observation_id)))
-    if prior:
+    if prior and (prior.quality or {}).get("reason") != "future_capture":
         return {"existing": view(db, user, site_id, camera.id)}
     reference = _image(db, camera, calibration.reference_observation_id, content=True)
     source = _image(db, camera, str(body.observation_id), content=True)
@@ -216,7 +223,9 @@ def prepare_analysis(db, user, site_id, body):
         raise HTTPException(409, "Ảnh nền đã hết hạn. Quản lý cần tạo cấu hình từ ảnh nền mới.")
     if not _available(source, camera, now):
         raise HTTPException(404, "Ảnh được chọn không còn được lưu tại camera này.")
-    reason = "future_capture" if source.captured_at > now else "stale_capture" if now >= source.captured_at + timedelta(seconds=calibration.settings["stale_after_seconds"]) else None
+    if source.captured_at > now:
+        raise HTTPException(409, "Thời điểm chụp ảnh ở tương lai. Kiểm tra đồng hồ camera hoặc chọn ảnh mới.")
+    reason = "stale_capture" if now >= source.captured_at + timedelta(seconds=calibration.settings["stale_after_seconds"]) else None
     prepared = {"user_id": user.id, "site_id": site_id, "camera_id": camera.id, "calibration_id": calibration.id,
         "source_id": source.id, "source_hash": source.image_hash, "reference_hash": reference.image_hash,
         "reference": bytes(reference.image_bytes), "content": bytes(source.image_bytes),
@@ -230,6 +239,7 @@ def _consensus(db, calibration, source, result):
     if needed == 1:
         return result
     previous = list(db.scalars(select(OccupancyObservation).where(OccupancyObservation.calibration_id == calibration.id,
+        _usable_observation(),
         OccupancyObservation.measured_at < source.captured_at,
         OccupancyObservation.measured_at > source.captured_at - timedelta(seconds=calibration.settings["stale_after_seconds"]))
         .order_by(OccupancyObservation.measured_at.desc()).limit(needed - 1)))
@@ -254,13 +264,20 @@ def finish_analysis(db, prepared, result):
         raise HTTPException(409, "Cấu hình đã thay đổi trong khi phân tích. Làm mới rồi thử lại.")
     prior = db.scalar(select(OccupancyObservation).where(OccupancyObservation.calibration_id == calibration.id,
         OccupancyObservation.source_id_snapshot == prepared["source_id"]))
-    if prior:
+    if prior and (prior.quality or {}).get("reason") != "future_capture":
         return view(db, user, camera.site_id, camera.id)
+    if prior:
+        # Replace only the old invalid advisory placeholder for this source;
+        # valid results retain their idempotency and remain immutable here.
+        db.delete(prior)
+        db.flush()
     reference = _image(db, camera, calibration.reference_observation_id)
     source = _image(db, camera, prepared["source_id"])
     now = business_now()
     if not _available(reference, camera, now) or reference.image_hash != prepared["reference_hash"] or not _available(source, camera, now) or source.image_hash != prepared["source_hash"]:
         raise HTTPException(409, "Ảnh đã hết hạn hoặc thay đổi trong khi phân tích. Chọn ảnh mới.")
+    if source.captured_at > now or result["quality"].get("reason") == "future_capture":
+        raise HTTPException(409, "Thời điểm chụp ảnh ở tương lai. Kiểm tra đồng hồ camera hoặc chọn ảnh mới.")
     result = _consensus(db, calibration, source, result)
     row = OccupancyObservation(calibration_id=calibration.id, source_observation_id=source.id,
         source_id_snapshot=source.id, source_image_hash=source.image_hash, measured_at=source.captured_at,

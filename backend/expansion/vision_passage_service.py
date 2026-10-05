@@ -61,7 +61,10 @@ def policy_view(camera, policy):
 
 
 def update_policy(db, actor, camera_id, body):
-    lock_cash_operator(db, actor.id)
+    # Policy edits collect no money. On PostgreSQL the camera row serializes
+    # them; locking users first would cycle with an entry's later staff FK.
+    if db.get_bind().dialect.name == "sqlite":
+        lock_cash_operator(db, actor.id)
     camera = camera_for(db, actor, camera_id, manage=True, lock=True)
     if body.enabled and not camera.is_active:
         raise HTTPException(409, "Camera đang ngừng hoạt động.")
@@ -112,8 +115,15 @@ def _recognition_reason(observation, camera, policy, now):
         return "manual", "Ảnh đã được nhân viên xử lý; tiếp tục theo thao tác thủ công."
     if observation.capture_source not in {"live_camera", "edge"}:
         return "manual", "Ảnh tải lên cần nhân viên kiểm tra; thời gian tải không chứng minh ảnh vừa được chụp."
+    # Capture clocks belong to browsers/edge devices. Allow a small forward
+    # skew, while receipt age and policy time still use the server's clock.
+    skew = timedelta(seconds=5)
     age = (now - observation.captured_at).total_seconds()
-    if not 0 <= age <= policy.max_age_seconds or observation.captured_at < policy.enabled_at:
+    receipt_age = (now - observation.observed_at).total_seconds()
+    if (not -5 <= age <= policy.max_age_seconds
+            or not 0 <= receipt_age <= policy.max_age_seconds
+            or observation.observed_at < policy.enabled_at
+            or observation.captured_at < policy.enabled_at - skew):
         return "manual", "Ảnh không còn mới hoặc được chụp trước lúc bật tự động."
     if observation.ocr_status != "recognized" or observation.engine != "yolo_rapidocr":
         return "manual", "Chưa có kết quả nhận diện biển số đủ điều kiện."
@@ -204,6 +214,23 @@ def _decide(db, actor, camera, observation, policy, event):
         event.reason = "Đã ghi nhận xe ra sau khi máy chủ xác nhận không còn tiền cần thu."
 
 
+def _lock_passage_operator(db, actor_id, plate, direction, *, camera_locked=False):
+    if db.get_bind().dialect.name == "postgresql":
+        # Arrival/check-in acquire canonical identity before any operator/row
+        # locks. Acquire it here before the event's actor FK can lock users.
+        if plate and not camera_locked:
+            from core.vehicle_identity import lock_identity
+            lock_identity(db, None, plate)
+        if direction == "entry" or not camera_locked:
+            # Entry collects no money. Identity/camera/observation locks are
+            # sufficient, and taking users here inverts monthly sale's order
+            # (vehicle first, then cash operator). Exits acquire their cash
+            # lock after the camera, matching policy edits and their actor FK.
+            return
+    # Exit keeps the cash transaction lock; SQLite keeps its no-op writer lock.
+    lock_cash_operator(db, actor_id)
+
+
 def process_observation(db, actor, observation_id):
     old = _existing(db, actor, observation_id)
     if old is not None:
@@ -213,8 +240,12 @@ def process_observation(db, actor, observation_id):
         raise HTTPException(404, "Ảnh không tồn tại hoặc đã hết thời hạn lưu.")
     camera_id = observation.camera_id
     _private_access(db, actor, observation.site_id)
-    lock_cash_operator(db, actor.id)
+    identity = plate_key(observation.suggested_plate)
+    direction = camera_for(db, actor, camera_id).direction
+    _lock_passage_operator(db, actor.id, identity, direction)
     camera = camera_for(db, actor, camera_id, lock=True)
+    if db.get_bind().dialect.name == "postgresql":
+        _lock_passage_operator(db, actor.id, identity, direction, camera_locked=True)
     # Camera row serializes different staff processing the same frame on PG;
     # the operator no-op write already serializes SQLite writers.
     old = _existing(db, actor, observation_id)
@@ -226,15 +257,23 @@ def process_observation(db, actor, observation_id):
     now = business_now()
     if observation is None or min(observation.expires_at, observation.observed_at + timedelta(hours=camera.retention_hours)) <= now:
         raise HTTPException(404, "Ảnh không tồn tại hoặc đã hết thời hạn lưu.")
+    if plate_key(observation.suggested_plate) != identity or camera.direction != direction:
+        # Never acquire a different identity or upgrade the operator lock while
+        # holding camera/observation rows after a concurrent edit.
+        raise HTTPException(409, "Thông tin ảnh hoặc hướng camera vừa thay đổi. Hãy tải lại.")
     policy = db.get(CameraAutomationPolicy, camera.id)
     fields = dict(camera_id=camera.id, site_id=camera.site_id, observation_id=observation.id,
         observation_key=observation.id, event_id=observation.event_id, direction=camera.direction,
         state="manual", license_plate=observation.suggested_plate, plate_key=plate_key(observation.suggested_plate) or None,
         reason="Cần nhân viên kiểm tra.", actor_id=actor.id, captured_at=observation.captured_at, processed_at=now)
     event = VisionPassageEvent(**fields)
-    db.add(event)
     try:
-        db.flush()
+        if direction != "entry":
+            db.add(event)
+            db.flush()
+        # Keep entry events transient until admission has locked the vehicle.
+        # Adding/flushing earlier (including query autoflush) takes the actor
+        # FK KEY SHARE on users, inverting monthly sale's vehicle -> user order.
         _decide(db, actor, camera, observation, policy, event)
         if event.session_id is None:
             # Failed OCR/unknown vehicles are not business parking records.
@@ -242,6 +281,7 @@ def process_observation(db, actor, observation_id):
             # the short-lived private observation, never in durable history.
             event.license_plate = event.plate_key = None
             event.vehicle_type_id = None
+        db.add(event)
         db.commit()
     except HTTPException as failure:
         db.rollback()
@@ -249,8 +289,10 @@ def process_observation(db, actor, observation_id):
             raise
         # Admission/checkout already rolled back. Reacquire the same locks before
         # recording a manual outcome, so a concurrent successful winner prevails.
-        lock_cash_operator(db, actor.id)
+        _lock_passage_operator(db, actor.id, identity, direction)
         camera_for(db, actor, camera_id, lock=True)
+        if db.get_bind().dialect.name == "postgresql":
+            _lock_passage_operator(db, actor.id, identity, direction, camera_locked=True)
         old = _existing(db, actor, observation_id)
         if old is not None:
             db.rollback()

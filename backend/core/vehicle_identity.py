@@ -39,6 +39,13 @@ def resolve_vehicle(db, plate):
     return rows[0] if rows else None
 
 
+def validate_supplied_identity(value):
+    value = str(value or '').strip().upper()
+    if not re.fullmatch(r'[A-Z0-9][A-Z0-9. -]{2,19}', value):
+        raise ValueError('Biển số hoặc mã xe không hợp lệ.')
+    return value
+
+
 def admission_identity(vehicle_type, supplied):
     value = str(supplied or '').strip().upper()
     if not value:
@@ -46,6 +53,7 @@ def admission_identity(vehicle_type, supplied):
             raise HTTPException(422, 'Loại xe này cần biển số khi vào bãi.')
         prefix = vehicle_type.code_prefix or 'XE'
         return f'{prefix}-{secrets.token_hex(5).upper()}'
-    if not re.fullmatch(r'[A-Z0-9][A-Z0-9. -]{2,19}', value):
-        raise HTTPException(422, 'Biển số hoặc mã xe không hợp lệ.')
-    return value
+    try:
+        return validate_supplied_identity(value)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc

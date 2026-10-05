@@ -40,6 +40,9 @@ class MonthlyPassBase(BaseModel):
 # Schema cho POST (Thêm mới vé tháng)
 class MonthlyPassCreate(MonthlyPassBase):
     payment_method: Literal["cash", "transfer"] = "cash"
+    # Bãi ghi nhận khoản thu tại quầy (không lưu vào kỳ vé). Bỏ trống: dùng bãi
+    # của ca đang mở, hoặc bãi duy nhất của hệ thống.
+    site_id: Optional[int] = Field(default=None, gt=0)
 
 
 class MonthlyPassRenew(BaseModel):
@@ -48,6 +51,7 @@ class MonthlyPassRenew(BaseModel):
     price: StrictInt = Field(ge=0, le=MAX_EXACT_VND)
     payment_method: Literal["cash", "transfer"] = "cash"
     request_id: str = Field(min_length=16, max_length=64, pattern=r"^[a-zA-Z0-9_-]+$")
+    site_id: Optional[int] = Field(default=None, gt=0)
     model_config = ConfigDict(extra="forbid")
 
     @model_validator(mode="after")

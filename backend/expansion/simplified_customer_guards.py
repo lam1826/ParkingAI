@@ -1,4 +1,5 @@
 """Additive cross-table capacity and authority backstops for simplified flows."""
+from expansion.timed_parking_guards import _admission_bound
 
 _NOW = "datetime('now','+7 hours')"
 _NORMAL = "replace(replace(replace(upper(v.license_plate),'-',''),'.',''),' ','')"
@@ -12,11 +13,11 @@ _BOOKING_SOURCE = """EXISTS (SELECT 1 FROM parking_slots s JOIN zones z ON z.id=
 _NEW_COLLISION = """EXISTS (SELECT 1 FROM declared_parking_reservations r WHERE
  (r.slot_id=NEW.slot_id OR r.normalized_plate=NEW.normalized_plate) AND r.status='confirmed'
  AND r.arrival_deadline>NEW.created_at AND r.end_at>NEW.created_at AND r.start_at<NEW.end_at AND r.end_at>NEW.start_at)"""
-_OLD_COLLISION = """EXISTS (SELECT 1 FROM parking_reservations r WHERE r.slot_id=NEW.slot_id
+_OLD_COLLISION = f"""EXISTS (SELECT 1 FROM parking_reservations r WHERE r.slot_id=NEW.slot_id
  AND (r.status='confirmed' OR (r.status='arrived' AND EXISTS(SELECT 1 FROM parking_sessions s WHERE s.id=r.session_id AND s.status IN ('active','checking_out'))))
  AND r.arrival_deadline>NEW.created_at AND r.start_at<NEW.end_at AND r.end_at>NEW.start_at)
  OR EXISTS (SELECT 1 FROM guaranteed_allocations a WHERE a.slot_id=NEW.slot_id AND a.status='active' AND a.start_at<NEW.end_at AND a.end_at>NEW.start_at)
- OR EXISTS (SELECT 1 FROM parking_capacity_holds h WHERE h.slot_id=NEW.slot_id AND h.status='held' AND h.expires_at>NEW.created_at AND h.start_at<NEW.end_at AND h.end_at>NEW.start_at)"""
+ OR EXISTS (SELECT 1 FROM parking_capacity_holds h WHERE (h.slot_id=NEW.slot_id OR h.vehicle_id IN (SELECT v.id FROM vehicles v WHERE {_NORMAL}=NEW.normalized_plate)) AND h.status='held' AND h.expires_at>NEW.created_at AND h.start_at<NEW.end_at AND h.end_at>NEW.start_at)"""
 _FIELDS = ('id','site_id','slot_id','user_id','license_plate','normalized_plate','vehicle_type_id','start_at','end_at','arrival_deadline','request_id','created_at')
 _CHANGED = ' OR '.join(f'NEW.{key} IS NOT OLD.{key}' for key in _FIELDS)
 _ARRIVAL = f"""EXISTS (SELECT 1 FROM parking_sessions s JOIN vehicles v ON v.id=s.vehicle_id
@@ -25,7 +26,7 @@ _ARRIVAL = f"""EXISTS (SELECT 1 FROM parking_sessions s JOIN vehicles v ON v.id=
  AND s.check_in_time>=NEW.start_at AND s.check_in_time<NEW.arrival_deadline)"""
 _SESSION_BLOCKED = f"""EXISTS (SELECT 1 FROM declared_parking_reservations r JOIN vehicles v ON v.id=NEW.vehicle_id
  WHERE r.status='confirmed' AND r.arrival_deadline>NEW.check_in_time AND r.end_at>NEW.check_in_time
- AND r.slot_id=NEW.parking_slot_id AND NOT (r.normalized_plate={_NORMAL}
+ AND r.slot_id=NEW.parking_slot_id AND r.start_at<{_admission_bound} AND NOT (r.normalized_plate={_NORMAL}
  AND r.vehicle_type_id=v.vehicle_type_id AND r.start_at<=NEW.check_in_time))"""
 _ACCESS_SOURCE = """EXISTS(SELECT 1 FROM session_ticket_credentials c JOIN parking_sessions s ON s.id=c.session_id
  JOIN vehicles v ON v.id=s.vehicle_id JOIN users u ON u.id=NEW.user_id JOIN roles role ON role.id=u.role_id
@@ -80,6 +81,7 @@ def _pg(expression):
     value = value.replace(_NOW, "(CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Ho_Chi_Minh')")
     for alias in ('s','z','p','t','u'):
         value = value.replace(f'{alias}.is_active=1', f'{alias}.is_active').replace(f'{alias}.is_occupied=0', f'NOT {alias}.is_occupied')
+    value = value.replace("strftime('%Y-%m-%d %H:%M:%f','now','+7 hours')", "(clock_timestamp() AT TIME ZONE 'Asia/Ho_Chi_Minh')")
     return value.replace('NEW.is_active=0', 'NOT NEW.is_active')
 
 

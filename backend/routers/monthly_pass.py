@@ -1,13 +1,15 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 from typing import List
 
 from database import get_db
 from schemas import monthly_pass as monthly_pass_schema
 from crud import monthly_pass as crud_monthly_pass
+from models.monthly_pass import MonthlyPass
 from models.parking_session import ParkingSession
 from services.auth_service import RoleChecker, get_current_user
-from services.monthly_subscription_service import create_subscription, renew_subscription, has_receipt
+from services.monthly_subscription_service import create_subscription, renew_subscription, has_receipt, was_refunded
 
 router = APIRouter()
 
@@ -126,6 +128,18 @@ def update_monthly_pass(id: int, pass_in: monthly_pass_schema.MonthlyPassUpdate,
     # với record hiện có; exclude chính record đang sửa.
     will_be_active = update_data.get("is_active", db_pass.is_active)
     merged_vehicle_id = update_data.get("vehicle_id", db_pass.vehicle_id)
+    # A refunded period was stopped by its refund; turning it back on would
+    # restore the entitlement without payment while the order stays refunded.
+    # The row lock serializes this with a direct refund of the stopped period
+    # (refund_service.direct_refund locks the same row before deciding).
+    if will_be_active and not db_pass.is_active:
+        db.scalar(select(MonthlyPass).where(MonthlyPass.id == id)
+                  .with_for_update().execution_options(populate_existing=True))
+    if will_be_active and not db_pass.is_active and was_refunded(db, id):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Kỳ vé đã được hoàn tiền nên không thể kích hoạt lại. Hãy bán hoặc gia hạn một kỳ mới.",
+        )
     if will_be_active:
         overlapping_pass = crud_monthly_pass.get_overlapping_active_pass_by_vehicle(
             db,

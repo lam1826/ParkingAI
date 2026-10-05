@@ -17,7 +17,7 @@ from expansion_demo_guards import validate_demo_ledger
 from expansion_rollout import validate_zone_site_assignment
 
 
-POSTGRES_SCHEMA_REVISION = "20260927_10"
+POSTGRES_SCHEMA_REVISION = "20261005_12"
 
 REQUIRED_COLUMN_CONTRACTS = frozenset({
     "parking_sessions.billing_policy_version:character varying:32:YES",

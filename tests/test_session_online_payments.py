@@ -242,7 +242,10 @@ def test_two_online_credits_then_checkout_still_collect_each_dong_once(parking_o
     assert status(ctx)["online_paid"] == 15000
     checkout(ctx)
     assert sorted(ctx.db.scalars(select(Payment.amount))) == [0, 5000, 10000]
-    start, end = day_bounds(ctx.clock[0].date())
+    # The fixture clock starts at the real time; +130 minutes can cross midnight
+    # (review 05/10/2026). Cover every business day of this stay, not only the last.
+    start, _ = day_bounds(ctx.base.date())
+    _, end = day_bounds(ctx.clock[0].date())
     assert PaymentService.revenue_breakdown(ctx.db, start, end)["total_revenue"] == 15000
 
 

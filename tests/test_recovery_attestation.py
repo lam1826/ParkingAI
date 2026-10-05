@@ -14,7 +14,7 @@ NOW = datetime(2026, 10, 2, 3, 0, tzinfo=timezone.utc)
 TARGET = "a" * 40
 SOURCE = "b" * 40
 REF = "abcdefghijklmnopqrst"
-SCHEMA = "20260927_10"
+SCHEMA = "20261005_12"
 
 
 @pytest.fixture

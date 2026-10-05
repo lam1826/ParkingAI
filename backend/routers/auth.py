@@ -19,6 +19,7 @@ from schemas.auth import (
 )
 from services.auth_service import AuthService, get_current_user
 from core.auth_rate_limit import enforce_login_rate_limit, enforce_registration_rate_limit
+from crud.role import ensure_canonical_roles
 
 router = APIRouter(
     tags=["Authentication"]
@@ -54,16 +55,10 @@ def register(
 
     role = db.query(Role).filter(Role.name == body.role).first()
     if role is None:
-        role = Role(
-            name=body.role,
-            description={
-                "customer": "Khách hàng",
-                "manager": "Quản lý bãi đỗ xe",
-                "admin": "Quản trị viên hệ thống",
-            }[body.role],
-        )
-        db.add(role)
-        db.flush()
+        # A bootstrap via registration code must still leave every canonical
+        # role (incl. staff) available to the Users screen.
+        ensure_canonical_roles(db)
+        role = db.query(Role).filter(Role.name == body.role).one()
 
     user = User(
         username=username,

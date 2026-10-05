@@ -37,6 +37,7 @@ def summary_csv(data):
             row("Chỗ đỗ", zone["name"], "", "", "", zone[key], label)
     if data["revenue"] is not None:
         for key, label in (("parking_revenue", "Thu lượt gửi"), ("monthly_pass_revenue", "Thu vé tháng"),
+                           ("prepaid_revenue", "Thu vé giờ/ngày"),
                            ("refunds", "Hoàn tiền"), ("total_revenue", "Thu ròng"),
                            ("demo_receipts", "Thu QR mô phỏng"), ("demo_refunds", "Hoàn QR mô phỏng")):
             row("Tài chính", label, "", "", "", data["revenue"][key], "VND")

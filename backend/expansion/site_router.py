@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from typing import Literal
 
 from database import get_db
+from core.vehicle_identity import canonical_identity, identity_expression
 from expansion import reservations as booking
 from expansion.site_models import (FleetVehicle, GuaranteedAllocation, Organization, OrganizationMembership,
                                    ParkingReservation, ParkingSite, SiteMembership, SiteWaitlist)
@@ -58,7 +59,7 @@ PageLimit = Query(50, ge=1, le=100)
 PageOffset = Query(0, ge=0)
 ReservationStatus = Literal["confirmed", "arrived", "cancelled", "expired"]
 AllocationStatus = Literal["active", "cancelled"]
-WaitlistStatus = Literal["waiting", "offered", "cancelled"]
+WaitlistStatus = Literal["waiting", "offered", "cancelled", "expired", "used"]
 
 
 def _booking_page(db, query, model, *, status, from_at, to_at, limit, offset, order=None):
@@ -71,14 +72,28 @@ def _booking_page(db, query, model, *, status, from_at, to_at, limit, offset, or
     to_at = booking.local_time(to_at) if to_at is not None else None
     if from_at is not None and to_at is not None and to_at <= from_at:
         raise HTTPException(422, "Thời điểm kết thúc bộ lọc phải sau thời điểm bắt đầu.")
-    if status:
+    if model is SiteWaitlist:
+        from crud.parking_session import server_now
+        effective_status = booking.waitlist_status_sql(server_now())
+        if status:
+            query = query.where(effective_status == status)
+    elif status:
         query = query.where(model.status == status)
     if from_at is not None:
         query = query.where(model.end_at > from_at)
     if to_at is not None:
         query = query.where(model.start_at < to_at)
     order = order or (model.start_at.desc(), model.id.desc())
-    return [booking.serialize(row) for row in db.scalars(query.order_by(*order).offset(offset).limit(limit))]
+    query = query.add_columns(Vehicle.license_plate, Vehicle.vehicle_type_id, ParkingSite.name).join(
+        Vehicle, Vehicle.id == model.vehicle_id).join(ParkingSite, ParkingSite.id == model.site_id)
+    if hasattr(model, 'slot_id'):
+        query = query.add_columns(ParkingSlot.slot_name).join(ParkingSlot, ParkingSlot.id == model.slot_id)
+    elif model is SiteWaitlist:
+        query = query.add_columns(effective_status)
+    rows = db.execute(query.order_by(*order).offset(offset).limit(limit)).all()
+    return [{**booking.serialize(row[0]), 'license_plate': row[1], 'vehicle_type_id': row[2],
+        'site_name': row[3], **({'status': row[4]} if model is SiteWaitlist
+                              else {'slot_name': row[4]} if len(row) > 4 else {})} for row in rows]
 
 
 @router.get("/sites")
@@ -133,7 +148,7 @@ def bookable_vehicles(site_id: int, q: str = Query("", max_length=20), limit: in
     # exposes only identity needed for booking, never customer contact/history.
     query = select(Vehicle).where(Vehicle.customer_id.is_not(None))
     if q.strip():
-        query = query.where(Vehicle.license_plate.contains(q.strip().upper(), autoescape=True))
+        query = query.where(identity_expression(Vehicle.license_plate).contains(canonical_identity(q), autoescape=True))
     return [{"id": row.id, "license_plate": row.license_plate, "vehicle_type_id": row.vehicle_type_id}
             for row in db.scalars(query.order_by(Vehicle.license_plate).limit(limit))]
 
@@ -251,7 +266,8 @@ def check_in(site_id: int, body: SiteCheckIn, db: Session = Depends(get_db), act
         raise HTTPException(404, "Vị trí không thuộc bãi này.")
     from services.parking_service import ParkingService
     return ParkingService(db).check_in(body.license_plate, body.vehicle_type_id, actor.id,
-                                      parking_slot_id=slot.id if slot else None, _expected_site_id=site_id)
+                                      parking_slot_id=slot.id if slot else None, _expected_site_id=site_id,
+                                      _declared_booking_id=body.declared_booking_id)
 
 
 @router.get("/sites/{site_id}/sessions/{session_id}/checkout-quote", response_model=CheckoutQuoteResponse)
@@ -445,6 +461,15 @@ def fleet(organization_id: int, limit: int = PageLimit, offset: int = PageOffset
     return site_service.fleet_summary(db, actor, organization_id, limit=limit, offset=offset)
 
 
+@router.get("/organizations/{organization_id}/members")
+def fleet_members(organization_id: int, db: Session = Depends(get_db), actor: User = Depends(get_current_user)):
+    site_service.require_organization(db, actor, organization_id, manage=True)
+    rows = db.execute(select(OrganizationMembership.user_id, User.username, User.full_name).join(
+        User, User.id == OrganizationMembership.user_id).where(OrganizationMembership.organization_id == organization_id)
+        .order_by(OrganizationMembership.user_id)).all()
+    return [{'user_id': identity, 'username': username, 'full_name': name} for identity, username, name in rows]
+
+
 @router.post("/organizations/{organization_id}/members")
 def fleet_member(organization_id: int, body: OrganizationMemberCreate,
                  db: Session = Depends(get_db), actor: User = Depends(get_current_user)):
@@ -452,6 +477,8 @@ def fleet_member(organization_id: int, body: OrganizationMemberCreate,
     user = db.get(User, body.user_id)
     if user is None or not user.is_active:
         raise HTTPException(404, "Không tìm thấy tài khoản đang hoạt động.")
+    if user.role.name != "customer":
+        raise HTTPException(422, "Quyền xem nhóm dành cho tài khoản khách hàng. Nhân sự vận hành dùng quyền theo bãi.")
     def create():
         row = db.scalar(select(OrganizationMembership).where(OrganizationMembership.organization_id == organization_id,
                                                             OrganizationMembership.user_id == body.user_id))
@@ -485,9 +512,10 @@ def remove_fleet_member(organization_id: int, user_id: int, db: Session = Depend
     site_service.require_organization(db, actor, organization_id, manage=True)
     row = db.scalar(select(OrganizationMembership).where(OrganizationMembership.organization_id == organization_id,
                                                         OrganizationMembership.user_id == user_id))
-    if row:
-        db.delete(row)
-        db.commit()
+    if row is None:
+        raise HTTPException(404, "Tài khoản chưa được cấp quyền xem nhóm.")
+    db.delete(row)
+    db.commit()
 
 
 @router.delete("/organizations/{organization_id}/fleet/{vehicle_id}", status_code=204)

@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from core.clock import BUSINESS_TZ
 from core.config import settings
+from core.vehicle_identity import canonical_identity
 from crud import parking_session as session_crud
 from models.parking_session import ParkingSession
 from models.monthly_pass import MonthlyPass
@@ -231,7 +232,7 @@ class CheckoutService:
             raise _error("checkout_confirmation_conflict", "Phiếu xem phí không thuộc lượt gửi hoặc nhân viên này.")
         try:
             session, vehicle = self._load(claims["session_id"])
-            if license_plate is not None and vehicle.license_plate != license_plate.strip().upper():
+            if license_plate is not None and canonical_identity(vehicle.license_plate) != canonical_identity(license_plate):
                 raise _error("checkout_confirmation_conflict", "Biển số không khớp với phiếu xem phí.")
             if session.status == "completed":
                 return self._replay(session, claims, confirmation, actor_id)

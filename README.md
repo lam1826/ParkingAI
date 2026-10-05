@@ -118,7 +118,15 @@ python backend\db_rollout.py --source backend\database\parking.db --copy-to C:\P
 ```
 
 `create_admin.py` không tự tạo bảng; script chỉ chạy khi database đã vượt qua
-schema readiness. Sau khi khởi động, dùng `GET /ready` (không chỉ `GET /`) để
+schema readiness. Từ bản sửa 05/10/2026, script bổ sung các vai trò chuẩn còn
+thiếu (`admin`, `manager`, `staff`, `customer`) và giữ nguyên vai trò đã có, để
+trang Tài khoản tạo được nhân viên ngay sau khi cài mới. Script kiểm tra tên
+đăng nhập và họ tên theo cùng quy tắc với trang quản lý tài khoản.
+
+Với DB SQLite đã có trước bản sửa 05/10/2026, hãy chạy lại `db_rollout.py` như trên.
+Bước preflight chỉ chấp nhận đúng các định nghĩa trigger cũ đã đóng băng
+(`backend/review_20261005_rollout.py`) rồi thay bằng predicate đã sửa. Trigger
+có thân lạ vẫn bị từ chối. PostgreSQL dùng Alembic head `20261005_12`. Sau khi khởi động, dùng `GET /ready` (không chỉ `GET /`) để
 xác nhận đúng DB đã được migration.
 
 `GET /ready` chạy ở chế độ `deep=False`: mở SQLite read-only rồi kiểm contract

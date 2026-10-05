@@ -105,16 +105,24 @@ def _payments(db, actor, site_id, date_from, date_to, shift_id=None):
 def payments(site_id: int, page: int = Query(1, ge=1), size: int = Query(25, ge=1, le=100),
              date_from: date | None = None, date_to: date | None = None, shift_id: str | None = Query(None, max_length=36),
              db=Depends(get_db), actor=Depends(get_current_user)):
+    from expansion.refund_service import direct_refund_state
     statement = _payments(db, actor, site_id, date_from, date_to, shift_id)
     total = db.scalar(select(func.count()).select_from(statement.subquery()))
     rows = db.scalars(statement.order_by(Payment.created_at.desc(), Payment.id).offset((page - 1) * size).limit(size))
-    return {"total": total, "page": page, "size": size, "items": [PaymentService.serialize(db, row) for row in rows]}
+    # The direct-refund block is server truth for the "Hoàn tiền" button.
+    return {"total": total, "page": page, "size": size, "items": [
+        {**PaymentService.serialize(db, row), **direct_refund_state(db, row)} for row in rows]}
 
 
 @router.get("/sites/{site_id}/revenue")
 def revenue(site_id: int, date_from: date | None = None, date_to: date | None = None,
             db=Depends(get_db), actor=Depends(get_current_user)):
-    start, end = date_from or business_now().date(), date_to or business_now().date()
+    # No bound at all keeps the "today" summary. With one bound the range is
+    # open-ended on the other side, exactly like the payments list it sums.
+    if date_from is None and date_to is None:
+        start = end = business_now().date()
+    else:
+        start, end = date_from, date_to
     rows = _payments(db, actor, site_id, start, end).where(Payment.method != "demo").subquery()
     signed = case((rows.c.kind == "refund", -rows.c.amount), else_=rows.c.amount)
     total, unassigned, count = db.execute(select(func.coalesce(func.sum(signed), 0),
@@ -140,7 +148,9 @@ def refund(site_id: int, identity: str, body: RefundCreate, db=Depends(get_db), 
     original = _row(db, actor, site_id, Payment, identity)
     if original.method == "demo":
         raise HTTPException(409, "Hoàn QR DEMO phải đi qua yêu cầu và phê duyệt tại cổng khách hàng.")
+    from expansion.refund_service import direct_refund
     def operation():
-        row = PaymentService.refund(db, identity, actor, **body.model_dump())
+        # Keep open requests in their workflow; stop started unused tickets.
+        row = direct_refund(db, actor, identity, **body.model_dump())
         return PaymentService.serialize(db, row)
     return _write(db, operation)

@@ -144,7 +144,11 @@ def serialize_quote(quote):
 
 def _unresolved_quotes(session_id, now):
     from expansion.online_payment_models import OnlinePaymentLink, OnlinePaymentInbox, OnlinePaymentProcessing
-    has_link = select(OnlinePaymentLink.id).where(OnlinePaymentLink.session_quote_id == SessionFeeQuote.id).exists()
+    from expansion.online_payment_service import never_delivered_link_clause
+    # A link payOS never created (no QR ever shown, no evidence) stops blocking once
+    # it is past expiry plus grace, even when no worker or refresh has closed it yet.
+    has_link = select(OnlinePaymentLink.id).where(OnlinePaymentLink.session_quote_id == SessionFeeQuote.id,
+        ~never_delivered_link_clause(now)).exists()
     waiting_evidence = select(OnlinePaymentInbox.id).join(OnlinePaymentProcessing,
         OnlinePaymentProcessing.id == OnlinePaymentInbox.id).join(OnlinePaymentLink,
         OnlinePaymentLink.id == OnlinePaymentInbox.link_id).where(
@@ -214,10 +218,17 @@ def create_quote(db, user, session_id, data, config, *, site_id=None, quote_sett
     # Terminal provider status alone cannot clear accepted but unprocessed money.
     if db.scalar(_unresolved_quotes(session_id, now).with_for_update().limit(1)):
         raise HTTPException(409, "Cần kiểm tra hoặc hủy đề nghị thanh toán hiện tại trước khi tạo đề nghị khác.")
-    previous = db.scalars(select(SessionFeeQuote).where(SessionFeeQuote.session_id == session_id,
-        SessionFeeQuote.status == "pending").with_for_update())
+    previous = list(db.scalars(select(SessionFeeQuote).where(SessionFeeQuote.session_id == session_id,
+        SessionFeeQuote.status == "pending").with_for_update()))
+    from expansion.online_payment_models import OnlinePaymentLink
+    from expansion.online_payment_service import close_never_delivered_link
     for old in previous:
-        old.status = "expired"  # Only expired, unmapped proposals survived the query above.
+        # Only expired proposals that are unmapped, or mapped to a link payOS never
+        # created, survived the query above. Close such a link with its proposal.
+        old_link = db.scalar(select(OnlinePaymentLink).where(OnlinePaymentLink.session_quote_id == old.id).with_for_update())
+        if old_link is not None:
+            close_never_delivered_link(db, old, old_link, now)
+        old.status = "expired"
     db.flush()
     seconds = 3600 if basis["ticket_type"] == "HOURLY" else 86400
     paid_through = basis["billable_from"] + timedelta(seconds=basis["billable_blocks"] * seconds)

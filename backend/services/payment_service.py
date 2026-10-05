@@ -25,14 +25,17 @@ def signed_exact_vnd(value: int, *, label: str = "Tổng tiền") -> int:
 def lock_cash_operator(db: Session, staff_id: int) -> None:
     """Serialize collection/open/close for the operator in this transaction.
 
-    PostgreSQL locks the user row. SQLite's no-op write acquires the database
-    writer lock even when the session already made authentication reads.
+    PostgreSQL NO KEY UPDATE locks serialize money operations while allowing
+    admission's implicit user FK KEY SHARE locks to finish. FOR UPDATE would
+    deadlock if admission owns a vehicle that the cash operation needs.
+    SQLite's no-op write acquires the database writer lock even when the
+    session already made authentication reads.
     """
     if db.get_bind().dialect.name == "sqlite":
         result = db.execute(text("UPDATE users SET id = id WHERE id = :staff_id"), {"staff_id": staff_id})
         found = result.rowcount > 0
     else:
-        found = db.execute(select(User.id).where(User.id == staff_id).with_for_update()).scalar_one_or_none() is not None
+        found = db.execute(select(User.id).where(User.id == staff_id).with_for_update(key_share=True)).scalar_one_or_none() is not None
     if not found:
         raise HTTPException(404, "Nhân viên thu tiền không tồn tại.")
 
@@ -63,8 +66,13 @@ class PaymentService:
     def record_receipt(
         db: Session, source_type: str, source_id, amount: int,
         collected_by_id: int | None, method: str = "cash", created_at: datetime | None = None,
+        counter_site_id: int | None = None,
     ) -> Payment:
-        """Idempotently collect once per source; flush only, never commit."""
+        """Idempotently collect once per source; flush only, never commit.
+
+        ``counter_site_id`` attributes a counter-sold monthly period, which has
+        no portal order to own its site. A source that owns a site keeps it.
+        """
         if source_type not in {"parking_session", "monthly_pass", "portal_order", "session_credit"} or method not in {"cash", "transfer", "demo"}:
             raise HTTPException(422, "Nguồn thu hoặc phương thức thanh toán không hợp lệ.")
         if source_type == "session_credit" and (method != "transfer" or collected_by_id is not None):
@@ -86,6 +94,10 @@ class PaymentService:
             return existing
         when = created_at or business_now()
         site_id = PaymentService.source_site(db, source_type, source_id)
+        if counter_site_id is not None:
+            if source_type != "monthly_pass" or (site_id is not None and site_id != counter_site_id):
+                raise HTTPException(409, "Nguồn thu đã thuộc bãi khác; không thể ghi nhận tại bãi đã chọn.")
+            site_id = counter_site_id
         if when.tzinfo is not None:
             when = when.astimezone(BUSINESS_TZ).replace(tzinfo=None)
         shift = None

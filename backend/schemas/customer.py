@@ -12,7 +12,8 @@ from typing import Optional
 class CustomerBase(BaseModel):
     full_name: str = Field(min_length=1, max_length=100)
     phone_number: str = Field(min_length=1, max_length=20)
-    email: Optional[EmailStr] = None
+    # customers.email is VARCHAR(100): reject longer addresses with 422 instead of a DB error (#68).
+    email: Optional[EmailStr] = Field(default=None, max_length=100)
 
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
@@ -32,7 +33,7 @@ class CustomerCreate(CustomerBase):
 class CustomerUpdate(BaseModel):
     full_name: Optional[str] = Field(default=None, min_length=1, max_length=100)
     phone_number: Optional[str] = Field(default=None, min_length=1, max_length=20)
-    email: Optional[EmailStr] = None
+    email: Optional[EmailStr] = Field(default=None, max_length=100)
 
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 

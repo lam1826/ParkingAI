@@ -398,12 +398,12 @@ def ingest_observation(db, camera, metadata, prepared, edge_token_hash=None, *, 
     if count >= 30:
         raise HTTPException(429, "Camera đạt giới hạn 30 ảnh/phút. Vui lòng đợi.")
     purge_expired(db, camera.site_id)
-    if capture_source in {"live_camera", "edge"} and prepared.recognition.get("ocr_status") == "no_plate":
+    if capture_source in {"live_camera", "edge"} and prepared.recognition.get("ocr_status") != "recognized":
         unreadable = db.scalar(select(func.count()).select_from(VisionObservation).where(
             VisionObservation.camera_id == camera.id,
             VisionObservation.site_id == camera.site_id,
             VisionObservation.capture_source.in_(("live_camera", "edge")),
-            VisionObservation.ocr_status == "no_plate",
+            VisionObservation.ocr_status != "recognized",
             VisionObservation.review_status == "pending",
         ))
         if unreadable >= MAX_CAMERA_UNREADABLE_LIVE_OBSERVATIONS:

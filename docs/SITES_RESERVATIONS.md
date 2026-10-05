@@ -121,5 +121,6 @@ Khi đã có ít nhất một bãi trong dữ liệu, API v1 nhận xe yêu cầ
 - **Xe vào / ra** chọn loại xe và vị trí còn nhận xe; tra cứu biển số chính xác để mở hộp xem phí và xác nhận thu tiền. Checkout dùng cùng chữ ký, hạn hiệu lực và cơ chế thử lại yêu cầu đã gửi như luồng hiện có.
 - **Đặt chỗ**, **Bảo đảm chỗ**, **Danh sách chờ** dùng ô tìm biển số của xe đã đăng ký khách hàng. Mỗi yêu cầu có mã chống gửi lặp. Nếu mạng gián đoạn, kiểm tra lịch trước khi chọn **Nhập yêu cầu mới**.
 - Khách mở **Đặt chỗ của tôi** (`/reservations`), chọn bãi và xe đã duyệt. Khách được hủy đặt chỗ hoặc rời danh sách chờ của mình; không tự xác nhận xe đến.
-- **Đội xe** hiển thị nhóm và lịch sử trong phạm vi đã cấp quyền. Quản lý thêm xe bằng ô tìm biển số; cấp/thu hồi quyền xem bằng mã tài khoản. Đây là báo cáo lượt gửi của nhóm, không phải công nợ doanh nghiệp.
+- **Đội xe** hiển thị nhóm và lịch sử trong phạm vi đã cấp quyền. Quản lý thêm xe bằng ô tìm biển số. Đây là báo cáo lượt gửi của nhóm, không phải công nợ doanh nghiệp.
+- Từ bản sửa ngày 05/10/2026 (lỗi #86), giao diện không còn ô "cấp/thu hồi quyền xem bằng mã tài khoản". Lý do: tài khoản nhân viên được cấp quyền vẫn bị chặn, còn khách thì chưa có màn hình nào để xem nhóm, nên form đó là ngõ cụt. API quản lý vẫn chỉ cấp quyền cho tài khoản khách, có kiểm tra quyền và ghi audit. Màn hình đội xe cho khách chưa nằm trong phạm vi đồ án một bãi.
 - Sau khi nhân viên xác nhận ảnh tại `/vision`, trang bãi chỉ điền sẵn biển số và chế độ tìm xe vào/ra. Người dùng kiểm tra rồi mới xác nhận nghiệp vụ.

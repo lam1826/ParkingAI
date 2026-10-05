@@ -7,6 +7,14 @@ class LoginRequest(BaseModel):
     username: str = Field(..., description="Tên đăng nhập")
     password: str = Field(..., description="Mật khẩu")
 
+    # Usernames are stored stripped (registration/profile/user admin all strip),
+    # so surrounding whitespace from phone keyboards is never significant.
+    # The password is used verbatim.
+    @field_validator("username", mode="before")
+    @classmethod
+    def strip_username(cls, value):
+        return value.strip() if isinstance(value, str) else value
+
 
 class RegisterRequest(BaseModel):
     username: str = Field(min_length=3, max_length=50, pattern=r"^[A-Za-z0-9_.-]+$")
@@ -15,13 +23,11 @@ class RegisterRequest(BaseModel):
     role: Literal["customer", "manager", "admin"] = "customer"
     registration_code: Optional[str] = Field(default=None, max_length=255)
 
-    @field_validator("username", "full_name")
+    # Strip BEFORE the length/pattern checks so " a" cannot be stored as "a".
+    @field_validator("username", "full_name", mode="before")
     @classmethod
-    def strip_text(cls, value: str) -> str:
-        value = value.strip()
-        if not value:
-            raise ValueError("Trường này không được để trống")
-        return value
+    def strip_text(cls, value):
+        return value.strip() if isinstance(value, str) else value
 
     @field_validator("password")
     @classmethod

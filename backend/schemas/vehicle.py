@@ -2,6 +2,8 @@ from typing import Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from core.vehicle_identity import validate_supplied_identity
+
 from schemas.customer import CustomerResponse
 from schemas.vehicle_type import VehicleTypeResponse
 
@@ -23,7 +25,10 @@ class VehicleBase(BaseModel):
 
 
 class VehicleCreate(VehicleBase):
-    pass
+    @field_validator("license_plate")
+    @classmethod
+    def validate_plate(cls, value):
+        return validate_supplied_identity(value)
 
 
 class VehicleUpdate(BaseModel):

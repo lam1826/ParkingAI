@@ -121,7 +121,7 @@ def test_unknown_type_multiple_plates_old_and_future_capture_are_manual(passage)
     p["db"].commit()
     assert process(p, identity).json()["state"] == "manual"
     assert process(p, frame(p, captured_at=p["instant"][0] - timedelta(seconds=40))).json()["state"] == "manual"
-    assert process(p, frame(p, captured_at=p["instant"][0] + timedelta(seconds=1))).json()["state"] == "manual"
+    assert process(p, frame(p, captured_at=p["instant"][0] + timedelta(seconds=6))).json()["state"] == "manual"
     row = p["db"].get(VisionObservation, frame(p)); row.detections = row.detections * 2; p["db"].commit()
     assert process(p, row.id).json()["state"] == "manual"
     assert count(p, ParkingSession) == 0

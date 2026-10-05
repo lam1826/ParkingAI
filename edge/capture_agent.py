@@ -29,6 +29,14 @@ class CaptureError(RuntimeError):
     """A sanitized actionable failure, without source URLs or HTTP headers."""
 
 
+class CaptureBusyError(CaptureError):
+    """Every attempt was rejected before storage; this frame can be discarded."""
+
+    def __init__(self, retry_after):
+        super().__init__("The upload slot remained busy; retry capture after backoff.")
+        self.retry_after = retry_after
+
+
 @dataclass(frozen=True)
 class CaptureEvent:
     camera_id: int
@@ -64,6 +72,7 @@ def deliver_event(client, event, token, *, attempts=4, sleep=time.sleep):
         raise CaptureError("Configure a valid camera token in the selected environment variable.")
     if type(attempts) is not int or not 1 <= attempts <= 8:
         raise CaptureError("Retry attempts must be between 1 and 8.")
+    only_busy = True
     for attempt in range(attempts):
         delay = min(2 ** attempt, 10)
         try:
@@ -75,6 +84,8 @@ def deliver_event(client, event, token, *, attempts=4, sleep=time.sleep):
                 files={"file": ("capture.jpg", event.jpeg, "image/jpeg")},
                 follow_redirects=False,
             )
+            if response.status_code != 429:
+                only_busy = False
             if response.status_code == 201:
                 try:
                     data = response.json()
@@ -94,9 +105,12 @@ def deliver_event(client, event, token, *, attempts=4, sleep=time.sleep):
                 if retry_after.isascii() and retry_after.isdigit():
                     delay = min(max(int(retry_after), delay), 30)
         except httpx.TransportError:
+            only_busy = False
             pass  # Never log an exception carrying a camera token or URL.
         if attempt + 1 < attempts:
             sleep(delay)
+    if only_busy:
+        raise CaptureBusyError(delay)
     raise CaptureError("Delivery remains unconfirmed after bounded retries; check the inbox before restarting capture.")
 
 
@@ -254,7 +268,17 @@ def main():
                 for jpeg, stamp in frames:
                     event = CaptureEvent.create(args.camera_id, jpeg, stamp)
                     pending_id = event.event_id
-                    result = deliver_event(client, event, token)
+                    try:
+                        result = deliver_event(client, event, token)
+                    except CaptureBusyError as busy:
+                        # 429 proves this frame was rejected. Back off and take
+                        # a fresh frame from the bounded latest-frame queue.
+                        pending_id = None
+                        print(json.dumps({"status": "backoff", "accepted": count,
+                                          "skipped_event_id": event.event_id,
+                                          "retry_after": busy.retry_after}), flush=True)
+                        time.sleep(busy.retry_after)
+                        continue
                     count += 1
                     pending_id = None
                     print(json.dumps({**result, "source_kind": kind, "accepted": count}), flush=True)

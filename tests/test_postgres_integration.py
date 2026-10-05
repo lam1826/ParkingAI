@@ -582,7 +582,9 @@ def test_postgres_parallel_checkouts_same_cashier_do_not_upgrade_fk_locks():
 
         def before_operator_lock(connection, cursor, statement, parameters, context, executemany):
             sql = " ".join(statement.upper().split())
-            if "FROM USERS" not in sql or "FOR UPDATE" not in sql:
+            # Review 05/10/2026: the cash-operator lock is FOR NO KEY UPDATE on PostgreSQL
+            # (still exclusive between money operations, compatible with FK KEY SHARE).
+            if "FROM USERS" not in sql or not any(clause in sql for clause in ("FOR UPDATE", "FOR NO KEY UPDATE")):
                 return
             with seen_lock:
                 first = get_ident() not in seen

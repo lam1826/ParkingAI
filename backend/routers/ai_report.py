@@ -256,7 +256,9 @@ def create_weekly_report(
         hour = hour_bucket(ParkingSession.check_in_time)
         rows = db.execute(
             select(hour.label("hour"), func.count(ParkingSession.id).label("count"))
-            .where(ParkingSession.check_in_time >= range_start, ParkingSession.check_in_time < range_end)
+            # Same rule as get_daily_summaries: a cancelled admission is not traffic (#62).
+            .where(ParkingSession.check_in_time >= range_start, ParkingSession.check_in_time < range_end,
+                   ParkingSession.status != "cancelled")
             .group_by(hour).order_by(hour)
         ).all()
         hourly_traffic = [{"time_label": f"{int(row.hour):02d}:00", "total_vehicles": row.count} for row in rows]

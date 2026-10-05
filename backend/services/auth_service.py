@@ -85,7 +85,8 @@ class AuthService:
         password: str
     ) -> User:
         """Truy vấn DB và xác thực thông tin người dùng (Đồng bộ)."""
-        # Sử dụng cú pháp query đồng bộ thay vì execute async
+        # Stored usernames never contain surrounding whitespace (JSON and OAuth form login).
+        username = username.strip() if isinstance(username, str) else username
         user = db.query(User).filter(User.username == username).first()
         
         if not user or not self.verify_password(password, str(user.password_hash)):

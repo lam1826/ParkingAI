@@ -57,6 +57,7 @@ class SiteCheckIn(StrictBody):
     license_plate: str = Field(default="", max_length=20)
     vehicle_type_id: int = Field(gt=0)
     parking_slot_id: int | None = Field(default=None, gt=0)
+    declared_booking_id: str | None = Field(default=None, min_length=36, max_length=36)
 
 
 class OrganizationCreate(StrictBody):

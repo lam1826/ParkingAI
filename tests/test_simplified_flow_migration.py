@@ -65,10 +65,24 @@ def test_frozen_guards_and_schema_chain_are_explicit_and_readiness_tracks_new_co
     customer, camera = frozen("20260923_08"), frozen("20260923_09")
     assert customer["down_revision"] == "20260916_07"
     assert camera["down_revision"] == customer["revision"]
-    assert SIMPLIFIED_POSTGRES_GUARD_SQL in customer["UPGRADE_SQL"]
+    # Review 05/10/2026: migration 11 thay thân một số hàm guard (sửa predicate
+    # admission). Mỗi khối SQL hiện hành phải nằm nguyên văn trong migration 08
+    # đã đóng băng hoặc trong migration 11; không khối nào trôi tự do.
+    admission = frozen("20261005_11")
+    frozen_08 = "\n".join(customer["UPGRADE_SQL"])
+    blocks = [b.strip() for b in re.split(r"(?=CREATE OR REPLACE FUNCTION |CREATE TRIGGER )", SIMPLIFIED_POSTGRES_GUARD_SQL) if b.strip()]
+    assert blocks and all(b in frozen_08 or b in admission["POSTGRES_SQL"] for b in blocks)
+    assert {b.split("(")[0] for b in blocks if b not in frozen_08} == {
+        "CREATE OR REPLACE FUNCTION trg_declared_booking_source_fn",
+        "CREATE OR REPLACE FUNCTION trg_declared_session_insert_fn",
+        "CREATE OR REPLACE FUNCTION trg_declared_session_activate_fn",
+    }
     history = frozen("20260927_10")
     assert history["down_revision"] == camera["revision"]
-    assert readiness.POSTGRES_SCHEMA_REVISION == history["revision"]
+    finance = frozen("20261005_12")
+    assert admission["down_revision"] == history["revision"]
+    assert finance["down_revision"] == admission["revision"]
+    assert readiness.POSTGRES_SCHEMA_REVISION == finance["revision"]
     assert CUSTOMER | CAMERA <= readiness.REQUIRED_TABLES
     assert set(re.findall(r"CREATE TRIGGER (\w+)", SIMPLIFIED_POSTGRES_GUARD_SQL)) <= readiness.REQUIRED_TRIGGERS
     assert {"vehicle_types.requires_plate:boolean::NO", "vehicle_types.code_prefix:character varying:8:YES",

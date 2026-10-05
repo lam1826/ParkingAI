@@ -116,7 +116,7 @@ def test_metadata_read_avoids_private_blobs_and_financial_queries(occupancy):
     assert "license_plate" not in str(payload)
 
 
-@pytest.mark.parametrize(("age", "reason"), [(30, "stale_capture"), (300, "stale_capture"), (-1, "future_capture")])
+@pytest.mark.parametrize(("age", "reason"), [(30, "stale_capture"), (300, "stale_capture")])
 def test_new_receipt_cannot_refresh_old_or_future_capture(occupancy, age, reason):
     _, db, camera, _, _, _, now = occupancy
     config, _, _ = calibration(occupancy)

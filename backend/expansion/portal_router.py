@@ -15,8 +15,8 @@ from expansion.portal_schemas import (
     ProfileCreate, LinkRequest, VehicleRequest, PlanCreate, OrderCreate,
     Simulation, Resolution, ManualCollection, RefundCreate, PlanUpdate,
 )
-from expansion.site_models import ParkingSite
-from expansion.site_scope import allowed_site_ids
+from expansion.site_models import ParkingSite, SiteMembership
+from expansion.site_scope import is_global_admin
 from models.customer import Customer
 from models.vehicle import Vehicle
 from models.vehicle_type import VehicleType
@@ -30,6 +30,19 @@ from models.user import User
 router = APIRouter(tags=["Customer portal / DEMO payments"])
 manager = RoleChecker("manager")
 admin = RoleChecker("admin")
+
+
+def managed_site_ids(db, actor):
+    """Active sites where the actor may act as manager (global admin, or manager-role
+    account with a *manager* membership). A manager whose membership at a site is
+    only 'staff' is a demoted manager there and must not read its portal data."""
+    query = select(ParkingSite.id).where(ParkingSite.is_active.is_(True))
+    if is_global_admin(actor):
+        return query
+    if not actor.is_active or not actor.role or actor.role.name != "manager":
+        return query.where(False)
+    return query.where(ParkingSite.id.in_(select(SiteMembership.site_id).where(
+        SiteMembership.user_id == actor.id, SiteMembership.role == "manager")))
 
 
 def fields(row, *names):
@@ -50,9 +63,12 @@ def write(db, operation):
 
 
 def location(db, session):
+    # site_id lets a single-site customer screen leave other sites' stays out of
+    # its support-link choices (review 05/10 #76); None = the stay has no slot.
     slot = db.get(ParkingSlot, session.parking_slot_id) if session.parking_slot_id else None
     zone = db.get(Zone, slot.zone_id) if slot else None
-    return {"slot_name": slot.slot_name if slot else None, "zone_name": zone.name if zone else None}
+    return {"slot_name": slot.slot_name if slot else None, "zone_name": zone.name if zone else None,
+            "site_id": zone.site_id if zone else None}
 
 
 @router.get("/me/profile")
@@ -71,12 +87,12 @@ def profile_create(data: ProfileCreate, db=Depends(get_db), user=Depends(get_cur
 @router.post("/me/link-requests")
 def link_request(data: LinkRequest, db=Depends(get_db), user=Depends(get_current_user)):
     row = write(db, lambda: service.request_link(db, user, data))
-    return fields(row, "id", "status", "created_at")
+    return fields(row, "id", "status", "phone_number", "note", "created_at")
 
 
 @router.get("/me/link-requests")
 def links(db=Depends(get_db), user=Depends(get_current_user)):
-    return {"items": [fields(row, "id", "status", "created_at") for row in db.scalars(
+    return {"items": [fields(row, "id", "status", "phone_number", "note", "created_at") for row in db.scalars(
         select(PortalLinkRequest).where(PortalLinkRequest.user_id == user.id).order_by(PortalLinkRequest.created_at.desc()).limit(100))]}
 
 
@@ -88,7 +104,7 @@ def vehicle_types(db=Depends(get_db), user=Depends(get_current_user)):
 @router.post("/me/vehicle-requests")
 def vehicle_request(data: VehicleRequest, db=Depends(get_db), user=Depends(get_current_user)):
     row = write(db, lambda: service.request_vehicle(db, user, data))
-    return fields(row, "id", "status", "license_plate", "vehicle_type_id", "created_at")
+    return fields(row, "id", "status", "license_plate", "vehicle_type_id", "note", "created_at")
 
 
 @router.get("/me/vehicle-requests")
@@ -110,7 +126,7 @@ def vehicles(db=Depends(get_db), user=Depends(get_current_user)):
             PortalSessionGrant.parking_session_id == ParkingSession.id).where(
             ParkingSession.vehicle_id == row.id, ParkingSession.status.in_(["active", "checking_out"]),
             PortalSessionGrant.customer_id == customer.id).limit(1))
-        item.update(location(db, active) if active else {"slot_name": None, "zone_name": None})
+        item.update(location(db, active) if active else {"slot_name": None, "zone_name": None, "site_id": None})
         item["current_session_id"] = active.id if active else None
         item["current_slot"] = item["slot_name"]
         items.append(item)
@@ -146,7 +162,8 @@ def passes(limit: int = Query(50, ge=1, le=100), offset: int = Query(0, ge=0), d
 def plans(db=Depends(get_db), user=Depends(get_current_user)):
     from expansion.online_payment_service import available_payment_modes
     from expansion.gateway import DemoGateway
-    demo_enabled = DemoGateway().settings.DEMO_PAYMENTS_ENABLED
+    portal_settings = DemoGateway().settings
+    demo_enabled = portal_settings.DEMO_PAYMENTS_ENABLED
     rows = db.execute(select(SubscriptionPlan, ParkingSite.name, VehicleType.name, ParkingSite.customer_booking_mode).join(ParkingSite,
         ParkingSite.id == SubscriptionPlan.site_id).join(VehicleType, VehicleType.id == SubscriptionPlan.vehicle_type_id)
         .where(SubscriptionPlan.is_active.is_(True), ParkingSite.is_active.is_(True), VehicleType.is_active.is_(True)).order_by(SubscriptionPlan.id))
@@ -157,6 +174,8 @@ def plans(db=Depends(get_db), user=Depends(get_current_user)):
     return {"items": [{**fields(row, "id", "name", "site_id", "vehicle_type_id", "duration_days", "price", "product_kind", "duration_minutes"),
         "site_name": site_name, "type_name": type_name, "customer_booking_mode": mode,
         "payment_modes": available_payment_modes(row.site_id, demo_enabled),
+        # Monthly orders must be paid within this window after creation (counter or online).
+        "payment_window_minutes": portal_settings.PORTAL_ORDER_TTL_MINUTES if row.product_kind == "monthly" else None,
         "eligible_zones": zones.get((row.site_id, row.vehicle_type_id), []) if row.product_kind != "monthly" else []}
         for row, site_name, type_name, mode in rows]}
 
@@ -290,7 +309,7 @@ def admin_links(db=Depends(get_db), actor=Depends(manager)):
 
 @router.post("/portal/admin/link-requests/{identity}/resolve")
 def admin_link_resolve(identity: str, data: Resolution, db=Depends(get_db), actor=Depends(manager)):
-    row = write(db, lambda: service.resolve_link(db, actor, identity, data.approve))
+    row = write(db, lambda: service.resolve_link(db, actor, identity, data.approve, data.note))
     return fields(row, "id", "status")
 
 
@@ -311,7 +330,7 @@ def admin_vehicles(db=Depends(get_db), actor=Depends(manager)):
 
 @router.post("/portal/admin/vehicle-requests/{identity}/resolve")
 def admin_vehicle_resolve(identity: str, data: Resolution, db=Depends(get_db), actor=Depends(manager)):
-    row = write(db, lambda: service.resolve_vehicle(db, actor, identity, data.approve))
+    row = write(db, lambda: service.resolve_vehicle(db, actor, identity, data.approve, data.note))
     return fields(row, "id", "status")
 
 
@@ -350,7 +369,7 @@ def admin_plans(db=Depends(get_db), actor=Depends(manager)):
     from expansion.site_scope import is_global_admin
     query = select(SubscriptionPlan).order_by(SubscriptionPlan.id)
     if not is_global_admin(actor):
-        query = query.where(SubscriptionPlan.site_id.in_(allowed_site_ids(db, actor)))
+        query = query.where(SubscriptionPlan.site_id.in_(managed_site_ids(db, actor)))
     rows = db.scalars(query)
     return {"items": [{**fields(row, "id", "name", "site_id", "vehicle_type_id", "duration_days", "price", "is_active", "product_kind", "duration_minutes"),
         "site_name": db.get(ParkingSite, row.site_id).name if row.site_id else None,
@@ -365,13 +384,14 @@ def admin_plan_update(identity: int, data: PlanUpdate, db=Depends(get_db), actor
 
 @router.get("/portal/admin/orders")
 def admin_orders(limit: int = Query(50, ge=1, le=100), offset: int = Query(0, ge=0), db=Depends(get_db), actor=Depends(manager)):
-    rows = db.scalars(select(PortalOrder).where(PortalOrder.site_id.in_(allowed_site_ids(db, actor)))
+    rows = db.scalars(select(PortalOrder).where(PortalOrder.site_id.in_(managed_site_ids(db, actor)))
         .order_by(PortalOrder.created_at.desc(), PortalOrder.id).offset(offset).limit(limit)).all()
     from expansion.timed_parking_service import order_details_many
     details = order_details_many(db, rows)
     return {"items": [{**service.serialize_order(row, details=details[row.id]), "customer_name": db.get(Customer, row.customer_id).full_name,
         "username": db.get(User, row.user_id).username, "license_plate": db.get(Vehicle, row.vehicle_id).license_plate,
-        "site_name": db.get(ParkingSite, row.site_id).name} for row in rows]}
+        "site_name": db.get(ParkingSite, row.site_id).name,
+        "review_actions": service.manager_review_actions(row)} for row in rows]}
 
 
 @router.post("/portal/admin/orders/{identity}/collect")
@@ -390,7 +410,7 @@ def admin_refunds(db=Depends(get_db), actor=Depends(manager)):
     """Every site the manager may act on: receipt-based requests plus legacy DEMO rows."""
     from expansion import refund_service
     from expansion.support_models import PaymentRefundRequest
-    scoped = allowed_site_ids(db, actor)
+    scoped = managed_site_ids(db, actor)
     rows = db.execute(select(PaymentRefundRequest, Customer).join(Customer, Customer.id == PaymentRefundRequest.customer_id)
         .where(PaymentRefundRequest.site_id.in_(scoped))
         .order_by(PaymentRefundRequest.created_at.desc(), PaymentRefundRequest.id).limit(100)).all()

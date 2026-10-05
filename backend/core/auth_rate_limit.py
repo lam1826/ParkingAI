@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, timezone
 
 from fastapi import HTTPException, Request, status
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from core.client_ip import get_client_ip
@@ -24,6 +24,11 @@ def _recent_attempt_count(
         AuditLog.action == action,
         AuditLog.ip_address == ip_address,
         AuditLog.created_at >= cutoff,
+        # The limiter's own 429 rejections are audited but never counted, so a
+        # lock ends one window after the real attempts even while someone on the
+        # same IP keeps retrying.
+        or_(AuditLog.status_code.is_(None),
+            AuditLog.status_code != status.HTTP_429_TOO_MANY_REQUESTS),
     )
     if failures_only:
         query = query.where(AuditLog.success.is_(False))

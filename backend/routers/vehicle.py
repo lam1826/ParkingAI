@@ -122,9 +122,19 @@ def update_vehicle(id: int, vehicle_in: vehicle_schema.VehicleUpdate, db: Sessio
     if not db_vehicle:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vehicle not found")
     
+    # Response forms normalize display spelling. Preserve the stored bytes
+    # when that display value is unchanged, including immutable legacy plates.
+    if (vehicle_in.license_plate is not None
+            and vehicle_in.license_plate == db_vehicle.license_plate.strip().upper()):
+        vehicle_in.license_plate = db_vehicle.license_plate
+
     # Kiểm tra nếu đổi biển số thì biển mới có bị trùng với xe khác không
     if vehicle_in.license_plate and vehicle_in.license_plate != db_vehicle.license_plate:
-        from core.vehicle_identity import lock_identity, resolve_vehicle
+        from core.vehicle_identity import lock_identity, resolve_vehicle, validate_supplied_identity
+        try:
+            vehicle_in.license_plate = validate_supplied_identity(vehicle_in.license_plate)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
         lock_identity(db, vehicle_in.vehicle_type_id or db_vehicle.vehicle_type_id, vehicle_in.license_plate)
         existing_vehicle = resolve_vehicle(db, vehicle_in.license_plate)
         if existing_vehicle and existing_vehicle.id != db_vehicle.id:

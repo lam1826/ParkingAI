@@ -6,7 +6,9 @@ from pydantic import BaseModel, ConfigDict, Field, StrictInt, field_validator
 from core.money import MAX_EXACT_VND
 
 PaymentMethod = Literal["cash", "transfer"]
-PaymentSource = Literal["parking_session", "monthly_pass"]
+# Every source the ledger stores (ck_payment_source); a narrower list made
+# the legacy list/detail/refund endpoints fail validation with HTTP 500.
+PaymentSource = Literal["parking_session", "monthly_pass", "portal_order", "session_credit"]
 PaymentKind = Literal["receipt", "refund"]
 
 

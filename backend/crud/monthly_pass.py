@@ -64,7 +64,7 @@ def get_monthly_passes(db: Session, skip: int = 0, limit: int = 100):
     return db.execute(stmt).scalars().all()
 
 def create_monthly_pass(db: Session, pass_in: monthly_pass_schema.MonthlyPassCreate) -> MonthlyPass:
-    db_pass = MonthlyPass(**pass_in.model_dump(exclude={"payment_method"}))
+    db_pass = MonthlyPass(**pass_in.model_dump(exclude={"payment_method", "site_id"}))
     db.add(db_pass)
     try:
         db.commit()

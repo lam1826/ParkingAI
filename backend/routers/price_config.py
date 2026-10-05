@@ -4,6 +4,7 @@ from typing import List
 
 from database import get_db
 from services.auth_service import RoleChecker
+from core.clock import business_today
 from schemas import price_config as price_config_schema
 from crud import price_config as crud_price_config
 
@@ -42,6 +43,27 @@ def _raise_if_active_rate_is_in_use(
             ),
         )
 
+def _raise_if_active_rate_not_in_force(*, effective_date, is_active) -> None:
+    """An ACTIVE rate must already be in force today (#58, review 2026-10-05).
+
+    Only one active rate per vehicle type is allowed, and admission refuses a
+    not-yet-effective rate (even for monthly-pass holders, who need a fallback
+    rate). A future effective_date on the active rate therefore leaves the type
+    with no rate today and stops every check-in of that type until the date.
+    Scheduling a future rate is not supported, so refuse that state up front.
+    """
+    today = business_today()
+    if is_active and effective_date is not None and effective_date > today:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"Ngày áp dụng của bảng giá đang áp dụng không được sau hôm nay ({today:%d/%m/%Y}). "
+                "Ngày trong tương lai làm loại xe không có giá cho hôm nay và mọi lượt nhận xe loại này "
+                "(kể cả xe có vé tháng) sẽ bị từ chối. Hệ thống chưa hỗ trợ hẹn trước bảng giá: "
+                "hãy giữ bảng giá hiện tại và đổi giá vào đúng ngày áp dụng, hoặc lưu bảng giá mới ở trạng thái ngừng áp dụng."
+            ),
+        )
+
 @router.get("", response_model=List[price_config_schema.PriceConfigResponse])
 def read_price_configs(
     skip: int = Query(0, ge=0),
@@ -63,6 +85,7 @@ def read_price_config(id: int, db: Session = Depends(get_db)):
              dependencies=[Depends(RoleChecker("manager"))])
 def create_price_config(config_in: price_config_schema.PriceConfigCreate, db: Session = Depends(get_db)):
     """Tạo cấu hình giá mới"""
+    _raise_if_active_rate_not_in_force(effective_date=config_in.effective_date, is_active=config_in.is_active)
     # Bất biến: mỗi loại xe chỉ có tối đa MỘT bảng giá active tại một thời điểm
     if config_in.is_active:
         active_config = crud_price_config.get_active_price_by_vehicle_type(
@@ -105,6 +128,10 @@ def update_price_config(id: int, config_in: price_config_schema.PriceConfigUpdat
 
     merged_vehicle_type_id = update_data.get("vehicle_type_id", db_config.vehicle_type_id)
     merged_is_active = update_data.get("is_active", db_config.is_active)
+    _raise_if_active_rate_not_in_force(
+        effective_date=update_data.get("effective_date", db_config.effective_date),
+        is_active=merged_is_active,
+    )
 
     if merged_is_active:
         conflict = crud_price_config.get_active_price_by_vehicle_type(

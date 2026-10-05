@@ -3,6 +3,30 @@ from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from models.role import Role
 from schemas import role as role_schema
+from core.roles import ROLE_HIERARCHY
+
+CANONICAL_ROLE_DESCRIPTIONS = {
+    "admin": "Quản trị viên hệ thống",
+    "manager": "Quản lý bãi đỗ xe",
+    "staff": "Nhân viên vận hành bãi",
+    "customer": "Khách hàng",
+}
+
+
+def ensure_canonical_roles(db: Session) -> list[str]:
+    """Add any missing canonical role (flush only); existing rows are untouched.
+
+    Returns the names created. The caller owns the transaction.
+    """
+    existing = set(db.scalars(select(Role.name)).all())
+    created = []
+    for name in sorted(ROLE_HIERARCHY, key=ROLE_HIERARCHY.get, reverse=True):
+        if name not in existing:
+            db.add(Role(name=name, description=CANONICAL_ROLE_DESCRIPTIONS[name]))
+            created.append(name)
+    if created:
+        db.flush()
+    return created
 
 def get_role(db: Session, role_id: int) -> Role | None:
     # Chuẩn SQLAlchemy 2.x sử dụng select()

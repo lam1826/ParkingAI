@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import func, or_, select, text
+from sqlalchemy import delete, func, or_, select, text
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 from typing import List
@@ -12,7 +12,7 @@ from models.user import User
 from services.auth_service import get_current_user
 from services.auth_service import RoleChecker
 from expansion.site_models import ParkingSite, SiteMembership
-from expansion.site_scope import require_site_access
+from expansion.site_scope import require_public_site, require_site_access
 
 # Không cần khai báo prefix ở đây vì sẽ được gộp ở main.py
 router = APIRouter()
@@ -49,6 +49,23 @@ def _lock_user(db: Session, user_id: int):
     if user is not None:
         db.refresh(user, ["role"])
     return user
+
+
+_SITE_ROLES = {"staff", "manager"}
+
+
+def _admin_assignment_site(db: Session, role_name: str, site_id: int | None):
+    """Lot an Admin-created operator joins: the chosen lot or the only active lot."""
+    if role_name not in _SITE_ROLES:
+        if site_id is not None:
+            raise HTTPException(422, "Chỉ tài khoản nhân viên hoặc quản lý được phân công vào bãi.")
+        return None
+    if site_id is not None:
+        return require_public_site(db, site_id)
+    active = db.scalars(select(ParkingSite).where(ParkingSite.is_active.is_(True))
+                        .order_by(ParkingSite.id).limit(2)).all()
+    # Several active lots: the Admin assigns one later in Cấu hình bãi.
+    return active[0] if len(active) == 1 else None
 
 
 def _staff_members(db: Session, site_id: int):
@@ -184,13 +201,22 @@ def create_user(user_in: user_schema.UserCreate, db: Session = Depends(get_db),
 
     try:
         if current_user.role.name == "admin":
-            return crud_user.create_user(db=db, user_in=user_in)
+            # Same transaction as the Manager path: account and lot access together.
+            site = _admin_assignment_site(db, requested_role.name, user_in.site_id)
+            created = crud_user.create_user(db=db, user_in=user_in, commit=False)
+            if site is not None:
+                db.add(SiteMembership(site_id=site.id, user_id=created.id, role=requested_role.name))
+            db.commit()
+            db.refresh(created)
+            return created
         if requested_role.name != "staff":
             raise HTTPException(403, "Quản lý chỉ được tạo tài khoản nhân viên.")
         actor = _lock_user(db, current_user.id)
         if actor is None or not actor.is_active or actor.role.name != "manager":
             raise HTTPException(403, "Tài khoản không còn quyền quản lý nhân viên.")
         site = _managed_site(db, actor, lock=True)
+        if user_in.site_id is not None and user_in.site_id != site.id:
+            raise HTTPException(403, "Quản lý chỉ được tạo nhân viên cho bãi mình quản lý.")
         created = crud_user.create_user(db=db, user_in=user_in, commit=False)
         db.add(SiteMembership(site_id=site.id, user_id=created.id, role="staff"))
         db.commit()
@@ -253,6 +279,8 @@ def delete_user(
     _ensure_active_admin_remains(db, db_user)
 
     try:
+        # Lot access grants belong to the account; history rows still block deletion.
+        db.execute(delete(SiteMembership).where(SiteMembership.user_id == db_user.id))
         crud_user.delete_user(db=db, db_user=db_user)
     except IntegrityError:
         db.rollback()

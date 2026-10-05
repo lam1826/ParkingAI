@@ -6,10 +6,11 @@ sites they manage. Status: ``open`` (customer waits), ``answered`` (manager
 replied), ``closed``. Notifications reuse the portal notification table.
 """
 from fastapi import HTTPException
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from core.clock import BUSINESS_TZ, business_now
 from expansion import customer_ownership as ownership
+from expansion.portal_models import PortalNotification
 from expansion.portal_service import _locked, _notify, get_linked_customer
 from expansion.site_models import ParkingSite
 from expansion.site_scope import allowed_site_ids, require_site_access
@@ -62,6 +63,13 @@ def _choose_site(db, requested_site_id, linked_site_id):
             raise HTTPException(409, "Tài nguyên liên kết thuộc bãi khác với bãi đã chọn.")
         return site.id
     if linked_site_id is not None:
+        # The linked resource stays authoritative for its site (DECISIONS
+        # 2026-09-27), so a retired site is refused instead of rerouted: a
+        # ticket there would be unreachable for every manager and admin.
+        linked_site = db.get(ParkingSite, linked_site_id)
+        if linked_site is None or not linked_site.is_active:
+            raise HTTPException(409, "Bãi xe của mục được gắn đã ngừng hoạt động nên không nhận hỗ trợ trực tuyến. "
+                "Hãy gửi yêu cầu không gắn mục tới bãi đang hoạt động và ghi mã chứng từ/đơn trong nội dung.")
         return linked_site_id
     sites = list(db.scalars(select(ParkingSite.id).where(ParkingSite.is_active.is_(True)).limit(2)))
     if len(sites) != 1:
@@ -151,7 +159,13 @@ def manager_close(db, actor, site_id, identity, note=""):
         db.add(CustomerSupportMessage(request_id=item.id, author_id=actor.id, author_role=actor.role.name, body=note.strip(), created_at=now))
         item.last_message_at = now
     item.status, item.closed_at, item.closed_by_id, item.updated_at = "closed", now, actor.id, now
-    _notify(db, item.customer_id, f"support:{item.id}:closed",
+    # One notification per closure: a ticket reopened and closed again must
+    # notify again. The first closure keeps its historical key; the row lock
+    # above serializes closures of one ticket.
+    base = f"support:{item.id}:closed"
+    earlier = db.scalar(select(func.count(PortalNotification.id)).where(
+        (PortalNotification.event_key == base) | PortalNotification.event_key.like(base + ":%"))) or 0
+    _notify(db, item.customer_id, base if earlier == 0 else f"{base}:{earlier + 1}",
         f"Yêu cầu hỗ trợ \"{item.subject[:60]}\" đã được quản lý đóng.")
     db.commit()
     return item
@@ -219,3 +233,37 @@ def manager_detail(db, actor, site_id, identity):
     data = serialize(item, messages=messages_of(db, item), customer=customer)
     data["requester_username"] = requester.username if requester else None
     return data
+
+
+def open_elsewhere(db, actor, site_id, *, limit=100):
+    """Global-admin safety net: open requests filed under another site than ``site_id``.
+
+    A linked resource keeps its own site (DECISIONS 2026-09-27), so a request
+    can land in a site queue the working screen never opens (single-site
+    presentation, or a site that was closed since). The admin sees them here
+    with the site name; an active site's request is handled at its own site
+    path. Everyone else gets an empty answer, never another site's data.
+    """
+    from expansion import refund_service
+    from expansion.site_scope import is_global_admin
+    from expansion.support_models import REFUND_OPEN_STATES
+    if not is_global_admin(actor):
+        return {"visible": False, "refund_requests": [], "support_requests": []}
+    sites = {row.id: row for row in db.scalars(select(ParkingSite))}
+
+    def where(site):
+        found = sites.get(site)
+        return {"site_name": found.name if found else None, "site_active": bool(found and found.is_active)}
+
+    refunds = db.execute(select(PaymentRefundRequest, Customer).join(Customer, Customer.id == PaymentRefundRequest.customer_id)
+        .where(PaymentRefundRequest.site_id.is_not(None), PaymentRefundRequest.site_id != site_id,
+            PaymentRefundRequest.status.in_(REFUND_OPEN_STATES))
+        .order_by(PaymentRefundRequest.created_at.desc(), PaymentRefundRequest.id).limit(limit)).all()
+    orders = refund_service._order_ids(db, [item for item, _ in refunds])
+    tickets = db.execute(select(CustomerSupportRequest, Customer).join(Customer, Customer.id == CustomerSupportRequest.customer_id)
+        .where(CustomerSupportRequest.site_id != site_id, CustomerSupportRequest.status != "closed")
+        .order_by(CustomerSupportRequest.last_message_at.desc(), CustomerSupportRequest.id).limit(limit)).all()
+    return {"visible": True,
+        "refund_requests": [{**refund_service.serialize(item, order_id=orders.get(item.receipt_id), customer_name=customer.full_name),
+            **where(item.site_id)} for item, customer in refunds],
+        "support_requests": [{**serialize(item, customer=customer), **where(item.site_id)} for item, customer in tickets]}

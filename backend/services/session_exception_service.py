@@ -1,9 +1,11 @@
 """Manager-approved parking exceptions; no mutation of receipts or admission identity."""
 from fastapi import HTTPException
-from sqlalchemy import or_, select, update
+from sqlalchemy import and_, or_, select, update
 from sqlalchemy.exc import SQLAlchemyError
 
 from core.clock import BUSINESS_TZ
+from core.vehicle_identity import admission_identity, canonical_identity, lock_identity, resolve_vehicle
+from models.vehicle_type import VehicleType
 from crud import parking_session as session_crud
 from expansion.portal_models import PortalSessionGrant, PortalVehicleOwnership
 from expansion.reservations import lock_slot
@@ -101,7 +103,11 @@ class SessionExceptionService:
         from expansion.simplified_customer_models import DeclaredParkingReservation
         from core.vehicle_identity import canonical_identity
         if self.db.scalar(select(DeclaredParkingReservation.id).where(
-            DeclaredParkingReservation.normalized_plate == canonical_identity(vehicle.license_plate)).limit(1)):
+            DeclaredParkingReservation.normalized_plate == canonical_identity(vehicle.license_plate),
+            or_(DeclaredParkingReservation.session_id.is_not(None),
+                and_(DeclaredParkingReservation.status == 'confirmed',
+                    DeclaredParkingReservation.arrival_deadline > session_crud.server_now(),
+                    DeclaredParkingReservation.end_at > session_crud.server_now()))).limit(1)):
             return True
         return any(self.db.scalar(select(model.id).where(model.vehicle_id == vehicle.id).limit(1)) is not None
                    for model in (MonthlyPass, PortalVehicleOwnership, FleetVehicle, ParkingReservation, GuaranteedAllocation))
@@ -148,6 +154,12 @@ class SessionExceptionService:
             raise ValueError("Unsupported session exception")
         try:
             self._authorize(actor, site_id, manage=True)
+            if action == 'plate_corrected':
+                source_session = self._load(session_id, site_id)
+                source_vehicle = self.db.get(Vehicle, source_session.vehicle_id)
+                corrected_plate = admission_identity(self.db.get(VehicleType, source_vehicle.vehicle_type_id), body.license_plate)
+                for plate in sorted({source_vehicle.license_plate, corrected_plate}, key=canonical_identity):
+                    lock_identity(self.db, source_vehicle.vehicle_type_id, plate)
             # Same actor-before-session ordering as checkout and cash shifts.
             # All evidence, occupancy changes and replacement writes commit once.
             lock_cash_operator(self.db, actor.id)
@@ -159,7 +171,8 @@ class SessionExceptionService:
                 ParkingSessionEvent.session_id == session.id, ParkingSessionEvent.request_id == body.request_id))
             if existing is not None:
                 if (existing.action != action or existing.reason != body.reason or existing.actor_id != actor.id
-                        or (action == "plate_corrected" and existing.after_state.get("license_plate") != body.license_plate)):
+                        or (action == "plate_corrected" and canonical_identity(existing.after_state.get("license_plate"))
+                            != canonical_identity(body.license_plate))):
                     raise HTTPException(409, "Mã yêu cầu đã dùng cho nội dung hoặc người xác nhận khác.")
                 result = self._response(session, existing)
                 self.db.commit()
@@ -210,12 +223,19 @@ class SessionExceptionService:
             raise HTTPException(409, "Dữ liệu vừa thay đổi hoặc không thể ghi lịch sử. Hãy tải lại và thử lại cùng mã yêu cầu.") from exc
 
     def _prepare_corrected_vehicle(self, original, plate):
-        if plate == original.license_plate:
+        plate = admission_identity(self.db.get(VehicleType, original.vehicle_type_id), plate)
+        if canonical_identity(plate) == canonical_identity(original.license_plate):
             raise HTTPException(422, "Biển số mới phải khác biển số đã ghi nhận.")
         # The source session is already owned, as in checkout (whose PostgreSQL
         # UPDATE trigger then locks the vehicle). Lock both vehicle identities
         # in a fixed order before touching the slot. Never rewrite old plates.
-        target = self.db.scalar(select(Vehicle).where(Vehicle.license_plate == plate))
+        from expansion.simplified_customer_models import DeclaredParkingReservation
+        from expansion.declared_bookings import live_declared
+        if self.db.scalar(select(DeclaredParkingReservation.id).where(
+            DeclaredParkingReservation.normalized_plate == canonical_identity(plate),
+            live_declared(session_crud.server_now())).limit(1)):
+            raise HTTPException(409, "Biển số đích có đặt trước đang hiệu lực. Hãy xử lý đặt trước và nhận xe qua đúng lịch hẹn.")
+        target = resolve_vehicle(self.db, plate)
         ids = sorted({original.id, target.id} if target else {original.id})
         self.db.execute(select(Vehicle.id).where(Vehicle.id.in_(ids)).order_by(Vehicle.id).with_for_update(key_share=True)).all()
         self.db.refresh(original)

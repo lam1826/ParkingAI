@@ -22,15 +22,28 @@ def get_zones(db: Session, skip: int = 0, limit: int = 100):
     stmt = select(Zone).offset(skip).limit(limit)
     return db.execute(stmt).scalars().all()
 
-def create_zone(db: Session, zone_in: zone_schema.ZoneCreate) -> Zone:
+MULTI_SITE_CREATE_DETAIL = "Hệ thống có nhiều bãi. Hãy tạo khu vực trong mục Vận hành bãi và chọn bãi cụ thể."
+
+
+def _legacy_create_site_ids(db: Session) -> list[int]:
     from expansion.site_models import ParkingSite
 
     # The legacy payload cannot choose a site. Preserve zero-site fixtures,
     # but once sites exist never create a zone outside their operational scope.
     # Closed sites still count because their historical identity is retained.
-    site_ids = list(db.scalars(select(ParkingSite.id).order_by(ParkingSite.id).limit(2)))
+    return list(db.scalars(select(ParkingSite.id).order_by(ParkingSite.id).limit(2)))
+
+
+def legacy_create_scope(db: Session) -> dict:
+    """The same rule create_zone() enforces, readable before the form is shown (#71)."""
+    allowed = len(_legacy_create_site_ids(db)) <= 1
+    return {"legacy_create_allowed": allowed, "detail": None if allowed else MULTI_SITE_CREATE_DETAIL}
+
+
+def create_zone(db: Session, zone_in: zone_schema.ZoneCreate) -> Zone:
+    site_ids = _legacy_create_site_ids(db)
     if len(site_ids) > 1:
-        raise HTTPException(409, "Hệ thống có nhiều bãi. Hãy tạo khu vực trong mục Vận hành bãi và chọn bãi cụ thể.")
+        raise HTTPException(409, MULTI_SITE_CREATE_DETAIL)
     db_zone = Zone(site_id=site_ids[0] if site_ids else None, **zone_in.model_dump())
     db.add(db_zone)
     try:

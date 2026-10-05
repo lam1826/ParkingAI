@@ -130,6 +130,7 @@ from expansion.simplified_customer_guards import SIMPLIFIED_SQLITE_GUARDS
 from expansion.ticket_access_history_guards import TICKET_ACCESS_HISTORY_SQLITE_GUARDS
 from expansion.session_credit_rollout import PRE_CREDIT_GUARDS, migrate_session_credit
 from expansion.timed_parking_rollout import PRE_TIMED_TRIGGER_SQL, migrate_timed_parking, validate_timed_parking
+from review_20261005_rollout import drop_pre_review_triggers, is_pre_review_trigger
 from sqlalchemy.schema import CreateIndex
 from sqlalchemy.dialects import sqlite
 from expansion.site_models import SITE_SQLITE_GUARDS, ZONE_COMMITMENT_SQLITE_GUARDS
@@ -422,6 +423,8 @@ def _validate_trigger_definitions(definitions: dict[str, str], *, require_all: b
             if not require_all and name in PRE_TIMED_TRIGGER_SQL and _ddl_signature(definition) == _ddl_signature(PRE_TIMED_TRIGGER_SQL[name]):
                 continue
             if not require_all and name in PRE_SNAPSHOT_TRIGGER_SQL and _ddl_signature(definition) == _ddl_signature(PRE_SNAPSHOT_TRIGGER_SQL[name]):
+                continue
+            if not require_all and is_pre_review_trigger(name, definition):
                 continue
             raise RuntimeError(f"Trigger {name} tồn tại nhưng sai định nghĩa")
 
@@ -972,6 +975,9 @@ def _initialize_candidate(target: Path) -> None:
         migrate_timed_parking(target_engine)
         run_sqlite_migrations(target_engine)
         migrate_sqlite_payment_demo(target_engine)
+        # Review 05/10/2026: bỏ đúng các trigger định nghĩa cũ đã đóng băng để
+        # create_all tạo lại DDL hiện hành từ module guard sở hữu.
+        drop_pre_review_triggers(target_engine)
         Base.metadata.create_all(bind=target_engine)
         with target_engine.begin() as connection:
             backfill_legacy_sites(connection)

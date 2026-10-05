@@ -125,11 +125,23 @@ class AuditLogMiddleware(BaseHTTPMiddleware):
     """Ghi metadata thao tác; không đọc hoặc lưu request body/mật khẩu/mã bí mật."""
 
     async def dispatch(self, request: Request, call_next):
-        response = await call_next(request)
+        try:
+            response = await call_next(request)
+        except Exception:
+            # An unhandled exception becomes RequestContextMiddleware's 500,
+            # which asks the user to quote this request_id: record the failed
+            # mutation too, so support can find it in /audit-logs. Re-raise so
+            # the outer middleware still builds that response and logs it.
+            await self._record(request, 500)
+            raise
+        await self._record(request, response.status_code)
+        return response
+
+    async def _record(self, request: Request, status_code: int) -> None:
         if request.method not in MUTATING_METHODS:
-            return response
-        if response.status_code in {307, 308}:
-            return response
+            return
+        if status_code in {307, 308}:
+            return
 
         authorization = request.headers.get("authorization", "")
         user_id = None
@@ -148,9 +160,9 @@ class AuditLogMiddleware(BaseHTTPMiddleware):
                 user_id = int(payload["sub"])
                 username = str(payload.get("username") or f"user-{user_id}")
             except (InvalidTokenError, KeyError, TypeError, ValueError):
-                return response
+                return
         elif not is_public_auth:
-            return response
+            return
 
         resource, resource_id = _extract_resource(request.url.path)
         await run_in_threadpool(
@@ -167,11 +179,10 @@ class AuditLogMiddleware(BaseHTTPMiddleware):
                 "duration_ms": max(0, round((monotonic() - getattr(request.state, "started_at", monotonic())) * 1000)),
                 "method": request.method,
                 "path": request.url.path[:255],
-                "status_code": response.status_code,
-                "success": 200 <= response.status_code < 400,
+                "status_code": status_code,
+                "success": 200 <= status_code < 400,
                 "ip_address": get_client_ip(request),
             },
             request.method,
             request.url.path,
         )
-        return response

@@ -193,14 +193,19 @@ def test_concurrent_upload_is_rejected_before_entering_processing(vision, monkey
     counter_lock = Lock()
     calls = 0
 
-    async def controlled_upload(_request):
+    real_prepare = vision_router_module.prepare_observation
+
+    def controlled_prepare(*args):
         nonlocal calls
         with counter_lock:
             calls += 1
             current = calls
         if current == 1:
             first_entered.set()
-            await vision_router_module.run_in_threadpool(release_first.wait, 5)
+            release_first.wait(5)
+        return real_prepare(*args)
+
+    async def controlled_upload(_request):
         return (
             ObservationUpload(camera_id=camera.id, event_id=str(uuid4())),
             picture(),
@@ -208,6 +213,7 @@ def test_concurrent_upload_is_rejected_before_entering_processing(vision, monkey
         )
 
     monkeypatch.setattr(vision_router_module, "_read_upload", controlled_upload)
+    monkeypatch.setattr(vision_router_module, "prepare_observation", controlled_prepare)
     try:
         with ThreadPoolExecutor(max_workers=1) as pool:
             first = pool.submit(client.post, "/api/v2/vision/observations")

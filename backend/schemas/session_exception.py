@@ -1,3 +1,4 @@
+from core.vehicle_identity import validate_supplied_identity
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
@@ -13,9 +14,9 @@ class SessionExceptionRequest(BaseModel):
 
 
 class PlateCorrectionRequest(SessionExceptionRequest):
-    license_plate: str = Field(min_length=4, max_length=15)
+    license_plate: str = Field(min_length=3, max_length=20)
 
     @field_validator("license_plate", mode="before")
     @classmethod
     def normalize_plate(cls, value):
-        return value.strip().upper() if isinstance(value, str) else value
+        return validate_supplied_identity(value) if isinstance(value, str) else value

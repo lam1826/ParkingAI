@@ -352,6 +352,21 @@ def test_provider_unavailable_after_expiry_becomes_durable_review(online, monkey
     advance_past_order_deadline(monkeypatch, online.db, identity)
     online.state["fail"] = True
     process(online)
+    # Review 05/10 #28 (CL-ONLINE): money received before a monthly order's deadline
+    # keeps the short provider grace (as session fees do) instead of going straight
+    # to review because the worker ran after expires_at.
+    assert online.db.get(OnlinePaymentProcessing, event.id).status == "received"
+    import core.clock as clock
+    from datetime import datetime
+    later = (online.db.get(PortalOrder, identity).expires_at + timedelta(minutes=6)).replace(tzinfo=clock.BUSINESS_TZ)
+
+    class AfterGrace(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return later.astimezone(tz) if tz else later.astimezone().replace(tzinfo=None)
+
+    monkeypatch.setattr(clock, "datetime", AfterGrace)
+    process(online)
     assert online.db.get(OnlinePaymentProcessing, event.id).reason == "provider_unavailable_after_expiry"
     assert online.db.scalar(select(func.count()).select_from(Payment)) == 0
 

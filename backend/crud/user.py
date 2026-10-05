@@ -18,7 +18,8 @@ def get_users(db: Session, skip: int = 0, limit: int = 100):
 
 def create_user(db: Session, user_in: user_schema.UserCreate, *, commit: bool = True) -> User:
     # Lấy dữ liệu và loại bỏ trường password để chuyển thành password_hash
-    user_data = user_in.model_dump()
+    # site_id is a lot assignment handled by the router, not a User column.
+    user_data = user_in.model_dump(exclude={"site_id"})
     password = user_data.pop("password")
 
     # Băm mật khẩu bằng bcrypt thật (khớp với AuthService.verify_password khi login)

@@ -19,6 +19,12 @@ def read_zones(
     """Lấy danh sách các khu vực đỗ xe"""
     return crud_zone.get_zones(db, skip=skip, limit=limit)
 
+# Declared before "/{id}" so the literal path is not parsed as a zone id.
+@router.get("/creation-scope", response_model=zone_schema.ZoneCreationScope)
+def read_zone_creation_scope(db: Session = Depends(get_db)):
+    """Whether this site-less form can create a zone; with several sites it cannot (409) (#71)."""
+    return crud_zone.legacy_create_scope(db)
+
 @router.get("/{id}", response_model=zone_schema.ZoneResponse)
 def read_zone(id: int, db: Session = Depends(get_db)):
     """Lấy thông tin chi tiết một khu vực đỗ xe"""

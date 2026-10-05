@@ -1,4 +1,11 @@
-"""Additive site attribution: never rewrite the historical financial ledger."""
+"""Additive site attribution: never rewrite the historical financial ledger.
+
+Review 05/10/2026 (P1-1): a counter-sold monthly period has no portal order,
+so its receipt is attributed to the selling site (explicit choice, the seller's
+open site-bound shift, or the only site). The guard still pins portal periods
+to their order's site, refunds to their receipt's site and shift-bound rows to
+the shift's site. Existing ledger rows are never rewritten.
+"""
 from sqlalchemy import DDL, event
 from database import Base
 
@@ -7,7 +14,7 @@ SITE_FINANCE_SQLITE_GUARDS = {
     "trg_payment_site_guard": """CREATE TRIGGER IF NOT EXISTS trg_payment_site_guard BEFORE INSERT ON payments WHEN
         (NEW.site_id IS NOT NULL AND NEW.kind = 'receipt' AND (
             (NEW.source_type = 'session_credit' AND NEW.site_id IS NOT (SELECT q.site_id FROM session_fee_credits c JOIN session_fee_quotes q ON q.id=c.quote_id WHERE c.id=NEW.source_id)) OR
-            (NEW.source_type = 'monthly_pass' AND NEW.site_id IS NOT (SELECT o.site_id FROM monthly_passes p JOIN portal_orders o ON p.renewal_key='portal:' || o.id WHERE CAST(p.id AS TEXT)=NEW.source_id)) OR
+            (NEW.source_type = 'monthly_pass' AND EXISTS (SELECT 1 FROM monthly_passes p JOIN portal_orders o ON p.renewal_key='portal:' || o.id WHERE CAST(p.id AS TEXT)=NEW.source_id) AND NEW.site_id IS NOT (SELECT o.site_id FROM monthly_passes p JOIN portal_orders o ON p.renewal_key='portal:' || o.id WHERE CAST(p.id AS TEXT)=NEW.source_id)) OR
             (NEW.source_type = 'parking_session' AND NEW.site_id IS NOT (SELECT z.site_id FROM parking_sessions p JOIN parking_slots s ON s.id=p.parking_slot_id JOIN zones z ON z.id=s.zone_id WHERE p.id=NEW.source_id))))
         OR (NEW.kind = 'refund' AND NEW.site_id IS NOT (SELECT site_id FROM payments WHERE id=NEW.original_payment_id))
         OR (NEW.shift_id IS NOT NULL AND EXISTS (SELECT 1 FROM cash_shifts c WHERE c.id=NEW.shift_id AND c.site_id IS NOT NULL AND c.site_id IS NOT NEW.site_id))
@@ -30,6 +37,9 @@ BEGIN
     ELSIF NEW.site_id IS NOT NULL THEN
         IF NEW.source_type='monthly_pass' THEN
             SELECT o.site_id INTO expected_site FROM monthly_passes p JOIN portal_orders o ON p.renewal_key='portal:' || o.id WHERE p.id::text=NEW.source_id;
+            -- A counter-sold period has no order owning its site: the seller's
+            -- site (and the shift check below) attributes its receipt.
+            IF NOT FOUND THEN expected_site := NEW.site_id; END IF;
         ELSIF NEW.source_type='portal_order' THEN
             SELECT site_id INTO expected_site FROM portal_orders WHERE id=NEW.source_id;
         ELSIF NEW.source_type='session_credit' THEN
@@ -47,6 +57,21 @@ BEGIN
 END; $$ LANGUAGE plpgsql;
 CREATE TRIGGER trg_payment_site_guard BEFORE INSERT ON payments FOR EACH ROW EXECUTE FUNCTION parking_payment_site_guard();
 """
+
+# Exact predecessor definitions (schema up to 20260927_10). The SQLite upgrade
+# bridge (backend/review_20261005_rollout.py, used by db_rollout) replaces only
+# these exact texts; any other definition stays a validation failure.
+PRE_REVIEW_20261005_SITE_FINANCE_SQLITE_GUARDS = {
+    "trg_payment_site_guard": """CREATE TRIGGER IF NOT EXISTS trg_payment_site_guard BEFORE INSERT ON payments WHEN
+        (NEW.site_id IS NOT NULL AND NEW.kind = 'receipt' AND (
+            (NEW.source_type = 'session_credit' AND NEW.site_id IS NOT (SELECT q.site_id FROM session_fee_credits c JOIN session_fee_quotes q ON q.id=c.quote_id WHERE c.id=NEW.source_id)) OR
+            (NEW.source_type = 'monthly_pass' AND NEW.site_id IS NOT (SELECT o.site_id FROM monthly_passes p JOIN portal_orders o ON p.renewal_key='portal:' || o.id WHERE CAST(p.id AS TEXT)=NEW.source_id)) OR
+            (NEW.source_type = 'parking_session' AND NEW.site_id IS NOT (SELECT z.site_id FROM parking_sessions p JOIN parking_slots s ON s.id=p.parking_slot_id JOIN zones z ON z.id=s.zone_id WHERE p.id=NEW.source_id))))
+        OR (NEW.kind = 'refund' AND NEW.site_id IS NOT (SELECT site_id FROM payments WHERE id=NEW.original_payment_id))
+        OR (NEW.shift_id IS NOT NULL AND EXISTS (SELECT 1 FROM cash_shifts c WHERE c.id=NEW.shift_id AND c.site_id IS NOT NULL AND c.site_id IS NOT NEW.site_id))
+        BEGIN SELECT RAISE(ABORT, 'payment site mismatch'); END""",
+}
+
 
 for sql in SITE_FINANCE_SQLITE_GUARDS.values():
     event.listen(Base.metadata, "after_create", DDL(sql).execute_if(dialect="sqlite"))

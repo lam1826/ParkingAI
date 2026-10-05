@@ -148,7 +148,7 @@ _admission_bound = ("COALESCE((SELECT MAX(bound.end_at) FROM ("
     "AND r.status='confirmed' AND r.start_at<=NEW.check_in_time AND r.arrival_deadline>NEW.check_in_time "
     "UNION ALL SELECT a.end_at FROM guaranteed_allocations a JOIN vehicles v ON v.id=a.vehicle_id "
     "WHERE a.slot_id=NEW.parking_slot_id AND a.vehicle_id=NEW.vehicle_id AND a.customer_id=v.customer_id "
-    "AND a.status='active' AND a.start_at<=NEW.check_in_time AND a.end_at>NEW.check_in_time) bound), '9999-12-31')")
+    "AND a.status='active' AND a.start_at<=NEW.check_in_time AND a.end_at>NEW.check_in_time UNION ALL SELECT d.end_at FROM declared_parking_reservations d JOIN vehicles v ON v.id=NEW.vehicle_id WHERE d.slot_id=NEW.parking_slot_id AND d.normalized_plate=replace(replace(replace(upper(v.license_plate),'-',''),'.',''),' ','') AND d.vehicle_type_id=v.vehicle_type_id AND d.status='confirmed' AND d.start_at<=NEW.check_in_time AND d.arrival_deadline>NEW.check_in_time AND d.end_at>NEW.check_in_time) bound), '9999-12-31')")
 guard("trg_session_capacity_hold", "parking_sessions", "INSERT", "NEW.status='active' AND EXISTS ("
     f"SELECT 1 FROM parking_capacity_holds h WHERE h.slot_id=NEW.parking_slot_id AND {_live} "
     f"AND h.start_at < {_admission_bound})", "slot has a live payment hold")

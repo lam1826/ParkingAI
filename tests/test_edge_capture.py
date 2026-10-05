@@ -73,7 +73,7 @@ def test_busy_server_retries_are_bounded_and_honor_capped_retry_after(status):
         calls.append(_fields(request))
         return httpx.Response(status, headers={"Retry-After": "9999"})
     with httpx.Client(base_url="http://localhost", transport=httpx.MockTransport(transport)) as client:
-        with pytest.raises(CaptureError, match="unconfirmed"):
+        with pytest.raises(CaptureError, match="upload slot remained busy" if status == 429 else "unconfirmed"):
             deliver_event(client, _event(), TOKEN, attempts=3, sleep=delays.append)
     assert len(calls) == 3 and calls[0] == calls[1] == calls[2]
     assert delays == [30, 30]

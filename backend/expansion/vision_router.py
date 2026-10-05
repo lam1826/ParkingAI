@@ -1,9 +1,11 @@
 """Phone image capture and optional camera uploads, all scoped to a parking site."""
+import asyncio
 import hashlib
 import hmac
 import secrets
 import threading
 import uuid
+from contextlib import contextmanager
 from datetime import timedelta
 from types import SimpleNamespace
 
@@ -14,6 +16,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, defer
 from starlette.concurrency import run_in_threadpool
 from starlette.formparsers import MultiPartException, MultiPartParser
+from starlette.requests import ClientDisconnect
 
 from core.clock import BUSINESS_TZ, business_now
 from database import get_db
@@ -45,14 +48,36 @@ def _within_retention(now):
     return (VisionObservation.expires_at > now) & (VisionObservation.observed_at > cutoff)
 
 
-async def _admit_upload():
-    """Shed concurrent camera work before authentication opens a DB session."""
+@contextmanager
+def _upload_slot():
+    """Bound decode/inference and release the slot on every exit path."""
     if not _upload_gate.acquire(blocking=False):
         raise HTTPException(429, "Hệ thống đang xử lý một ảnh khác. Vui lòng thử lại sau vài giây.", headers={"Retry-After": "3"})
     try:
         yield
     finally:
         _upload_gate.release()
+
+
+def _upload_actor(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    actor = SimpleNamespace(id=user.id, is_active=user.is_active, role=SimpleNamespace(name=user.role.name))
+    # Copy authentication metadata and release its read transaction before
+    # waiting for the network. This sync dependency runs in FastAPI's worker.
+    db.rollback()
+    return actor
+
+
+def _authorize_staff_upload(db, actor, camera_id):
+    try:
+        _camera(db, actor, camera_id)
+    finally:
+        db.rollback()
+
+
+def _ingest_staff_upload(db, actor, metadata, prepared, source):
+    camera = _camera(db, actor, metadata.camera_id)
+    observation = ingest_observation(db, camera, metadata, prepared, capture_source=source)
+    return serialize_observation(observation, camera)
 
 
 def _camera(db, user, camera_id, minimum_role="staff"):
@@ -171,10 +196,16 @@ async def _read_upload(request):
     # would spool an arbitrarily large request to disk before endpoint checks.
     limit = MAX_IMAGE_BYTES + 16_384
     body = bytearray()
-    async for chunk in request.stream():
-        if len(body) + len(chunk) > limit:
-            raise HTTPException(413, "Ảnh tải lên vượt giới hạn 2 MB.")
-        body.extend(chunk)
+    try:
+        async with asyncio.timeout(30):
+            async for chunk in request.stream():
+                if len(body) + len(chunk) > limit:
+                    raise HTTPException(413, "Ảnh tải lên vượt giới hạn 2 MB.")
+                body.extend(chunk)
+    except TimeoutError as exc:
+        raise HTTPException(408, "Tải ảnh quá thời gian. Hãy thử lại với ảnh mới.") from exc
+    except ClientDisconnect as exc:
+        raise HTTPException(400, "Kết nối tải ảnh đã đóng.") from exc
     async def stream():
         yield bytes(body)
     try:
@@ -199,51 +230,73 @@ async def _read_upload(request):
         await form.close()
 
 
-@router.post("/vision/live-frames", status_code=201, dependencies=[Depends(_admit_upload), Depends(RoleChecker("staff"))])
+@router.post("/vision/live-frames", status_code=201, dependencies=[Depends(RoleChecker("staff"))])
 @router.post(
     "/vision/observations",
     status_code=201,
-    dependencies=[Depends(_admit_upload), Depends(RoleChecker("staff"))],
+    dependencies=[Depends(RoleChecker("staff"))],
 )
-async def upload_observation(request: Request, response: Response, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    actor = SimpleNamespace(
-        id=user.id,
-        is_active=user.is_active,
-        role=SimpleNamespace(name=user.role.name),
-    )
-    # Authentication is read-only. Release its transaction before receiving
-    # the body or running CPU-heavy image work.
-    db.rollback()
+async def upload_observation(request: Request, response: Response, db: Session = Depends(get_db), actor=Depends(_upload_actor)):
     metadata, content, mime = await _read_upload(request)
-    _camera(db, actor, metadata.camera_id)
-    db.rollback()
-    prepared = await run_in_threadpool(prepare_observation, metadata, content, mime)
-    camera = _camera(db, actor, metadata.camera_id)
+    await run_in_threadpool(_authorize_staff_upload, db, actor, metadata.camera_id)
     source = "live_camera" if request.url.path.endswith("/vision/live-frames") else "manual_upload"
-    observation = await run_in_threadpool(ingest_observation, db, camera, metadata, prepared, capture_source=source)
+    # Bound CPU/ingestion work only. Authentication, bounded network reads and
+    # multipart validation cannot occupy the site-wide inference slot.
+    with _upload_slot():
+        prepared = await run_in_threadpool(prepare_observation, metadata, content, mime)
+        result = await run_in_threadpool(_ingest_staff_upload, db, actor, metadata, prepared, source)
     response.headers["Cache-Control"] = "no-store"
-    return serialize_observation(observation, camera)
+    return result
 
 
-@router.post("/vision/edge-events", status_code=201, dependencies=[Depends(_admit_upload)])
-async def edge_observation(request: Request, response: Response, db: Session = Depends(get_db)):
+def _admit_edge_upload(request: Request, db: Session = Depends(get_db)):
+    # Authenticate using metadata from headers alone, before any upload slot
+    # or body read. Release the read transaction while the device streams.
     token = request.headers.get("x-camera-token", "")
     if not 32 <= len(token) <= 128:
         raise HTTPException(401, "Khóa camera không hợp lệ.")
-    metadata, content, mime = await _read_upload(request)
-    camera = db.get(Camera, metadata.camera_id)
     digest = hashlib.sha256(token.encode()).hexdigest()
+    camera_id = db.scalar(select(Camera.id).where(Camera.is_active.is_(True), Camera.edge_token_hash == digest))
+    db.rollback()
+    if camera_id is None:
+        raise HTTPException(401, "Khóa camera không hợp lệ.")
+    return camera_id, digest
+
+
+def _edge_camera(db, camera_id, digest):
+    camera = db.get(Camera, camera_id)
     if camera is None or not camera.is_active or not camera.edge_token_hash or not hmac.compare_digest(camera.edge_token_hash, digest):
         raise HTTPException(401, "Khóa camera không hợp lệ.")
-    db.rollback()
-    prepared = await run_in_threadpool(prepare_observation, metadata, content, mime)
-    camera = db.get(Camera, metadata.camera_id)
-    if camera is None:
+    return camera
+
+
+def _authorize_edge_upload(db, camera_id, digest):
+    try:
+        _edge_camera(db, camera_id, digest)
+    finally:
+        db.rollback()
+
+
+def _ingest_edge_upload(db, metadata, prepared, digest):
+    camera = _edge_camera(db, metadata.camera_id, digest)
+    observation = ingest_observation(db, camera, metadata, prepared, digest, capture_source="edge")
+    return {"id": observation.id, "event_id": observation.event_id, "received": True}
+
+
+@router.post("/vision/edge-events", status_code=201)
+async def edge_observation(request: Request, response: Response, db: Session = Depends(get_db),
+                           authenticated=Depends(_admit_edge_upload)):
+    camera_id, digest = authenticated
+    metadata, content, mime = await _read_upload(request)
+    if metadata.camera_id != camera_id:
         raise HTTPException(401, "Khóa camera không hợp lệ.")
-    observation = await run_in_threadpool(ingest_observation, db, camera, metadata, prepared, digest, capture_source="edge")
+    await run_in_threadpool(_authorize_edge_upload, db, metadata.camera_id, digest)
+    with _upload_slot():
+        prepared = await run_in_threadpool(prepare_observation, metadata, content, mime)
+        result = await run_in_threadpool(_ingest_edge_upload, db, metadata, prepared, digest)
     response.headers["Cache-Control"] = "no-store"
     # A capture token can write only to its camera, never read image/plate data.
-    return {"id": observation.id, "event_id": observation.event_id, "received": True}
+    return result
 
 
 @router.get("/vision/observations")

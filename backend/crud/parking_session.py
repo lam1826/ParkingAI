@@ -146,6 +146,8 @@ def map_check_in_integrity_error(exc: DBAPIError) -> str | None:
             "Vị trí/khu vực không còn hoạt động hoặc không phù hợp loại xe. "
             "Vui lòng chọn lại vị trí phù hợp."
         )
+    if "slot has declared booking" in message or "slot has a live payment hold" in message:
+        return "Vị trí vừa có đặt chỗ hoặc giữ chỗ thanh toán. Vui lòng kiểm tra lại."
     return None
 
 

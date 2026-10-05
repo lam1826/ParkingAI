@@ -2,7 +2,7 @@
 from datetime import datetime, timedelta, timezone
 
 from fastapi import HTTPException
-from sqlalchemy import and_, exists, func, or_, select, update
+from sqlalchemy import and_, case, exists, func, or_, select, update
 
 from core.clock import BUSINESS_TZ
 from crud import parking_session as session_crud
@@ -55,6 +55,8 @@ def serialize(row, *, prepaid_values=None, credit_values=None):
             elif value.tzinfo is None:
                 value = value.replace(tzinfo=BUSINESS_TZ)
         result[column.name] = value
+    if row.__table__.name == "site_waitlist" and row.status == "waiting" and row.end_at <= session_crud.server_now():
+        result["status"] = "expired"
     if row.__table__.name == "parking_sessions":
         result["billing_basis"] = row.billing_basis
         result["monthly_coverage_end"] = row.monthly_coverage_end
@@ -180,6 +182,43 @@ def admission_allowed(db, slot_id, *, vehicle_id=None, at=None, lock=True):
         if end is None or row.start_at < end:
             return False
     return True
+
+
+def waitlist_status_sql(now):
+    """Read-time terminal states retain stored offer history without actions."""
+    def linked(*conditions):
+        return select(ParkingReservation.id).where(
+            ParkingReservation.id == SiteWaitlist.reservation_id, *conditions
+        ).correlate(SiteWaitlist).exists()
+
+    offered = SiteWaitlist.status == 'offered'
+    live = linked(ParkingReservation.status == 'confirmed',
+                  ParkingReservation.arrival_deadline > now, ParkingReservation.end_at > now)
+    return case(
+        (and_(offered, linked(ParkingReservation.status == 'arrived')), 'used'),
+        (and_(offered, linked(ParkingReservation.status == 'cancelled')), 'cancelled'),
+        (and_(offered, ~live), 'expired'),
+        (and_(SiteWaitlist.status == 'waiting', SiteWaitlist.end_at <= now), 'expired'),
+        else_=SiteWaitlist.status,
+    )
+
+
+def preferred_admission_slot(db, vehicle, site_id, now):
+    """Route automatic placement through the driver's currently usable rights."""
+    from expansion.declared_bookings import preferred_slot
+    declared = preferred_slot(db, vehicle, site_id, now)
+    if declared is not None:
+        return declared
+    for model in (ParkingReservation, GuaranteedAllocation):
+        query = select(model.slot_id).where(model.vehicle_id == vehicle.id,
+            model.customer_id == vehicle.customer_id, model.start_at <= now, model.end_at > now)
+        query = query.where(model.status == "confirmed", model.arrival_deadline > now) if model is ParkingReservation else query.where(model.status == "active")
+        if site_id is not None:
+            query = query.where(model.site_id == site_id)
+        slot_id = db.scalar(query.order_by(model.start_at, model.id).limit(1))
+        if slot_id is not None:
+            return slot_id
+    return None
 
 
 def record_admission(db, session):
@@ -333,6 +372,9 @@ def reserve(db, actor, data, *, customer=False, allocation=False, _now=None):
             raise HTTPException(409, "Mỗi khách hàng chỉ được có tối đa 5 đặt chỗ đang hoạt động.")
     # A booking made by a previous owner keeps holding its slot (slot-level checks below),
     # but it must not stop the verified current owner from booking elsewhere.
+    from expansion.declared_bookings import plate_overlaps
+    if plate_overlaps(db, vehicle, start, end, now):
+        raise HTTPException(409, "Biển số/mã xe đã có đặt trước trong khoảng thời gian này.")
     overlapping_reservation = db.scalar(select(ParkingReservation.id).where(
         ParkingReservation.vehicle_id == vehicle.id,
         ParkingReservation.customer_id == vehicle.customer_id,
@@ -392,6 +434,11 @@ def reserve(db, actor, data, *, customer=False, allocation=False, _now=None):
 
 
 def cancel(db, actor, row, *, customer=False):
+    if isinstance(row, ParkingReservation):
+        # Offer/withdrawal owns the waitlist row before the slot. Direct
+        # cancellation must follow the same order before updating its offer.
+        db.execute(select(SiteWaitlist.id).where(SiteWaitlist.reservation_id == row.id)
+                   .order_by(SiteWaitlist.id).with_for_update()).all()
     lock_slot(db, row.slot_id)
     db.refresh(row)
     if customer:
@@ -409,6 +456,9 @@ def cancel(db, actor, row, *, customer=False):
     if row.status in {"cancelled", "expired"}:
         return row
     row.status = "cancelled"
+    if isinstance(row, ParkingReservation):
+        db.execute(update(SiteWaitlist).where(SiteWaitlist.reservation_id == row.id,
+            SiteWaitlist.status == "offered").values(status="cancelled"))
     db.flush()
     return row
 
@@ -507,13 +557,19 @@ def offer_waitlist(db, actor, row):
 
 def _notify_waitlist_offer(db, row, reservation):
     from expansion.portal_service import _notify
+    from expansion.site_models import ParkingSite
 
-    deadline = reservation.arrival_deadline.replace(tzinfo=BUSINESS_TZ).isoformat(timespec="minutes")
+    vehicle = db.get(Vehicle, reservation.vehicle_id)
+    slot = db.get(ParkingSlot, reservation.slot_id)
+    site = db.get(ParkingSite, reservation.site_id)
+    start = reservation.start_at.strftime("%d/%m/%Y %H:%M")
+    deadline = reservation.arrival_deadline.strftime("%d/%m/%Y %H:%M")
     _notify(
         db,
         row.customer_id,
         f"waitlist:{row.id}:offered",
-        f"Đã có chỗ đỗ cho yêu cầu của bạn. Vui lòng đến trong tối đa 15 phút, trước {deadline}.",
+        f"Đã giữ chỗ cho xe {vehicle.license_plate} tại {site.name}, vị trí {slot.slot_name}. "
+        f"Giờ hẹn: {start}; đến trước {deadline} (15 phút sau giờ hẹn, giờ Việt Nam).",
     )
 
 
@@ -528,7 +584,10 @@ def cancel_waitlist(db, actor, row, *, customer=False):
         db.execute(update(SiteWaitlist).where(SiteWaitlist.id == row.id).values(id=SiteWaitlist.id))
     db.refresh(row, with_for_update=True)
     if row.status == "offered":
-        raise HTTPException(409, "Đã cấp đặt chỗ; hãy hủy đặt chỗ tương ứng.")
+        reservation = db.get(ParkingReservation, row.reservation_id)
+        if reservation is None:
+            raise HTTPException(409, "Không tìm thấy đặt chỗ đã cấp; cần quản lý kiểm tra.")
+        cancel(db, actor, reservation, customer=customer)
     row.status = "cancelled"
     db.flush()
     return row

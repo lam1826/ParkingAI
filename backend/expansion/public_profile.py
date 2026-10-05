@@ -75,11 +75,15 @@ def published_plans(db: Session, site_id: int):
 
 
 def walk_in_rates(db: Session, vehicle_type_ids):
-    """The active tariff per served vehicle type; the same table staff quote at the gate."""
+    """The tariff in force today per served vehicle type; the same rate admission and the gate use.
+
+    A not-yet-effective active row is not a rate admission accepts (#58), so it is not advertised.
+    """
     if not vehicle_type_ids:
         return []
     rows = db.execute(select(PriceConfig, VehicleType.name).join(VehicleType, VehicleType.id == PriceConfig.vehicle_type_id)
-        .where(PriceConfig.is_active.is_(True), PriceConfig.vehicle_type_id.in_(vehicle_type_ids))
+        .where(PriceConfig.is_active.is_(True), PriceConfig.vehicle_type_id.in_(vehicle_type_ids),
+               PriceConfig.effective_date <= business_now().date())
         .order_by(PriceConfig.vehicle_type_id)).all()
     return [{"vehicle_type_id": rate.vehicle_type_id, "vehicle_type_name": type_name, "ticket_type": rate.ticket_type,
         "price": rate.price, "effective_date": rate.effective_date} for rate, type_name in rows]
@@ -87,8 +91,12 @@ def walk_in_rates(db: Session, vehicle_type_ids):
 
 def capacity_summary(db: Session, site_id: int):
     zones = db.scalar(select(func.count(Zone.id)).where(Zone.site_id == site_id, Zone.is_active.is_(True))) or 0
+    # Same rule as served_vehicle_types()/availability(): slots of a deactivated vehicle type
+    # cannot admit anyone, so they are not public active capacity (#59).
     slots = db.scalar(select(func.count(ParkingSlot.id)).join(Zone, Zone.id == ParkingSlot.zone_id)
-        .where(Zone.site_id == site_id, Zone.is_active.is_(True), ParkingSlot.is_active.is_(True))) or 0
+        .join(VehicleType, VehicleType.id == ParkingSlot.vehicle_type_id)
+        .where(Zone.site_id == site_id, Zone.is_active.is_(True), ParkingSlot.is_active.is_(True),
+               VehicleType.is_active.is_(True))) or 0
     return {"zones": zones, "slots": slots}
 
 

@@ -23,6 +23,7 @@ Không hardcode bãi/camera của website cũ: lấy ID từ cấu hình hiện 
 - Chu kỳ 3–30 giây, mặc định 5 giây; ảnh giữ tỷ lệ và cạnh dài tối đa 1.600 pixel, JPEG tối đa 2 MB.
 - Một ảnh đang gửi và tối đa một frame chờ. Khi mạng/OCR chậm, frame chờ cũ bị bỏ; không tích hàng trăm ảnh hoặc gửi video liên tục qua API nghiệp vụ.
 - Thử lại tối đa bốn lần với cùng UUID, thời điểm và byte ảnh. Timeout, phản hồi xác nhận không hợp lệ, 429 và lỗi tạm thời không tạo mã ảnh mới. Tôn trọng `Retry-After` trong giới hạn 30 giây.
+- Nếu cả bốn lần đều nhận 429, tức chắc chắn server đã từ chối ảnh vì slot upload đang bận, agent ghi log `backoff`. Sau đó agent chờ theo `Retry-After` (tối đa 30 giây), bỏ ảnh đó rồi tiếp tục với ảnh mới; agent không tự dừng hẳn. Timeout, lỗi 5xx hoặc xác nhận không rõ ràng vẫn là lỗi có giới hạn: hết số lần thử thì dừng và báo `unconfirmed_event_id`. Thay đổi này áp dụng từ bản sửa ngày 05/10/2026, lỗi #55.
 - 401/403, xung đột dữ liệu, ảnh sai/hết hạn hoặc redirect dừng vòng gửi. Token chỉ tới đúng origin cấu hình, không đi theo redirect.
 - Nếu kết quả vẫn chưa rõ hoặc người dùng dừng lúc đang gửi, log trả `unconfirmed_event_id` để kiểm inbox. Bộ lấy ảnh chưa có hàng đợi bền trên đĩa: khởi động lại là lần lấy ảnh mới, không tự phát lại nội dung đã mất. Không tuyên bố exactly-once xuyên qua việc tắt tiến trình.
 - Đọc thiết bị nằm trong tiến trình con; khi không có frame đúng hạn, tiến trình được dừng. Không treo request thu tiền hay giữ connection SQL.
