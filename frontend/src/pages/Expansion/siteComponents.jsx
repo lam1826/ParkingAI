@@ -69,29 +69,29 @@ export function Availability({ data, vehicleTypes = [] }) {
 
 export function BookingRecords({ rows, onCancel, onArrive, onOpenOrder, busy, slots = [], vehicles = [] }) {
   return <Records rows={rows} columns={[
-    { key: "vehicle_id", label: "Xe", render: (r) => vehicles.find((v) => v.id === r.vehicle_id)?.license_plate || `Xe #${r.vehicle_id}` },
+    { key: "vehicle_id", label: "Xe", render: (r) => r.license_plate || vehicles.find((v) => v.id === r.vehicle_id)?.license_plate || `Xe #${r.vehicle_id}` },
     { key: "slot_id", label: "Vị trí", render: (r) => slots.find((s) => s.id === r.slot_id)?.slot_name || `Chỗ #${r.slot_id}` },
     { key: "start_at", label: "Bắt đầu", render: (r) => dateTime(r.start_at) },
     { key: "end_at", label: "Kết thúc", render: (r) => dateTime(r.end_at) },
     { key: "arrival_deadline", label: "Hạn đến", render: (r) => dateTime(r.arrival_deadline) },
     { key: "status", label: "Trạng thái", render: (r) => <StateChip value={r.status} /> },
     { key: "actions", label: "Thao tác", render: (r) => <Stack direction="row" spacing={1} useFlexGap>
-      {onArrive && r.status === "confirmed" && <Button disabled={busy} onClick={() => onArrive(r)} aria-label={`Xác nhận xe ${r.vehicle_id} đã đến`}>Xe đã đến</Button>}
+      {onArrive && r.status === "confirmed" && <Button disabled={busy} onClick={() => onArrive(r)} aria-label={`Xác nhận xe ${r.license_plate || `#${r.vehicle_id}`} đã đến`}>Xe đã đến</Button>}
       {onOpenOrder && r.order_id && <Button disabled={busy} onClick={() => onOpenOrder(r)}>Xem đơn vé</Button>}
-      {onCancel && !r.order_id && ["confirmed", "active"].includes(r.status) && <Button color="error" disabled={busy} onClick={() => onCancel(r)} aria-label={`Hủy giữ chỗ xe ${r.vehicle_id}`}>Hủy</Button>}
+      {onCancel && !r.order_id && ["confirmed", "active"].includes(r.status) && <Button color="error" disabled={busy} onClick={() => onCancel(r)} aria-label={`Hủy giữ chỗ xe ${r.license_plate || `#${r.vehicle_id}`}`}>Hủy</Button>}
     </Stack> },
   ]} />;
 }
 
 export function WaitlistRecords({ rows, vehicles = [], onOffer, onCancel, busy }) {
   return <Records rows={rows} columns={[
-    { key: "vehicle_id", label: "Xe", render: (row) => vehicles.find((vehicle) => vehicle.id === row.vehicle_id)?.license_plate || `Xe #${row.vehicle_id}` },
+    { key: "vehicle_id", label: "Xe", render: (row) => row.license_plate || vehicles.find((vehicle) => vehicle.id === row.vehicle_id)?.license_plate || `Xe #${row.vehicle_id}` },
     { key: "start_at", label: "Bắt đầu", render: (row) => dateTime(row.start_at) },
     { key: "end_at", label: "Kết thúc", render: (row) => dateTime(row.end_at) },
-    { key: "status", label: "Trạng thái", render: (row) => <StateChip value={row.status} /> },
-    { key: "actions", label: "Thao tác", render: (row) => row.status === "waiting" && <Stack direction="row" spacing={1} useFlexGap>
-      {onOffer && <Button disabled={busy} onClick={() => onOffer(row)}>Cấp chỗ trống</Button>}
-      {onCancel && <Button color="error" disabled={busy} onClick={() => onCancel(row)}>Rời danh sách chờ</Button>}
+    { key: "status", label: "Trạng thái", render: (row) => <StateChip value={row.status} label={row.status === "used" ? "Đã sử dụng" : undefined} /> },
+    { key: "actions", label: "Thao tác", render: (row) => ["waiting", "offered"].includes(row.status) && <Stack direction="row" spacing={1} useFlexGap>
+      {onOffer && row.status === "waiting" && <Button disabled={busy} onClick={() => onOffer(row)}>Cấp chỗ trống</Button>}
+      {onCancel && <Button color="error" disabled={busy} onClick={() => onCancel(row)}>{row.status === "offered" ? "Thu hồi chỗ đã cấp" : "Rời danh sách chờ"}</Button>}
     </Stack> },
   ]} />;
 }

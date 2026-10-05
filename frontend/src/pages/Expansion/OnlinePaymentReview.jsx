@@ -6,6 +6,9 @@ import { dateTime, money, PageControls, read, Records, RemoteSection, requestKey
 const reasonLabel = (reason) => ({ unknown_order: "Chưa tìm thấy đơn", late_or_closed_order: "Tiền đến khi đơn đã đóng hoặc hết hạn", capacity_hold_expired: "Chỗ giữ đã hết hạn", additional_payment: "Có khoản chuyển thêm", payment_identity_mismatch: "Thông tin hoặc số tiền chưa khớp", provider_identity_mismatch: "Thông tin cổng thanh toán chưa khớp", account_mismatch: "Tài khoản nhận chưa khớp", partial_payment: "Chưa đủ số tiền", reference_conflict: "Mã giao dịch có thông tin khác nhau", payment_total_requires_review: "Cần kiểm tra các khoản chuyển", channel_changed: "Cấu hình nhận tiền đã thay đổi", session_no_longer_active: "Lượt gửi đã kết thúc", late_or_closed_quote: "Tiền đến khi đề nghị đã đóng hoặc hết hạn", session_identity_changed: "Thông tin lượt gửi đã thay đổi", session_owner_changed: "Quyền sở hữu lượt gửi đã thay đổi", session_credit_changed: "Khoản đã trả của lượt gửi đã thay đổi" })[reason] || "Cần kiểm tra giao dịch";
 const evidenceAmount = (row) => row.currency === "VND" ? money(row.amount) : `${row.amount} ${row.currency || "(chưa xác định tiền tệ)"}`;
 const sourceLabel = (row) => row.session_id ? `Lượt gửi ${row.session_id}` : row.order_id ? `Đơn vé ${row.order_id}` : "Chưa khớp nguồn thanh toán";
+// Several evidence rows (signed webhook and provider check) can describe one bank
+// transfer; one decision resolves the transfer, so never refund it twice.
+const twinNote = (row) => row.same_reference_ids?.length ? `Cùng một giao dịch với ${row.same_reference_ids.length} bằng chứng khác; chỉ hoàn một lần.` : "";
 
 function DecisionDialog({ row, siteId, onClose, onSaved }) {
   const [form, setForm] = useState({ action: "note", reason: "", external_reference: "", confirmed: false });
@@ -34,6 +37,7 @@ function DecisionDialog({ row, siteId, onClose, onSaved }) {
         <Typography sx={{ overflowWrap: "anywhere" }}>Giao dịch {row.reference} · <strong>{evidenceAmount(row)}</strong></Typography>
         <Typography variant="body2" sx={{ overflowWrap: "anywhere" }}>{sourceLabel(row)}</Typography>
         <Typography color="text.secondary">{reasonLabel(row.reason)}</Typography>
+        {twinNote(row) && <Alert severity="info">{twinNote(row)}</Alert>}
         {row.decisions?.length > 0 && <Box><Typography fontWeight={600}>Lịch sử đối soát</Typography>{row.decisions.map((decision) => <Box key={decision.id} sx={{ mt: 1, overflowWrap: "anywhere" }}>
           <Typography variant="body2" color="text.secondary">{dateTime(decision.created_at)} · {decision.actor_username || `Quản lý #${decision.actor_id}`}</Typography>
           <Typography>{decision.reason}</Typography>
@@ -70,7 +74,7 @@ function SiteReview({ siteId }) {
       {(data) => <><Records rows={data.items || []} empty="Chưa có chuyển khoản cần đối soát." columns={[
         { key: "reference", label: "Mã giao dịch", render: (row) => <Typography variant="body2" sx={{ overflowWrap: "anywhere" }}>{row.reference}</Typography> },
         { key: "amount", label: "Số tiền", render: evidenceAmount },
-        { key: "source", label: "Nguồn", render: (row) => <Typography variant="body2" sx={{ maxWidth: 230, overflowWrap: "anywhere" }}>{sourceLabel(row)}</Typography> },
+        { key: "source", label: "Nguồn", render: (row) => <Typography variant="body2" sx={{ maxWidth: 230, overflowWrap: "anywhere" }}>{sourceLabel(row)}{twinNote(row) && <><br />{twinNote(row)}</>}</Typography> },
         { key: "reason", label: "Cần kiểm tra", render: (row) => reasonLabel(row.reason) },
         { key: "received_at", label: "Tiếp nhận", render: (row) => dateTime(row.received_at) },
         { key: "resolution", label: "Đối soát", render: (row) => row.resolution === "external_refund_recorded" ? "Đã ghi nhận hoàn ngoài hệ thống" : "Đang kiểm tra" },

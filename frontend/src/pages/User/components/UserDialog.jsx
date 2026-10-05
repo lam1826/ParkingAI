@@ -1,5 +1,11 @@
 import { useState, useEffect } from "react";
 import { Dialog, DialogTitle, DialogContent, DialogActions, Button, TextField, Grid, MenuItem, CircularProgress, FormControlLabel, Switch } from "@mui/material";
+import { autoSelectedRoleId, defaultAssignmentSiteId, siteAssignmentRole } from "../accountAssignment";
+import { singleSiteId } from "../../../utils/singleSiteMode";
+
+function configuredSiteId() {
+  try { return singleSiteId(); } catch { return null; }
+}
 
 const initialForm = {
   username: "",
@@ -9,8 +15,18 @@ const initialForm = {
   is_active: true,
 };
 
-const UserDialog = ({ inline = false, isOpen, onClose, onSave, user, roles, submitting }) => {
+const NO_SITES = [];
+
+const UserDialog = ({ inline = false, isOpen, onClose, onSave, user, roles, sites = NO_SITES, submitting }) => {
   const [form, setForm] = useState(initialForm);
+  const selectedRole = roles.find((role) => String(role.id) === String(form.role_id));
+  // Only an Admin receives the lot list; a Manager's staff join the managed lot.
+  const assignsSite = !user && sites.length > 0 && Boolean(siteAssignmentRole(selectedRole?.name));
+  // Untouched choice follows the lot list as it loads; an explicit choice (even "") wins.
+  const siteValue = form.site_id ?? defaultAssignmentSiteId(sites, configuredSiteId());
+  // Admin sees every role; without "staff" a new employee cannot be created.
+  const staffRoleMissing = !user && roles.some((role) => String(role.name).toLowerCase() === "admin")
+    && !roles.some((role) => String(role.name).toLowerCase() === "staff");
 
   useEffect(() => {
     if (user) {
@@ -22,7 +38,7 @@ const UserDialog = ({ inline = false, isOpen, onClose, onSave, user, roles, subm
         is_active: user.is_active !== undefined ? user.is_active : true,
       });
     } else {
-      setForm({ ...initialForm, role_id: roles.length === 1 ? roles[0].id : "" });
+      setForm({ ...initialForm, role_id: autoSelectedRoleId(roles) });
     }
   }, [user, isOpen, roles]);
 
@@ -42,6 +58,8 @@ const UserDialog = ({ inline = false, isOpen, onClose, onSave, user, roles, subm
     if (user && !submitData.password) {
       delete submitData.password;
     }
+    if (assignsSite) submitData.site_id = siteValue;
+    else delete submitData.site_id;
     submitData.role_id = Number(submitData.role_id);
     onSave(submitData);
   };
@@ -51,7 +69,12 @@ const UserDialog = ({ inline = false, isOpen, onClose, onSave, user, roles, subm
     <form className="form-grid" onSubmit={handleSubmit}>
       <label className="field">Họ và tên<input autoFocus name="full_name" required value={form.full_name} disabled={submitting} onChange={handleChange} autoComplete="off" /></label>
       <label className="field">Tên đăng nhập<input name="username" required value={form.username} disabled={Boolean(user) || submitting} onChange={handleChange} autoComplete="off" /></label>
-      <label className="field">Vai trò<select name="role_id" required value={form.role_id} disabled={roles.length === 1 || submitting} onChange={handleChange}><option value="">Chọn vai trò</option>{roles.map(role => <option key={role.id} value={role.id}>{role.name}</option>)}</select></label>
+      <label className="field">Vai trò<select name="role_id" required value={form.role_id} disabled={Boolean(autoSelectedRoleId(roles)) || submitting} onChange={handleChange}><option value="">Chọn vai trò</option>{roles.map(role => <option key={role.id} value={role.id}>{role.name}</option>)}</select></label>
+      {staffRoleMissing && <p className="inline-note warning core-wide" role="status">Chưa có vai trò nhân viên (staff). Khôi phục vai trò chuẩn ở trang Vai trò trước khi tạo tài khoản nhân viên.</p>}
+      {assignsSite && <label className="field">Bãi phân công<select name="site_id" value={siteValue} disabled={submitting} onChange={handleChange}>
+        {sites.length > 1 && <option value="">Chưa phân công (cấp sau ở Cấu hình bãi)</option>}
+        {sites.map(site => <option key={site.id} value={String(site.id)}>{site.name}</option>)}
+      </select></label>}
       <label className="field">{user ? "Mật khẩu mới (để trống nếu không đổi)" : "Mật khẩu"}<input type="password" name="password" required={!user} value={form.password} disabled={submitting} onChange={handleChange} autoComplete="new-password" /></label>
       <label className="checkbox-field"><input type="checkbox" name="is_active" checked={form.is_active} disabled={submitting} onChange={handleChange} /><span>Tài khoản hoạt động</span></label>
       <div className="form-actions core-wide"><button className="button primary" disabled={submitting}>{submitting ? "Đang lưu…" : user ? "Lưu thay đổi" : "Tạo tài khoản"}</button><button type="button" className="button secondary" disabled={submitting} onClick={onClose}>Hủy</button></div>
@@ -100,7 +123,7 @@ const UserDialog = ({ inline = false, isOpen, onClose, onSave, user, roles, subm
                 fullWidth select required size="small"
                 label="Vai trò"
                 name="role_id"
-                disabled={roles.length === 1 || submitting}
+                disabled={Boolean(autoSelectedRoleId(roles)) || submitting}
                 value={form.role_id}
                 onChange={handleChange}
               >

@@ -1,4 +1,6 @@
 import { requestId as newRequestId } from "../../../utils/requestId";
+import { toBusinessDateString } from "../../../utils/businessDate";
+import { customerForVehicle, ownerChoices, renewalDefaults, renewalEndsBeforeToday } from "../monthlyPassForm";
 import { useState, useEffect } from "react";
 import { Alert, Dialog, DialogTitle, DialogContent, DialogActions, Button, TextField, Grid, MenuItem, CircularProgress } from "@mui/material";
 
@@ -19,17 +21,15 @@ const MonthlyPassDialog = ({ inline = false, isOpen, onClose, onSave, pass, vehi
   useEffect(() => {
     setRequestId(newRequestId());
     if (pass) {
-      const nextStart = new Date(`${pass.end_date}T12:00:00Z`);
-      nextStart.setUTCDate(nextStart.getUTCDate() + 1);
-      const nextEnd = new Date(nextStart);
-      nextEnd.setUTCDate(nextEnd.getUTCDate() + 29);
+      // Kỳ mới bắt đầu sau kỳ đã chọn, nhưng không sớm hơn hôm nay: kỳ đã trôi
+      // qua không phủ được lượt gửi nào (phạm vi vé chốt lúc xe vào).
+      const period = renewalDefaults(pass.end_date, toBusinessDateString());
       setForm({
         pass_code: pass.card_code || pass.pass_code || "",
         vehicle_id: pass.vehicle_id || pass.vehicle?.id || "",
         customer_id: pass.customer_id || pass.customer?.id || "",
-        // Xử lý cắt chuỗi ngày tháng để bind vào input type="date"
-        start_date: nextStart.toISOString().slice(0, 10),
-        end_date: nextEnd.toISOString().slice(0, 10),
+        start_date: period.start_date,
+        end_date: period.end_date,
         price: pass.price || 0,
         payment_method: "cash",
       });
@@ -40,12 +40,18 @@ const MonthlyPassDialog = ({ inline = false, isOpen, onClose, onSave, pass, vehi
 
   const handleChange = (e) => {
     const { name, value } = e.target;
-    setForm((prev) => ({ ...prev, [name]: value }));
+    setForm((prev) => ({
+      ...prev, [name]: value,
+      // Vé tháng thuộc chủ xe: chọn xe có chủ thì tự chọn đúng chủ đó.
+      ...(name === "vehicle_id" ? { customer_id: customerForVehicle(vehicles, customers, value, prev.customer_id) } : {}),
+    }));
   };
+  const customerChoices = pass ? customers : ownerChoices(vehicles, customers, form.vehicle_id);
 
   // Validation tối thiểu phía client; backend vẫn là biên bảo vệ cuối cùng
   const dateRangeInvalid =
     Boolean(form.start_date && form.end_date) && form.end_date < form.start_date;
+  const renewalElapsed = Boolean(pass) && renewalEndsBeforeToday(form, toBusinessDateString());
   // Giá vé: số nguyên VND không âm. KHÔNG tự làm tròn — nhập 123.5 phải bị
   // chặn kèm thông báo, không âm thầm đổi thành 124.
   const priceNumber = Number(form.price);
@@ -57,7 +63,7 @@ const MonthlyPassDialog = ({ inline = false, isOpen, onClose, onSave, pass, vehi
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (dateRangeInvalid || priceInvalid) return;
+    if (dateRangeInvalid || priceInvalid || renewalElapsed) return;
     // Contract backend: price là số nguyên VND, pass_code được trim
     onSave(pass ? {
       start_date: form.start_date, end_date: form.end_date, price: priceNumber,
@@ -127,7 +133,7 @@ const MonthlyPassDialog = ({ inline = false, isOpen, onClose, onSave, pass, vehi
                 value={form.customer_id}
                 onChange={handleChange}
               >
-                {customers.map((c) => (
+                {customerChoices.map((c) => (
                   <MenuItem key={c.id} value={c.id}>{c.full_name} - {c.phone_number}</MenuItem>
                 ))}
               </TextField>
@@ -150,8 +156,8 @@ const MonthlyPassDialog = ({ inline = false, isOpen, onClose, onSave, pass, vehi
                 slotProps={{ inputLabel: { shrink: true } }}
                 value={form.end_date}
                 onChange={handleChange}
-                error={dateRangeInvalid}
-                helperText={dateRangeInvalid ? "Ngày hết hạn phải từ ngày bắt đầu trở đi" : undefined}
+                error={dateRangeInvalid || renewalElapsed}
+                helperText={dateRangeInvalid ? "Ngày hết hạn phải từ ngày bắt đầu trở đi" : renewalElapsed ? "Kỳ gia hạn đã kết thúc trước hôm nay; hãy chọn kỳ từ hôm nay trở đi" : undefined}
               />
             </Grid>
           </Grid>
@@ -162,7 +168,7 @@ const MonthlyPassDialog = ({ inline = false, isOpen, onClose, onSave, pass, vehi
         <DialogActions sx={inline ? { p: 0, mt: "20px", justifyContent: "flex-start", flexWrap: "wrap", gap: 1 } : { p: 2 }}>
           <Button onClick={onClose} variant="outlined" disabled={submitting}>Hủy</Button>
           <Button
-            type="submit" variant="contained" disabled={submitting || dateRangeInvalid || priceInvalid}
+            type="submit" variant="contained" disabled={submitting || dateRangeInvalid || priceInvalid || renewalElapsed}
             startIcon={submitting && <CircularProgress size={18} color="inherit" />}
           >
             {pass ? "Gia hạn và ghi nhận thu" : "Đăng ký và ghi nhận thu"}

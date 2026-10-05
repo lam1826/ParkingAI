@@ -7,6 +7,7 @@ import { zoneService } from "../Zone/services/zoneService";
 import { parkingSlotService } from "./parkingSlotService";
 import { items, read } from "../Expansion/shared";
 import useCorePermissions from "../../hooks/useCorePermissions";
+import { singleSiteId } from "../../utils/singleSiteMode";
 
 const labels = { available: "Còn nhận xe", occupied: "Đang có xe", reserved: "Đã giữ chỗ", inactive: "Ngừng phục vụ", unknown: "Chưa rõ khả dụng" };
 export default function ParkingSlotPage() {
@@ -15,16 +16,27 @@ export default function ParkingSlotPage() {
   const [loading, setLoading] = useState(true), [error, setError] = useState("");
   const [filters, setFilters] = useState({ zone: "", status: "", type: "" }), [draftFilters, setDraftFilters] = useState(filters);
   const [editor, setEditor] = useState(null), [form, setForm] = useState({}), [formError, setFormError] = useState(""), [busy, setBusy] = useState(false);
-  const [notice, setNotice] = useState("");
+  const [notice, setNotice] = useState(""), [siteName, setSiteName] = useState("");
   const working = useRef(false), formRef = useRef(null);
   const load = useCallback(async () => {
     setLoading(true); setError("");
     try {
-      const [zoneList, typeList, slotList, inventories] = await Promise.all([
+      const scope = singleSiteId();
+      const [zoneList, typeList, slotList, { siteList, inventories }] = await Promise.all([
         zoneService.getAll(), vehicleTypeService.getAll(), parkingSlotService.getAll(),
-        read("/sites").then(data => Promise.all(items(data).map(site => read(`/sites/${site.id}/availability`)))),
+        read("/sites").then(async data => {
+          const siteList = items(data);
+          return { siteList, inventories: await Promise.all(siteList.map(site => read(`/sites/${site.id}/availability`))) };
+        }),
       ]);
-      setZones(zoneList); setTypes(typeList); setSlots(slotList); setInventory(inventories.flatMap(data => data.slots || []));
+      // Single-site mode shows one lot (#77): only its zones and their slots are listed, counted
+      // and offered in the editor, like the scoped site configuration. A response without
+      // site_id (older server) keeps the previous, unfiltered catalogue.
+      const scopedZones = scope === null ? zoneList : zoneList.filter(zone => zone.site_id === undefined || Number(zone.site_id) === scope);
+      const zoneIds = new Set(scopedZones.map(zone => zone.id));
+      setZones(scopedZones); setTypes(typeList); setSlots(scope === null ? slotList : slotList.filter(slot => zoneIds.has(slot.zone_id)));
+      setInventory(inventories.flatMap(data => data.slots || []));
+      setSiteName(scope === null ? "" : siteList.find(site => Number(site.id) === scope)?.name || "");
     } catch (failure) { setSlots([]); setInventory([]); setError(extractErrorMessage(failure, "Không thể tải sơ đồ chỗ đỗ.")); }
     finally { setLoading(false); }
   }, []);
@@ -69,7 +81,7 @@ export default function ParkingSlotPage() {
   };
   const resetFilters = () => { const empty = { zone: "", status: "", type: "" }; setFilters(empty); setDraftFilters(empty); };
   return <>
-    <PageHeader title="Bãi đỗ" description="Quản lý khu vực, chỗ đỗ và khả năng nhận xe tại một bãi." actions={canManageConfiguration && <button className="button primary" disabled={busy} onClick={() => open(null)}><PrototypeIcon name="plus" />Thêm vị trí đỗ</button>} />
+    <PageHeader title="Bãi đỗ" description={`Quản lý khu vực, chỗ đỗ và khả năng nhận xe tại ${siteName || "một bãi"}.`} actions={canManageConfiguration && <button className="button primary" disabled={busy} onClick={() => open(null)}><PrototypeIcon name="plus" />Thêm vị trí đỗ</button>} />
     <WorkspaceTabs />
     {!canManageConfiguration && <p className="inline-note">Bạn có thể tra cứu chỗ đỗ. Quản lý phụ trách thêm và sửa vị trí.</p>}
     <div className="stat-strip"><span className="stat-item"><strong>{totals.available}</strong>còn nhận xe</span><span className="stat-item"><strong>{totals.occupied}</strong>đang có xe</span><span className="stat-item"><strong>{totals.reserved}</strong>giữ chỗ</span><span className="stat-item"><strong>{totals.inactive}</strong>ngừng phục vụ</span>{totals.unknown > 0 && <span className="stat-item"><strong>{totals.unknown}</strong>chưa rõ khả dụng</span>}</div>

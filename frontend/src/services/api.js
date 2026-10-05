@@ -1,8 +1,9 @@
 import axios from "axios";
 import { resolveApiBaseUrl } from "../utils/apiBaseUrl";
 import { clearAIChat } from "../utils/aiChatStorage";
-import { isCurrentAuthFailure, notifyAuthSessionChanged } from "./authSessionBoundary";
+import { expireCurrentSession, notifyAuthSessionChanged } from "./authSessionBoundary";
 import { shouldAttachAuthorization } from "./credentialRequestPolicy";
+import { withServerErrorTrace } from "./serverErrorTrace";
 
 // Khởi tạo instance của axios
 const api = axios.create({
@@ -46,26 +47,25 @@ api.interceptors.response.use(
     return response;
   },
   (error) => {
+    // 5xx: the server asks the user to quote its trace code, so every message
+    // read from response.data.detail (getErrorMessage, ad-hoc readers) shows it.
+    withServerErrorTrace(error);
     if (error.response) {
       const { status } = error.response;
 
       switch (status) {
         case 401:
-          // A late failure from a previous login must not sign out the next user.
-          if (!isCurrentAuthFailure(error.config?.headers?.Authorization, localStorage.getItem("token"))) break;
-          // Lỗi 401 Unauthorized: Token hết hạn hoặc không hợp lệ
-          console.warn("Phiên đăng nhập hết hạn. Đang đăng xuất...");
-          
-          // Xóa thông tin auth
-          localStorage.removeItem("token");
-          localStorage.removeItem("user");
-          clearAIChat();
-          notifyAuthSessionChanged();
-          
-          // Chuyển hướng về trang Login. 
-          // (Dùng window.location vì useNavigate không hoạt động ngoài React Components)
-          if (window.location.pathname !== "/login") {
-            window.location.href = "/login";
+          // Only the current token's 401 ends the session (a late failure from a
+          // previous login must not sign out the next user). No hard navigation:
+          // AuthProvider resets on the session event, public pages keep rendering
+          // and PrivateRoute sends private paths to /login?next=<path>.
+          if (expireCurrentSession({
+            authorization: error.config?.headers?.Authorization,
+            storage: localStorage,
+            clearChat: clearAIChat,
+            notify: notifyAuthSessionChanged,
+          })) {
+            console.warn("Phiên đăng nhập hết hạn. Vui lòng đăng nhập lại.");
           }
           break;
 
@@ -79,7 +79,7 @@ api.interceptors.response.use(
           break;
 
         case 500:
-          console.error("Lỗi máy chủ nội bộ (500)!");
+          console.error(`Lỗi máy chủ nội bộ (500)!${error.traceId ? ` Mã truy vết: ${error.traceId}` : ""}`);
           break;
           
         default:

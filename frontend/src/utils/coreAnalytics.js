@@ -12,12 +12,17 @@ export function reportStatistics(data, role) {
   ];
   if (data.total_movements != null) rows.push({ id: "movements", label: "Tổng lượt vào và ra", value: data.total_movements });
   if (canViewReportRevenue(data, role)) {
-    for (const [id, key, label] of [
+    for (const [id, key, label, optional] of [
       ["parking", "parking_revenue", "Thu gửi xe"],
       ["monthly", "monthly_pass_revenue", "Thu vé tháng"],
+      // Hour/day packages are part of net revenue; saved AI inputs from before this field omit it.
+      ["prepaid", "prepaid_revenue", "Thu vé giờ/ngày", true],
       ["refunds", "refunds", "Hoàn tiền"],
       ["net", "total_revenue", "Doanh thu thuần (không gồm demo)"],
-    ]) rows.push({ id, label, value: data.revenue[key], currency: true });
+    ]) {
+      if (optional && data.revenue[key] == null) continue;
+      rows.push({ id, label, value: data.revenue[key], currency: true });
+    }
   }
   return rows;
 }

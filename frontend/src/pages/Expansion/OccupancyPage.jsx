@@ -7,8 +7,9 @@ import OccupancyImage from "./OccupancyImage";
 import { occupancyDefaults, occupancyLabel, occupancyReason, regionDraft, visibleReadings } from "./occupancyPresentation";
 import { Workspace, Section, Records, useSites, useRemote, useAction, read, send, items, dateTime, requestKey, formLayout, SitePicker, combineRemotes, refreshAll } from "./shared";
 
-function CalibrationForm({ camera, observations, slots, action, current }) {
+function CalibrationForm({ camera, observations, slots, action, current, effectiveNow }) {
   const [referenceId, setReferenceId] = useState("");
+  const [chosenReference, setChosenReference] = useState(null);
   const [slotId, setSlotId] = useState("");
   const [points, setPoints] = useState([]);
   const [regions, setRegions] = useState([]);
@@ -32,7 +33,7 @@ function CalibrationForm({ camera, observations, slots, action, current }) {
   const submit = (event) => {
     event.preventDefault();
     if (!attempt.current) {
-      if (!referenceId || !regions.length || !confirmed) { setError("Chọn ảnh nền, khoanh ít nhất một chỗ và xác nhận các vùng đang trống."); return; }
+      if (!reference || !regions.length || !confirmed) { setError("Chọn ảnh nền còn lưu, khoanh ít nhất một chỗ và xác nhận các vùng đang trống."); return; }
       attempt.current = { camera_id: camera.id, reference_observation_id: referenceId, regions, settings,
         empty_reference_confirmed: true, request_id: requestKey() };
       setFrozen(true);
@@ -41,15 +42,32 @@ function CalibrationForm({ camera, observations, slots, action, current }) {
       attempt.current = null; setFrozen(false); setConfirmed(false); setRegions([]); setPoints([]);
     });
   };
-  const reference = observations.find((observation) => observation.id === referenceId);
+  // The latest site images can rotate out while a manager is still drawing.
+  // Keep the chosen metadata, but never extend its retention deadline.
+  const referenceCandidate = observations.find((row) => row.id === referenceId) || chosenReference;
+  const retainedUntil = Date.parse(referenceCandidate?.expires_at);
+  const pinnedUntil = Date.parse(chosenReference?.expires_at);
+  const cameraDeadline = Date.parse(referenceCandidate?.observed_at) + camera.retention_hours * 3600000;
+  const referenceDeadline = Math.min(retainedUntil, Number.isFinite(pinnedUntil) ? pinnedUntil : retainedUntil,
+    Number.isFinite(cameraDeadline) ? cameraDeadline : retainedUntil);
+  // Remember every shorter deadline even after the image leaves the list or
+  // camera retention is restored. Primitive dependencies avoid polling loops.
+  useEffect(() => {
+    if (!Number.isFinite(referenceDeadline)) return;
+    setChosenReference((previous) => previous?.id !== referenceId || Date.parse(previous.expires_at) <= referenceDeadline
+      ? previous : { ...previous, expires_at: new Date(referenceDeadline).toISOString() });
+  }, [referenceId, referenceDeadline]);
+  const reference = referenceCandidate && referenceDeadline > effectiveNow ? referenceCandidate : null;
+  const referenceChoices = reference && !observations.some((row) => row.id === reference.id) ? [reference, ...observations] : observations;
   return <Section title="Cấu hình vùng chỗ đỗ" description="Dùng camera cố định nhìn rõ các chỗ. Chọn ảnh nền khi các chỗ cần khoanh đang trống. Mỗi lần lưu tạo một phiên bản mới và cần phân tích lại ảnh.">
     {current && <Typography variant="body2">Phiên bản hiện tại {current.version} · Ảnh nền còn lưu đến {dateTime(current.valid_until)}. Không kéo dài thời hạn ảnh để giữ cấu hình.</Typography>}
     <Box component="form" onSubmit={submit}>
       <Box component="fieldset" disabled={action.busy || frozen} sx={{ border: 0, p: 0, m: 0, minWidth: 0 }}>
         <Stack spacing={2}>
-          <TextField select label="Ảnh nền trống" value={referenceId} onChange={(event) => { setReferenceId(event.target.value); setRegions([]); setPoints([]); setConfirmed(false); }}>
-            {observations.map((observation) => <MenuItem key={observation.id} value={observation.id}>Chụp {dateTime(observation.captured_at)} · {observation.id.slice(0, 8)}</MenuItem>)}
+          <TextField select label="Ảnh nền trống" value={reference ? referenceId : ""} onChange={(event) => { setReferenceId(event.target.value); setChosenReference(observations.find((row) => row.id === event.target.value) || null); setRegions([]); setPoints([]); setConfirmed(false); }}>
+            {referenceChoices.map((observation) => <MenuItem key={observation.id} value={observation.id}>Chụp {dateTime(observation.captured_at)} · {observation.id.slice(0, 8)}</MenuItem>)}
           </TextField>
+          {chosenReference && !reference && <Alert severity="warning">Ảnh nền đã hết hạn lưu. Chọn ảnh nền mới để tiếp tục khoanh vùng.</Alert>}
           {reference && <OccupancyImage observationId={reference.id} regions={regions.map((region) => ({ ...region, slot_name: choices.find((slot) => slot.id === region.slot_id)?.slot_name }))} draft={points} onPoint={!frozen && !action.busy ? addPoint : undefined} label="Ảnh nền để khoanh vùng chỗ trống" />}
           <Typography variant="body2">Chọn chỗ, bấm các góc theo chiều quanh vùng rồi thêm vùng. Có thể nhập tọa độ X/Y từ 0 đến 1 bằng bàn phím. Không khoanh chồng lên chỗ khác.</Typography>
           <Box sx={formLayout}>
@@ -98,6 +116,7 @@ function CalibrationForm({ camera, observations, slots, action, current }) {
 
 function CameraWorkspace({ camera, canManage }) {
   const [sourceId, setSourceId] = useState("");
+  const [lastSuccessful, setLastSuccessful] = useState(null);
   const load = useCallback(async () => {
     const receivedAt = performance.now();
     const [summary, observations, availability] = await Promise.all([
@@ -105,13 +124,16 @@ function CameraWorkspace({ camera, canManage }) {
       read("/vision/observations", { site_id: camera.site_id, limit: 100 }),
       read(`/sites/${camera.site_id}/availability`),
     ]);
-    return { summary, observations: items(observations).filter((row) => row.camera_id === camera.id), slots: availability.slots || [], receivedAt };
+    const result = { summary, observations: items(observations).filter((row) => row.camera_id === camera.id), slots: availability.slots || [], receivedAt };
+    setLastSuccessful((previous) => !previous || receivedAt >= previous.receivedAt ? result : previous);
+    return result;
   }, [camera.id, camera.site_id]);
   const remote = useRemote(load);
+  const data = remote.data || lastSuccessful;
   const action = useAction(remote.reload);
   const [elapsed, setElapsed] = useState(0);
   const reload = remote.reload;
-  const receivedAt = remote.data?.receivedAt;
+  const receivedAt = data?.receivedAt;
   useEffect(() => {
     const tick = () => setElapsed(receivedAt == null ? 0 : Math.max(0, performance.now() - receivedAt));
     tick();
@@ -122,7 +144,6 @@ function CameraWorkspace({ camera, canManage }) {
     const timer = window.setInterval(() => { if (!document.hidden && !action.busy) void reload(); }, 15000);
     return () => window.clearInterval(timer);
   }, [reload, action.busy]);
-  const data = remote.data;
   const summary = data?.summary;
   const readings = visibleReadings(summary, elapsed);
   const effectiveNow = Date.parse(summary?.server_now) + elapsed;
@@ -157,7 +178,7 @@ function CameraWorkspace({ camera, canManage }) {
         <Button component={Link} to="/vision">Gửi ảnh camera mới</Button></Box>
       {!sources.length && <Typography color="text.secondary">Chưa có ảnh của camera này trong 100 ảnh gần nhất của bãi.</Typography>}
     </Section>
-    {canManage && data && <CalibrationForm camera={camera} observations={sources} slots={data.slots} current={summary?.calibration} action={action} />}
+    {canManage && data && <CalibrationForm camera={camera} observations={sources} slots={data.slots} current={summary?.calibration} action={action} effectiveNow={effectiveNow} />}
   </Workspace>;
 }
 

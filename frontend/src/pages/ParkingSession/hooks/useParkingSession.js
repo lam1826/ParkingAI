@@ -168,7 +168,8 @@ const useParkingSession = () => {
   const handleCheckIn = async (e) => {
     e.preventDefault();
     const plate = licensePlate.trim();
-    if (!plate) return;
+    const type = vehicleTypes.find(row => String(row.id) === String(vehicleTypeId));
+    if (!plate && type?.requires_plate !== false) return;
     if (!admissionTypeId(vehicleTypes, vehicleTypeId)) {
       showNotify("Vui lòng chọn loại phương tiện đang nhận xe.", "warning");
       return;

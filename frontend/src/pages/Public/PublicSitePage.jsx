@@ -57,7 +57,8 @@ export default function PublicSitePage() {
               <Typography sx={{ alignSelf: "center" }}>Xin chào, {user.username}</Typography>
               <Button component={RouterLink} to={user.role === "customer" ? "/portal" : "/"} variant="contained" color="inherit" sx={{ color: "primary.dark" }}>{user.role === "customer" ? "Bãi xe của tôi" : "Vào hệ thống"}</Button>
             </> : <>
-              <Button component={RouterLink} to={`/login?next=${encodeURIComponent("/portal")}`} variant="outlined" color="inherit">Đăng nhập</Button>
+              {/* Generic login: every role lands on its own home (customers on /portal). */}
+              <Button component={RouterLink} to="/login" variant="outlined" color="inherit">Đăng nhập</Button>
               <Button component={RouterLink} to={`/register?next=${encodeURIComponent("/portal")}`} variant="contained" color="inherit" sx={{ color: "primary.dark" }}>Đăng ký</Button>
             </>}
           </Stack>

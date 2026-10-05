@@ -6,4 +6,6 @@ export const zoneService = {
   create: async (data) => (await api.post("/api/v1/zones", data)).data,
   update: async (id, data) => (await api.put(`/api/v1/zones/${id}`, data)).data,
   delete: async (id) => (await api.delete(`/api/v1/zones/${id}`)).data,
+  // Whether this site-less form can create a zone (not when the system has several sites).
+  getCreationScope: async () => (await api.get("/api/v1/zones/creation-scope")).data,
 };

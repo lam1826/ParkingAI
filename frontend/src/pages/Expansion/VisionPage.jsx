@@ -1,5 +1,5 @@
 import { useCallback, useContext, useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { Alert, Box, Button, Checkbox, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, MenuItem, Stack, TextField, Typography } from "@mui/material";
 import { prepareCameraPhoto } from "./imageUpload";
 import PhotoCameraIcon from "@mui/icons-material/PhotoCamera";
@@ -53,6 +53,10 @@ export default function VisionPage() {
   const { user } = useContext(AuthContext);
   const navigate = useNavigate();
   const sites = useSites();
+  const [searchParams] = useSearchParams();
+  const requestedSite = searchParams.get("site");
+  const setSiteId = sites.setSiteId;
+  useEffect(() => { if (requestedSite) setSiteId(requestedSite); }, [requestedSite, setSiteId]);
   const [cameraId, setCameraId] = useState("");
   const [selected, setSelected] = useState(null);
   const [plate, setPlate] = useState("");

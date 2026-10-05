@@ -2,6 +2,9 @@ import { useState, useEffect, useCallback, useContext, useMemo } from "react";
 import userService from "../services/userService";
 import { AuthContext } from "../../../context/AuthContext";
 import { assignableRoles, canCreateUser, canEditUser as mayEditUser } from "../../../constants/userPermissions";
+import { createAccountBody, createdAccountNotice, expectedAssignmentSite } from "../accountAssignment";
+
+const NO_SITES = [];
 
 const useUser = () => {
   const [users, setUsers] = useState([]);
@@ -20,6 +23,19 @@ const useUser = () => {
   const canDeleteUsers = String(currentUser?.role).toLowerCase() === "admin";
   const canEditUser = (target) => mayEditUser(currentUser, target);
   const allowedRoles = useMemo(() => assignableRoles(currentUser, roles), [currentUser, roles]);
+  // Admin assigns new staff/managers to a lot when creating them.
+  const isAdmin = String(currentUser?.role).toLowerCase() === "admin";
+  const [sites, setSites] = useState(NO_SITES);
+  const assignableSites = isAdmin ? sites : NO_SITES;
+
+  useEffect(() => {
+    if (!isAdmin) return undefined;
+    let active = true;
+    userService.getSites()
+      .then((rows) => { if (active) setSites(Array.isArray(rows) ? rows : NO_SITES); })
+      .catch(() => { if (active) setSites(NO_SITES); });
+    return () => { active = false; };
+  }, [isAdmin]);
 
   const fetchUsers = useCallback(async () => {
     setLoading(true);
@@ -84,8 +100,9 @@ const useUser = () => {
         await userService.update(selectedUser.id, formData);
         showNotify("Cập nhật thông tin thành công!", "success");
       } else {
-        await userService.create(formData);
-        showNotify("Tạo tài khoản thành công!", "success");
+        const body = createAccountBody(formData, roles);
+        const created = await userService.create(body);
+        showNotify(createdAccountNotice(created, expectedAssignmentSite(body, roles, assignableSites)), "success");
       }
       closeDialogs();
       fetchUsers();
@@ -114,7 +131,7 @@ const useUser = () => {
   const closeNotify = () => setNotify((prev) => ({ ...prev, open: false }));
 
   return {
-    users, roles: allowedRoles, loading, submitting, canManage, canDeleteUsers, canEditUser,
+    users, roles: allowedRoles, sites: assignableSites, loading, submitting, canManage, canDeleteUsers, canEditUser,
     dialogOpen, deleteDialogOpen, selectedUser, notify,
     handleOpenCreate, handleOpenEdit, handleOpenDelete,
     closeDialogs, handleSave, handleDelete, fetchUsers, closeNotify

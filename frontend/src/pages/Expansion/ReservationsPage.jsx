@@ -10,6 +10,37 @@ import { dateTime, items, PageControls, read, Records, refreshAll, RemoteSection
 const loadTypes = () => read("/catalog/vehicle-types").then(items);
 const labels = { confirmed: "Đã giữ chỗ", arrived: "Đã đến", cancelled: "Đã hủy", expired: "Hết hạn" };
 
+function UpcomingCommitments({ siteId }) {
+  const load = useCallback(async () => {
+    const profile = await read("/me/profile");
+    if (!profile.linked) return { reservations: [], waitlist: [] };
+    const [reservations, waiting, offered] = await Promise.all([
+      read("/me/reservations", { site_id: siteId, status: "confirmed", limit: 100 }),
+      read("/me/waitlist", { site_id: siteId, status: "waiting", limit: 100 }),
+      read("/me/waitlist", { site_id: siteId, status: "offered", limit: 100 }),
+    ]);
+    return { reservations: items(reservations), waitlist: [...items(waiting), ...items(offered)] };
+  }, [siteId]);
+  const remote = useRemote(load);
+  const action = useAction(remote.reload);
+  const reservations = remote.data?.reservations || [];
+  const waiting = remote.data?.waitlist || [];
+  return <div>
+    {remote.error && <Alert severity="error" action={<Button onClick={remote.reload}>Thử lại</Button>}>{remote.error}</Alert>}
+    {remote.loading && <p role="status">Đang tải chỗ đã cấp và danh sách chờ…</p>}
+    {action.error && <Alert severity="error">{action.error}</Alert>}
+    {action.notice && <Alert severity="success">{action.notice}</Alert>}
+    {reservations.map((row) => <div className="booking-row" key={`reservation-${row.id}`}>
+      <div><div className="plate">{row.license_plate}</div><p>{row.site_name} · {row.slot_name}</p><p>Giờ hẹn: {dateTime(row.start_at)} · Đến trước {dateTime(row.arrival_deadline)}</p></div>
+      {row.order_id ? <Button component={Link} to={`/portal?order=${encodeURIComponent(row.order_id)}`}>Xem đơn vé</Button> : <Button disabled={action.busy} onClick={() => void action.run(() => send(`/me/reservations/${row.id}/cancel`), "Đã hủy chỗ được cấp.")}>Hủy chỗ</Button>}
+    </div>)}
+    {waiting.map((row) => <div className="booking-row" key={`waitlist-${row.id}`}>
+      <div><div className="plate">{row.license_plate}</div><p>{row.status === "offered" ? "Đã được cấp chỗ; xem giờ hẹn ở trên." : `Đang chờ chỗ · ${dateTime(row.start_at)} → ${dateTime(row.end_at)}`}</p></div>
+      <Button disabled={action.busy} onClick={() => void action.run(() => send(`/me/waitlist/${row.id}/cancel`), "Đã rời danh sách chờ và thu hồi chỗ chưa dùng.")}>Rời danh sách chờ</Button>
+    </div>)}
+  </div>;
+}
+
 function PreviousBookings({ siteId }) {
   const loadPrevious = useCallback(async () => {
     const profile = await read("/me/profile");
@@ -83,13 +114,14 @@ function AdvanceBookings({ site }) {
       </section>
       <section className="surface">
         <div className="section-head"><h2>Lịch sắp đến</h2></div>
+        <UpcomingCommitments siteId={site.id} />
         {bookings.error && <Alert severity="error" action={<Button onClick={bookings.reload}>Thử lại</Button>}>{bookings.error}</Alert>}
         {bookings.loading && <p className="muted" role="status">Đang tải lịch đặt chỗ…</p>}
         {items(bookings.data).map((row) => <div className="booking-row" key={row.id}>
           <div><div className="plate">{row.license_plate}</div><p>{types.data?.find((item) => item.id === row.vehicle_type_id)?.name || "Xe"} · {dateTime(row.start_at)} → {dateTime(row.end_at)}</p><p>{row.slot_name || "Vị trí phù hợp đã được giữ"}</p></div>
           <div><span className={`badge ${row.status === "confirmed" ? "success" : "neutral"}`}>{labels[row.status] || row.status}</span>{row.status === "confirmed" && <button className="button quiet small" type="button" disabled={action.busy || pending} onClick={() => void action.run(() => send(`/me/advance-bookings/${encodeURIComponent(row.id)}/cancel`), "Đã hủy đặt chỗ.", () => setCreated(null))}>Hủy</button>}</div>
         </div>)}
-        {!bookings.loading && !bookings.error && !items(bookings.data).length && <div className="empty"><PrototypeIcon name="calendar" />Chưa có đặt chỗ. Bạn vẫn có thể đến gửi trực tiếp.</div>}
+        {!bookings.loading && !bookings.error && !items(bookings.data).length && <div className="empty"><PrototypeIcon name="calendar" />Chưa có đặt chỗ tự khai báo. Bạn vẫn có thể đến gửi trực tiếp.</div>}
         {(page.page > 0 || items(bookings.data).length >= page.size) && <PageControls page={page.page} count={items(bookings.data).length} size={page.size} busy={bookings.loading || action.busy || pending} onChange={page.setPage} />}
       </section>
     </div>

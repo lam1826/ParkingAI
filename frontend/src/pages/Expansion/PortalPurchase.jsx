@@ -5,6 +5,7 @@ import { matchingPlans, portalOrderBody, productDuration, productKind } from "./
 import { nextBookingWindow } from "./siteForms";
 import { formLayout, money, requestKey, Section, send } from "./shared";
 import { paymentModes, paymentModeLabel } from "./onlinePaymentState";
+import { monthlyPaymentNotice } from "./portalState";
 
 export default function PortalPurchase({ vehicles, plans, demoPaymentsEnabled, onCreated, onLocked, visible, initialKind = "monthly" }) {
   const [form, setForm] = useState(() => ({ vehicle_id: "", plan_id: "", zone_id: "", kind: ["monthly", "hourly", "daily"].includes(initialKind) ? initialKind : "monthly", start_at: nextBookingWindow().start_at }));
@@ -42,7 +43,7 @@ export default function PortalPurchase({ vehicles, plans, demoPaymentsEnabled, o
     {catalogBusy && <Typography role="status">Đang tải xe và gói vé…</Typography>}
     {state.error && <Alert severity={uncertain ? "warning" : "error"}>{state.error}</Alert>}
     {state.phase === "completed" ? <Stack spacing={2}>
-      <Alert severity="success">Đã tạo đơn. Kiểm tra thời hạn và thanh toán ở phần chi tiết bên dưới.</Alert>
+      <Alert severity="success">Đã tạo đơn. Hạn thanh toán và cách thanh toán được ghi ở phần chi tiết bên dưới; quá hạn đơn tự hết hiệu lực.</Alert>
       <Button variant="outlined" sx={{ alignSelf: "flex-start" }} onClick={() => flow.reset()}>Mua thêm vé</Button>
     </Stack> : <Box component="form" onSubmit={submit}>
       <Box component="fieldset" disabled={locked || catalogBusy || !!catalogError} sx={{ ...formLayout, border: 0, p: 0, m: 0, minWidth: 0 }}>
@@ -62,7 +63,7 @@ export default function PortalPurchase({ vehicles, plans, demoPaymentsEnabled, o
       {selectedPlan && <Alert severity={timed && !selectedPlan.eligible_zones?.length ? "warning" : "info"} sx={{ mt: 2 }}>
         {timed ? (!selectedPlan.eligible_zones?.length ? "Gói này chưa có khu vực đang phục vụ. Hãy chọn gói khác."
           : "Một lượt gửi trong khung giờ cố định. Đến muộn không kéo dài giờ kết thúc. Đơn giữ chỗ tối đa 10 phút để thanh toán; phí quá giờ theo giá chốt trên đơn.")
-          : "Vé tháng áp dụng nhiều lượt trong kỳ, đến hết ngày cuối. Vé tháng không bảo đảm một chỗ trống khi bãi đã đầy."}
+          : `Vé tháng áp dụng nhiều lượt trong kỳ, đến hết ngày cuối. Vé tháng không bảo đảm một chỗ trống khi bãi đã đầy. ${monthlyPaymentNotice(selectedPlan, paymentMode)}`.trim()}
       </Alert>}
       <Stack direction="row" spacing={1} useFlexGap sx={{ mt: 2, flexWrap: "wrap" }}>
         <Button type="submit" variant="contained" disabled={pending || (!uncertain && (catalogBusy || !!catalogError || !selectedPlan || (timed && !selectedPlan.eligible_zones?.length)))}>

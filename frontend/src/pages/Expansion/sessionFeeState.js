@@ -57,3 +57,16 @@ export function createSessionFeeFlow({ sessionId, loadStatus, createQuote, creat
     invalidate() { generation += 1; active = false; update({ phase: "idle", data: null, error: "" }); },
   };
 }
+
+// #79: a QR (payOS) payment can only be made when the server reports it enabled for
+// this lot and stay (`payment-status`). Otherwise staff collect cash or a transfer at
+// the counter, so the QR action must not be the primary (dead-end) choice. An unknown
+// status (not loaded or failed) is treated as unavailable.
+export function staffFeeActions(status) {
+  const online = status?.enabled === true && status.supported !== false
+    && (status.session_status === undefined || status.session_status === "active");
+  const note = online ? "" : status && typeof status.message === "string" && status.message
+    ? `${status.message} Thu tiền mặt hoặc chuyển khoản khi xác nhận xe ra.`
+    : "Chưa xác nhận được thanh toán QR cho lượt này. Thu tiền mặt hoặc chuyển khoản khi xác nhận xe ra.";
+  return { online, primary: online ? "online" : "cash", actions: online ? ["online", "cash"] : ["cash", "transfer"], note };
+}

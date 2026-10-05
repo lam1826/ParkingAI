@@ -28,6 +28,7 @@ const CheckInCard = ({
 }) => {
   const activeTypes = admissionVehicleTypes(vehicleTypes);
   const selectedTypeId = admissionTypeId(activeTypes, vehicleTypeId);
+  const requiresPlate = activeTypes.find(type => String(type.id) === String(selectedTypeId))?.requires_plate !== false;
   // Chỉ hiển thị các vị trí trống phù hợp loại xe và khu vực đã chọn
   const filteredSlots = availableSlots.filter((s) => {
     if (!selectedTypeId || s.vehicle_type_id !== Number(selectedTypeId)) return false;
@@ -48,11 +49,11 @@ const CheckInCard = ({
         >
           <TextField
             size="small"
-            placeholder="Nhập biển số xe (VD: 30A-12345)"
-            label="Biển số xe"
+            placeholder={requiresPlate ? "Nhập biển số xe (VD: 30A-12345)" : "Để trống để tự cấp mã xe"}
+            label={requiresPlate ? "Biển số xe" : "Mã xe (nếu đã có)"}
             value={licensePlate}
             onChange={(e) => onChangePlate(e.target.value)}
-            required
+            required={requiresPlate}
             disabled={submitting}
             sx={{ flex: "1 1 200px" }}
           />
@@ -121,7 +122,7 @@ const CheckInCard = ({
             variant="contained"
             color="success"
             startIcon={submitting ? <CircularProgress size={20} color="inherit" /> : <LoginIcon />}
-            disabled={submitting || !licensePlate.trim() || !selectedTypeId}
+            disabled={submitting || (requiresPlate && !licensePlate.trim()) || !selectedTypeId}
             sx={{ minWidth: 140, fontWeight: "bold" }}
           >
             Check In

@@ -1,7 +1,8 @@
 import { useCallback, useState } from "react";
 import { Alert, Box, Button, Checkbox, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, MenuItem, Stack, TextField, Typography } from "@mui/material";
-import { dateTime, money, read, Records, RemoteSection, send, StateChip, useAction, useRemote } from "./shared";
-import { channelLabel, REFUND_STATUS, refundDecisions, refundStatusLabel } from "./supportState";
+import { dateTime, money, read, Records, RemoteSection, Section, send, StateChip, useAction, useRemote } from "./shared";
+import { approvalEffectNote, channelLabel, OTHER_SITE_CLOSED_LABEL, otherSiteName, otherSiteRequests, REFUND_STATUS, refundDecisions, refundStatusLabel, rejectBlockedLabel, requestSitePath } from "./supportState";
+import { singleSiteId } from "../../utils/singleSiteMode";
 
 const FILTERS = [["", "Đang chờ & đã xử lý"], ...Object.entries(REFUND_STATUS)];
 
@@ -16,15 +17,20 @@ export default function RefundAdminPanel({ siteId, onChanged }) {
   const [confirmed, setConfirmed] = useState(false);
   const load = useCallback(() => siteId ? read(`/sites/${siteId}/refund-requests`, status ? { status } : undefined).then((data) => Array.isArray(data) ? data : data.items) : Promise.resolve([]), [siteId, status]);
   const remote = useRemote(load);
+  // Global admin only (the server answers others with nothing): open requests
+  // filed under a site this screen cannot open (review 05/10 #76).
+  const elsewhereLoad = useCallback(() => siteId ? read(`/sites/${siteId}/other-site-requests`) : Promise.resolve(null), [siteId]);
+  const elsewhere = useRemote(elsewhereLoad);
+  const otherRows = otherSiteRequests(elsewhere.data, "refund_requests", singleSiteId() !== null);
   const dialogRow = dialog ? dialog.row : null;
-  const detailLoad = useCallback(() => dialogRow && !dialogRow.legacy ? read(`/sites/${siteId}/refund-requests/${dialogRow.id}`) : Promise.resolve(null), [siteId, dialogRow]);
+  const detailLoad = useCallback(() => dialogRow && !dialogRow.legacy ? read(`/sites/${requestSitePath(dialogRow, siteId)}/refund-requests/${dialogRow.id}`) : Promise.resolve(null), [siteId, dialogRow]);
   const detail = useRemote(detailLoad);
-  const action = useAction(async () => { await remote.reload(); await onChanged?.(); });
+  const action = useAction(async () => { await remote.reload(); await elsewhere.reload(); await onChanged?.(); });
   const open = (kind, row) => { setDialog({ kind, row }); setNote(""); setAmount(""); setMethod("transfer"); setReference(""); setConfirmed(false); };
   const submit = (event) => {
     event.preventDefault();
     const { kind, row } = dialog;
-    const base = row.legacy ? `/portal/admin/refund-requests/${row.id}` : `/sites/${siteId}/refund-requests/${row.id}`;
+    const base = row.legacy ? `/portal/admin/refund-requests/${row.id}` : `/sites/${requestSitePath(row, siteId)}/refund-requests/${row.id}`;
     let path, body;
     if (row.legacy) { path = `${base}/resolve`; body = { approve: kind === "approve", note }; }
     else if (kind === "record") { path = `${base}/record-refund`; body = { method, external_reference: reference.trim() || null, confirmed: true }; }
@@ -32,33 +38,40 @@ export default function RefundAdminPanel({ siteId, onChanged }) {
     void action.run(() => send(path, body), "Đã ghi nhận quyết định.", () => setDialog(null));
   };
   const state = detail.data?.refund_state;
+  const rejectBlocked = dialog?.kind === "reject" ? rejectBlockedLabel(dialog.row, detail.data) : "";
+  const approvalNote = dialog?.kind === "approve" ? approvalEffectNote(dialog.row) : "";
   const titles = { review: "Bắt đầu xem xét", approve: "Duyệt yêu cầu hoàn", reject: "Từ chối yêu cầu hoàn", record: "Ghi nhận đã hoàn tiền ngoài hệ thống" };
+  const columns = [
+    { key: "created_at", label: "Ngày gửi", render: (row) => dateTime(row.created_at) },
+    { key: "customer_name", label: "Khách" },
+    { key: "payment_channel", label: "Kênh", render: (row) => <>{channelLabel(row.payment_channel)}{row.legacy ? " · Lịch sử" : ""}</> },
+    { key: "requested_amount", label: "Có thể hoàn", render: (row) => row.requested_amount == null ? "—" : money(row.requested_amount) },
+    { key: "approved_amount", label: "Đã duyệt", render: (row) => row.approved_amount == null ? "—" : money(row.approved_amount) },
+    { key: "reason", label: "Lý do của khách" },
+    { key: "status", label: "Trạng thái", render: (row) => <StateChip value={row.status} label={refundStatusLabel(row)} /> },
+    { key: "action", label: "Xử lý", render: (row) => {
+      if (row.site_active === false) return OTHER_SITE_CLOSED_LABEL;
+      const can = row.legacy ? { review: false, approve: row.status === "pending", reject: row.status === "pending", record: false } : refundDecisions(row);
+      return <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap" }}>
+        {can.review && <Button size="small" disabled={action.busy} onClick={() => open("review", row)}>Xem xét</Button>}
+        {can.approve && <Button size="small" disabled={action.busy} onClick={() => open("approve", row)}>Duyệt</Button>}
+        {can.record && <Button size="small" variant="contained" disabled={action.busy} onClick={() => open("record", row)}>Ghi nhận đã hoàn</Button>}
+        {can.reject && <Button size="small" color="error" disabled={action.busy} onClick={() => open("reject", row)}>Từ chối</Button>}
+        {!can.review && !can.approve && !can.record && !can.reject && "—"}
+      </Stack>;
+    } },
+  ];
   return <Stack spacing={2}>
     <Alert severity="info">Số tiền có thể hoàn do máy chủ tính từ phiếu thu gốc trừ các khoản đã hoàn. Duyệt là quyết định; tiền chỉ được ghi vào sổ khi ghi nhận hoàn (khoản DEMO được hoàn mô phỏng ngay khi duyệt).</Alert>
     {action.error && <Alert severity="error">{action.error}</Alert>}
     {action.notice && <Alert severity="success" role="status">{action.notice}</Alert>}
     <TextField select size="small" label="Trạng thái" value={status} onChange={(event) => setStatus(event.target.value)} sx={{ maxWidth: 260 }}>{FILTERS.map(([key, label]) => <MenuItem key={key} value={key}>{label}</MenuItem>)}</TextField>
     <RemoteSection remote={remote} title="Yêu cầu hoàn tiền" description="Hàng có nhãn Lịch sử là yêu cầu DEMO của phiên bản trước; chỉ duyệt/từ chối được.">
-      {(rows) => <Records rows={rows} columns={[
-        { key: "created_at", label: "Ngày gửi", render: (row) => dateTime(row.created_at) },
-        { key: "customer_name", label: "Khách" },
-        { key: "payment_channel", label: "Kênh", render: (row) => <>{channelLabel(row.payment_channel)}{row.legacy ? " · Lịch sử" : ""}</> },
-        { key: "requested_amount", label: "Có thể hoàn", render: (row) => row.requested_amount == null ? "—" : money(row.requested_amount) },
-        { key: "approved_amount", label: "Đã duyệt", render: (row) => row.approved_amount == null ? "—" : money(row.approved_amount) },
-        { key: "reason", label: "Lý do của khách" },
-        { key: "status", label: "Trạng thái", render: (row) => <StateChip value={row.status} label={refundStatusLabel(row)} /> },
-        { key: "action", label: "Xử lý", render: (row) => {
-          const can = row.legacy ? { review: false, approve: row.status === "pending", reject: row.status === "pending", record: false } : refundDecisions(row);
-          return <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap" }}>
-            {can.review && <Button size="small" disabled={action.busy} onClick={() => open("review", row)}>Xem xét</Button>}
-            {can.approve && <Button size="small" disabled={action.busy} onClick={() => open("approve", row)}>Duyệt</Button>}
-            {can.record && <Button size="small" variant="contained" disabled={action.busy} onClick={() => open("record", row)}>Ghi nhận đã hoàn</Button>}
-            {can.reject && <Button size="small" color="error" disabled={action.busy} onClick={() => open("reject", row)}>Từ chối</Button>}
-            {!can.review && !can.approve && !can.record && !can.reject && "—"}
-          </Stack>;
-        } },
-      ]} empty="Không có yêu cầu hoàn ở trạng thái này." />}
+      {(rows) => <Records rows={rows} columns={columns} empty="Không có yêu cầu hoàn ở trạng thái này." />}
     </RemoteSection>
+    {otherRows.length > 0 && <Section title="Yêu cầu hoàn đang mở ở bãi khác" description="Khách đã gửi các yêu cầu này cho bãi khác với bãi đang làm việc. Quyết định được ghi tại bãi của yêu cầu.">
+      <Records rows={otherRows} columns={[{ key: "site_name", label: "Bãi", render: otherSiteName }, ...columns]} />
+    </Section>}
     <Dialog open={Boolean(dialog)} onClose={() => { if (!action.busy) setDialog(null); }} fullWidth maxWidth="sm" aria-labelledby="refund-decision-title">
       {dialog && <Box component="form" onSubmit={submit}>
         <DialogTitle id="refund-decision-title">{titles[dialog.kind]}</DialogTitle>
@@ -66,6 +79,8 @@ export default function RefundAdminPanel({ siteId, onChanged }) {
           <Typography>{dialog.row.customer_name} · {channelLabel(dialog.row.payment_channel)} · Lý do: {dialog.row.reason}</Typography>
           {detail.loading && <Typography role="status" color="text.secondary">Đang tải phiếu thu…</Typography>}
           {state && <Typography>Phiếu thu {money(state.amount)} · đã hoàn {money(state.refunded_amount)} · <strong>còn có thể hoàn {money(state.refundable_amount)}</strong>{state.blocked_label ? ` · ${state.blocked_label}` : ""}</Typography>}
+          {approvalNote && <Alert severity="info">{approvalNote}</Alert>}
+          {rejectBlocked && <Alert severity="warning">{rejectBlocked}</Alert>}
           {dialog.kind === "approve" && !dialog.row.legacy && <TextField label="Số tiền duyệt hoàn (đồng)" type="number" value={amount} onChange={(event) => setAmount(event.target.value)} helperText={`Để trống để duyệt toàn bộ ${money(state?.refundable_amount ?? dialog.row.requested_amount)}. Không được vượt số còn có thể hoàn.`} slotProps={{ htmlInput: { min: 1, max: state?.refundable_amount ?? dialog.row.requested_amount, step: 1 } }} />}
           {dialog.kind === "record" && <>
             <Typography>Số tiền đã duyệt: <strong>{money(dialog.row.approved_amount)}</strong>. Ghi nhận này tạo phiếu hoàn trong sổ thu; hệ thống không tự chuyển tiền qua ngân hàng.</Typography>
@@ -76,7 +91,7 @@ export default function RefundAdminPanel({ siteId, onChanged }) {
           <FormControlLabel control={<Checkbox checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} />} label={dialog.kind === "record" ? "Tôi xác nhận đã hoàn tiền cho khách theo hình thức trên" : "Tôi đã kiểm tra phiếu thu và quyền sử dụng liên quan"} />
           {action.error && <Alert severity="error">{action.error}</Alert>}
         </Stack></DialogContent>
-        <DialogActions><Button disabled={action.busy} onClick={() => setDialog(null)}>Quay lại</Button><Button type="submit" variant="contained" disabled={action.busy || !confirmed || (dialog.kind === "reject" && note.trim().length < 3)}>Xác nhận</Button></DialogActions>
+        <DialogActions><Button disabled={action.busy} onClick={() => setDialog(null)}>Quay lại</Button><Button type="submit" variant="contained" disabled={action.busy || !confirmed || !!rejectBlocked || (dialog.kind === "reject" && note.trim().length < 3)}>Xác nhận</Button></DialogActions>
       </Box>}
     </Dialog>
   </Stack>;

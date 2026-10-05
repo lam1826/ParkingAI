@@ -19,7 +19,12 @@ async function loadOpenBalances(prefix) {
   // Limit concurrent requests; the server remains the sole source of fee arithmetic.
   for (let index = 0; index < active.length; index += 4) {
     const batch = await Promise.all(active.slice(index, index + 4).map(async session => {
-      const quote = await read(`${prefix}/sessions/${session.id}/checkout-quote`);
+      let quote;
+      try { quote = await read(`${prefix}/sessions/${session.id}/checkout-quote`); }
+      catch (error) {
+        if (error?.response?.status === 409 && error.response.data?.detail?.code === "checkout_state_conflict") return 0;
+        throw error;
+      }
       const value = settlementAmounts(quote);
       if (!value) throw new Error("Chưa tổng hợp được phí đang gửi.");
       return value.due;
@@ -27,6 +32,13 @@ async function loadOpenBalances(prefix) {
     amounts.push(...batch);
   }
   return { due: amounts.reduce((sum, amount) => sum + amount, 0), unpaid: amounts.filter(amount => amount > 0).length };
+}
+
+export function overviewLinks(site) {
+  const scope = `/sites?site=${encodeURIComponent(site.id)}`;
+  return [{ to: `${scope}&tab=reservations`, label: "Khách & vé" },
+    { to: "/reports", label: "Báo cáo & AI" }, { to: `${scope}&tab=availability`, label: "Sơ đồ bãi" },
+    ...(site.role === "admin" ? [{ to: "/users", label: "Quản lý tài khoản" }] : [])];
 }
 
 function QuickLink({ to, children }) {
@@ -72,8 +84,8 @@ function SiteOverview({ site }) {
       ]} empty={inventory.loading ? "Đang tải chỗ đỗ…" : "Chưa có loại xe hoặc vị trí phục vụ."} />
       {availability?.inactive_slots > 0 && <p className="inline-note">{availability.inactive_slots} vị trí tạm ngừng không tính vào sức chứa đang phục vụ.</p>}
     </section>
-    {availability?.available_now === 0 && <section className="surface"><div className="section-head"><h2>Cần theo dõi</h2></div><div className="overview-alert"><div><strong>Chưa còn chỗ nhận xe ngay</strong><p>Kiểm tra vị trí đang có xe và chỗ giữ trước.</p></div><QuickLink to="/parking-slots">Xem bãi đỗ</QuickLink></div></section>}
-    <div className="overview-links"><QuickLink to="/customers">Khách & vé</QuickLink><QuickLink to="/reports">Báo cáo & AI</QuickLink><QuickLink to="/parking-slots">Sơ đồ bãi</QuickLink>{site.role === "admin" && <QuickLink to="/users">Quản lý tài khoản</QuickLink>}</div>
+    {availability?.available_now === 0 && <section className="surface"><div className="section-head"><h2>Cần theo dõi</h2></div><div className="overview-alert"><div><strong>Chưa còn chỗ nhận xe ngay</strong><p>Kiểm tra vị trí đang có xe và chỗ giữ trước.</p></div><QuickLink to={`/sites?site=${encodeURIComponent(site.id)}&tab=availability`}>Xem bãi đỗ</QuickLink></div></section>}
+    <div className="overview-links">{overviewLinks(site).map(link => <QuickLink key={link.to} to={link.to}>{link.label}</QuickLink>)}</div>
     {data?.current_availability?.as_of && <p className="muted overview-updated">Cập nhật {dateTime(data.current_availability.as_of)}</p>}
   </>;
 }

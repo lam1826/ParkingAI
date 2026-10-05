@@ -10,21 +10,20 @@ export default function FleetSection({ organizations = [], canManage = false, si
   const [choice, setChoice] = useState("");
   const organizationId = organizations.some((row) => String(row.id) === String(choice)) ? choice : organizations[0]?.id || "";
   const [vehicle, setVehicle] = useState(null);
-  const [memberId, setMemberId] = useState("");
   const [page, setPage] = useState(0);
   const load = useCallback(() => organizationId
     ? read(`/organizations/${organizationId}/fleet`, { limit: PAGE_SIZE, offset: page * PAGE_SIZE })
     : Promise.resolve(null), [organizationId, page]);
   const remote = useRemote(load);
   const action = useAction(remote.reload);
-  useEffect(() => { setVehicle(null); setMemberId(""); setPage(0); }, [organizationId]);
-  const submit = (kind) => (event) => {
+  useEffect(() => { setVehicle(null); setPage(0); }, [organizationId]);
+  const submit = (event) => {
     event.preventDefault();
-    const id = Number(kind === "fleet" ? vehicle?.id : memberId);
+    const id = Number(vehicle?.id);
     void action.run(() => {
       if (!Number.isSafeInteger(id) || id < 1) throw new Error("Mã phải là số nguyên dương.");
-      return send(`/organizations/${organizationId}/${kind}`, { [kind === "fleet" ? "vehicle_id" : "user_id"]: id });
-    }, kind === "fleet" ? "Đã thêm xe vào nhóm." : "Đã cấp quyền xem nhóm.");
+      return send(`/organizations/${organizationId}/fleet`, { vehicle_id: id });
+    }, "Đã thêm xe vào nhóm.");
   };
   return <Section title="Đội xe" description="Chỉ tổng hợp lượt gửi tại bãi của nhóm, kể từ khi xe được thêm vào nhóm.">
     {!organizations.length ? <Typography color="text.secondary">Chưa có nhóm xe được cấp quyền xem.</Typography> : <>
@@ -54,15 +53,9 @@ export default function FleetSection({ organizations = [], canManage = false, si
         <PageControls page={page} count={remote.data.sessions?.length || 0} size={PAGE_SIZE} busy={remote.loading || action.busy} onChange={setPage} />
       </>}
       {canManage && <Stack spacing={2}>
-        <Box component="form" onSubmit={submit("fleet")} sx={formLayout}>
+        <Box component="form" onSubmit={submit} sx={formLayout}>
           <SiteVehiclePicker siteId={siteId} value={vehicle} onChange={setVehicle} disabled={action.busy} label="Xe cần thêm vào nhóm" />
           <Button type="submit" variant="outlined" disabled={action.busy}>Thêm xe vào nhóm</Button>
-        </Box>
-        <Box component="form" onSubmit={submit("members")} sx={formLayout}>
-          <TextField label="Mã tài khoản được xem nhóm" type="number" required value={memberId} onChange={(event) => setMemberId(event.target.value)} slotProps={{ htmlInput: { min: 1, step: 1 } }} />
-          <Button type="submit" variant="outlined" disabled={action.busy}>Cấp quyền xem</Button>
-          <Button color="error" disabled={action.busy || !Number.isSafeInteger(Number(memberId)) || Number(memberId) < 1}
-            onClick={() => void action.run(() => api.delete(endpoint(`/organizations/${organizationId}/members/${Number(memberId)}`)), "Đã thu hồi quyền xem của tài khoản.")}>Thu hồi quyền tài khoản này</Button>
         </Box>
       </Stack>}
     </>}

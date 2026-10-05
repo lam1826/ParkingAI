@@ -6,6 +6,12 @@ import { useExpansion } from "../../context/ExpansionContext";
 import { Link as RouterLink } from "react-router-dom";
 import useCorePermissions from "../../hooks/useCorePermissions";
 import PublicProfileForm from "./PublicProfileForm";
+import { requestAllOffsetPages } from "../../services/paginatedLookup";
+import { eligibleSiteMembers, memberDisplayName } from "../User/accountAssignment";
+
+// Admin grants lot access by choosing an account (all users are visible to Admin).
+const loadAccounts = () => requestAllOffsetPages(api, "/api/v1/users");
+const noAccounts = () => Promise.resolve([]);
 
 export function CreateSiteForm({ action, onCreated }) {
   const [name, setName] = useState("");
@@ -34,7 +40,14 @@ export default function SiteConfiguration({ siteId, zones, types, members, isAdm
   const [zone, setZone] = useState({ name: "", capacity: "10" });
   const [slot, setSlot] = useState({ slot_name: "", zone_id: "", vehicle_type_id: "" });
   const [member, setMember] = useState({ user_id: "", role: "staff" });
+  const accounts = useRemote(isAdmin ? loadAccounts : noAccounts);
+  const accountRows = accounts.data || [];
+  const candidates = eligibleSiteMembers(accountRows);
   const change = (setter, name) => (event) => setter((old) => ({ ...old, [name]: event.target.value }));
+  const chooseMember = (event) => {
+    const chosen = candidates.find((row) => String(row.id) === String(event.target.value));
+    setMember({ user_id: event.target.value, role: chosen?.role || "staff" });
+  };
   return <Stack spacing={3}>
     <PublicProfileForm siteId={siteId} action={action} />
     {capabilities?.legacy_workspace_allowed && canManageConfiguration && <Section title="Danh mục và vé" description="Quản lý loại xe, đơn giá và hồ sơ phục vụ hoạt động của bãi.">
@@ -75,14 +88,18 @@ export default function SiteConfiguration({ siteId, zones, types, members, isAdm
     </Section>
     <Section title="Nhân sự được phân công" description={isAdmin ? "Tài khoản phải có vai trò nhân viên hoặc quản lý trước khi cấp quyền tại bãi." : "Quản trị viên hệ thống cấp và thu hồi quyền vận hành theo từng bãi."}>
       <Records rows={members} columns={[
-        { key: "user_id", label: "Mã tài khoản" }, { key: "role", label: "Quyền tại bãi", render: (row) => row.role === "manager" ? "Quản lý bãi" : "Nhân viên bãi" },
+        { key: "user_id", label: "Tài khoản", render: (row) => isAdmin ? `${memberDisplayName(row.user_id, accountRows)} · #${row.user_id}` : `Tài khoản #${row.user_id}` }, { key: "role", label: "Quyền tại bãi", render: (row) => row.role === "manager" ? "Quản lý bãi" : "Nhân viên bãi" },
         ...(isAdmin ? [{ key: "remove", label: "Thao tác", render: (row) => <Button color="error" disabled={action.busy} onClick={() => void action.run(() => api.delete(endpoint(`/sites/${siteId}/members/${row.user_id}`)), "Đã thu hồi quyền tại bãi.")}>Thu hồi quyền</Button> }] : []),
       ]} />
       {isAdmin && <Box component="form" sx={formLayout} onSubmit={(event) => {
         event.preventDefault();
-        void action.run(() => send(`/sites/${siteId}/members`, { user_id: Number(member.user_id), role: member.role }), "Đã cập nhật quyền tại bãi.");
+        void action.run(() => send(`/sites/${siteId}/members`, { user_id: Number(member.user_id), role: member.role }), "Đã cập nhật quyền tại bãi.", () => setMember({ user_id: "", role: "staff" }));
       }}>
-        <TextField label="Mã tài khoản nhân sự" type="number" required value={member.user_id} onChange={change(setMember, "user_id")} slotProps={{ htmlInput: { min: 1, step: 1 } }} />
+        <TextField select label="Tài khoản nhân sự" required value={member.user_id} onChange={chooseMember} disabled={accounts.loading}
+          helperText={accounts.error || (!accounts.loading && !candidates.length ? "Chưa có tài khoản nhân viên hoặc quản lý đang hoạt động. Tạo tài khoản ở mục Tài khoản nhân sự." : "Chọn theo tên hoặc tên đăng nhập.")}
+          error={Boolean(accounts.error)}>
+          {candidates.map((row) => <MenuItem key={row.id} value={String(row.id)}>{row.label} · #{row.id}</MenuItem>)}
+        </TextField>
         <TextField select label="Quyền tại bãi" value={member.role} onChange={change(setMember, "role")}>
           <MenuItem value="staff">Nhân viên bãi</MenuItem><MenuItem value="manager">Quản lý bãi</MenuItem>
         </TextField>

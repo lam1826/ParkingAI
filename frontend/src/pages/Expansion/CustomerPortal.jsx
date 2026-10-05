@@ -5,7 +5,7 @@ import api from "../../services/api";
 import { useExpansion } from "../../context/ExpansionContext";
 import { PageHeader } from "../../components/common/PrototypeUI";
 import { toBusinessDateString } from "../../utils/businessDate";
-import { mergeSelectedOrder, passStatus } from "./portalState";
+import { mergeSelectedOrder, passStatus, paymentDeadline } from "./portalState";
 import { entitlementLabel, orderStatusLabel, productKind, productLabel } from "./portalOffers";
 import PortalPurchase from "./PortalPurchase";
 import PortalOrderDetails from "./PortalOrderDetails";
@@ -13,7 +13,8 @@ import PortalSessionDetails from "./PortalSessionDetails";
 import CustomerSupportPanel from "./CustomerSupportPanel";
 import CustomerFees from "./CustomerFees";
 import { portalTab } from "./customerFlow";
-import { refundAction, supportStatusLabel } from "./supportState";
+import { customerRefundAction, scopeOrderActions, SUPPORT_DETAILS, supportStatusLabel } from "./supportState";
+import { singleSiteId } from "../../utils/singleSiteMode";
 import { paymentModeLabel } from "./onlinePaymentState";
 import { combineRemotes, dateOnly, dateTime, endpoint, formLayout, items, money, PageControls, read, Records, refreshAll, RemoteSection, Section, send, SitePicker, StateChip, useAction, usePage, useRemote, useSites, Workspace } from "./shared";
 
@@ -176,7 +177,10 @@ function CustomerTickets() {
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedOrder = searchParams.get("order");
   const tab = portalTab(searchParams);
-  const setTab = (value) => setSearchParams(value === 5 ? { tab: "support" } : { tab: "tickets", view: ["profile", "passes", "purchase", "history", "notifications"][value] });
+  // Tab 5 is the support details view (refund requests list); `tab=support`
+  // alone would route to the simple support overview and drop the notice.
+  const setTab = (value) => setSearchParams(value === 5 ? SUPPORT_DETAILS : { tab: "tickets", view: ["profile", "passes", "purchase", "history", "notifications"][value] });
+  const singleSite = singleSiteId();
   const [refundTarget, setRefundTarget] = useState(null);
   const [refundReason, setRefundReason] = useState("");
   const [purchaseLocked, setPurchaseLocked] = useState(false);
@@ -247,13 +251,13 @@ function CustomerTickets() {
         </Box>
       </Section>
       <Section title="Tôi đã có hồ sơ tại bãi" description="Gửi yêu cầu để nhân viên kiểm tra và liên kết với tài khoản này.">
-        <Box component="form" onSubmit={(event) => submit(identityAction)(event, () => send("/me/link-requests", link), "Đã gửi yêu cầu liên kết. Nhân viên sẽ kiểm tra hồ sơ.")} sx={formLayout}>
+        <Box component="form" onSubmit={(event) => submit(identityAction)(event, () => send("/me/link-requests", link), "Đã gửi yêu cầu liên kết. Nhân viên sẽ kiểm tra hồ sơ.", () => setLink({ phone_number: "", note: "" }))} sx={formLayout}>
           <TextField required label="Số điện thoại đã đăng ký" value={link.phone_number} onChange={edit(setLink, "phone_number")} />
           <TextField label="Thông tin hỗ trợ xác minh" value={link.note} onChange={edit(setLink, "note")} inputProps={{ maxLength: 500 }} />
           <Button type="submit" variant="outlined" disabled={identityAction.busy}>Yêu cầu liên kết</Button>
         </Box>
         <CatalogState remote={links} label="Yêu cầu liên kết" />
-        {!links.error && !links.loading && <Records rows={links.data || []} columns={[{ key: "created_at", label: "Ngày yêu cầu", render: (row) => dateTime(row.created_at) }, { key: "status", label: "Trạng thái", render: (row) => <StateChip value={row.status} /> }]} empty="Chưa có yêu cầu liên kết." />}
+        {!links.error && !links.loading && <Records rows={links.data || []} columns={[{ key: "created_at", label: "Ngày yêu cầu", render: (row) => dateTime(row.created_at) }, { key: "phone_number", label: "Số điện thoại" }, { key: "note", label: "Thông tin xác minh" }, { key: "status", label: "Trạng thái", render: (row) => <StateChip value={row.status} /> }]} empty="Chưa có yêu cầu liên kết." />}
       </Section>
     </>}
     {data && linked && <>
@@ -274,7 +278,7 @@ function CustomerTickets() {
           </Box>
         </Section>
         <RemoteSection remote={vehicleRequests} title="Yêu cầu thêm xe đã gửi">
-          {(rows) => <Records rows={rows} columns={[{ key: "license_plate", label: "Biển số" }, { key: "status", label: "Trạng thái", render: (row) => <StateChip value={row.status} /> }]} empty="Chưa có yêu cầu thêm xe." />}
+          {(rows) => <Records rows={rows} columns={[{ key: "license_plate", label: "Biển số" }, { key: "vehicle_type_id", label: "Loại xe", render: (row) => (types.data || []).find((type) => type.id === row.vehicle_type_id)?.name || "—" }, { key: "note", label: "Ghi chú" }, { key: "status", label: "Trạng thái", render: (row) => <StateChip value={row.status} /> }]} empty="Chưa có yêu cầu thêm xe." />}
         </RemoteSection>
       </>}
       {tab === 1 && <>
@@ -294,7 +298,7 @@ function CustomerTickets() {
       </>}
       {tab === 2 && <Alert severity="info">{demoPaymentsEnabled ? "Chế độ đồ án: QR và kết quả thanh toán DEMO là mô phỏng, không chuyển tiền qua ngân hàng." : "Chọn hình thức thanh toán khi mua vé. Vé được cấp sau khi khoản thu được xác nhận."}</Alert>}
       <PortalPurchase vehicles={vehicles} plans={plans} demoPaymentsEnabled={demoPaymentsEnabled} onCreated={onCreated} onLocked={setPurchaseLocked} visible={tab === 2} initialKind={searchParams.get("kind")} />
-      {currentOrder && <Box sx={{ display: tab === 2 ? "block" : "none" }}><PortalOrderDetails key={`${currentOrder.id}-${currentOrder.server_now}-${currentOrder.status}`} order={currentOrder} busy={orderAction.busy || purchaseLocked}
+      {currentOrder && <Box sx={{ display: tab === 2 ? "block" : "none" }}><PortalOrderDetails key={`${currentOrder.id}-${currentOrder.server_now}-${currentOrder.status}`} order={scopeOrderActions(currentOrder, singleSite)} busy={orderAction.busy || purchaseLocked}
           onRefresh={() => openOrder(currentOrder)}
           onSimulate={(outcome) => orderAction.run(() => send(`/me/orders/${currentOrder.id}/simulate`, { token: currentOrder.demo_token, outcome }), "Đã ghi nhận kết quả mô phỏng.", setSelected)}
           onCancel={() => orderAction.run(() => send(`/me/orders/${currentOrder.id}/cancel`), "Đã hủy đơn chưa thanh toán.", setSelected)}
@@ -307,6 +311,7 @@ function CustomerTickets() {
           { key: "product_kind", label: "Loại vé", render: productLabel },
           { key: "amount", label: "Số tiền", render: (row) => money(row.amount) },
           { key: "payment_mode", label: "Thanh toán", render: (row) => paymentModeLabel(row.payment_mode) },
+          { key: "payment_deadline", label: "Hạn thanh toán", render: (row) => dateTime(paymentDeadline(row)) },
           { key: "period", label: "Hiệu lực", render: (row) => productKind(row) === "monthly" ? `${dateOnly(row.start_date)} – hết ${dateOnly(row.end_date)}` : `${dateTime(row.start_at)} – ${dateTime(row.end_at)}` },
           { key: "status", label: "Trạng thái", render: (row) => <StateChip value={row.status} label={orderStatusLabel(row.status)} /> },
         ]} />{pager(ordersPage, orders, orderAction.busy || purchaseLocked)}</>}</RemoteSection>
@@ -314,9 +319,9 @@ function CustomerTickets() {
       {tab === 3 && <>
         <RemoteSection remote={sessions} title="Lịch sử gửi xe" description="Khoản gói đã mua và phí khi ra được ghi riêng. Chỉ hiển thị các lượt thuộc quyền truy cập đã xác minh của bạn.">{(rows) => <><Records rows={rows} columns={[...sessionColumns, { key: "details", label: "Chi tiết", render: (row) => <Button size="small" onClick={() => setSelectedSession(row)}>{row.status === "active" ? "Chi tiết & thanh toán" : "Xem căn cứ phí"}</Button> }]} />{pager(sessionsPage, sessions, false)}</>}</RemoteSection>
         <RemoteSection remote={receipts} title="Chứng từ của tôi">{(rows) => <><Records rows={rows} columns={[{ key: "created_at", label: "Thời gian", render: (row) => dateTime(row.created_at) }, { key: "kind", label: "Loại", render: (row) => row.kind === "refund" ? "Hoàn" : "Thu" }, { key: "amount", label: "Số tiền", render: (row) => money(row.amount) }, { key: "method", label: "Phương thức", render: (row) => row.method === "demo" ? "Mô phỏng đồ án" : row.method === "cash" ? "Tiền mặt" : row.method === "transfer" ? "Chuyển khoản" : "Chứng từ lịch sử" }, { key: "download", label: "Chứng từ", render: (row) => <Button size="small" disabled={downloadAction.busy} onClick={() => downloadReceipt(row)}>Tải PDF</Button> },
-          { key: "refund", label: "Hoàn tiền", render: (row) => { const state = refundAction(row); return state.kind === "request" ? <Button size="small" variant="outlined" disabled={orderAction.busy} onClick={() => { setRefundTarget(row); setRefundReason(""); }}>Yêu cầu hoàn</Button> : state.kind === "none" ? "—" : <Typography variant="body2" color="text.secondary">{state.label}</Typography>; } }]} />{pager(receiptsPage, receipts, downloadAction.busy)}</>}</RemoteSection>
+          { key: "refund", label: "Hoàn tiền", render: (row) => { const state = customerRefundAction(row, singleSite); return state.kind === "request" ? <Button size="small" variant="outlined" disabled={orderAction.busy} onClick={() => { setRefundTarget(row); setRefundReason(""); }}>Yêu cầu hoàn</Button> : state.kind === "none" ? "—" : <Typography variant="body2" color="text.secondary">{state.label}</Typography>; } }]} />{pager(receiptsPage, receipts, downloadAction.busy)}</>}</RemoteSection>
       </>}
-      {tab === 5 && <CustomerSupportPanel linked={linked} orders={orders.data} sessions={sessions.data} receipts={receipts.data} refunds={refunds} onChanged={refreshAll(notifications)} />}
+      {tab === 5 && <CustomerSupportPanel linked={linked} orders={orders.data} sessions={sessions.data} receipts={receipts.data} refunds={refunds} singleSite={singleSite} onChanged={refreshAll(notifications)} />}
       <Dialog open={Boolean(refundTarget)} onClose={() => { if (!orderAction.busy) setRefundTarget(null); }} fullWidth maxWidth="sm" aria-labelledby="refund-request-title">
         {refundTarget && <Box component="form" onSubmit={(event) => { event.preventDefault(); void orderAction.run(() => send(`/me/receipts/${refundTarget.id}/refund-requests`, { reason: refundReason.trim() }), "Đã gửi yêu cầu hoàn để quản lý kiểm tra. Gửi yêu cầu chưa có nghĩa tiền đã được hoàn.", () => { setRefundTarget(null); setTab(5); }); }}>
           <DialogTitle id="refund-request-title">Yêu cầu hoàn tiền</DialogTitle>

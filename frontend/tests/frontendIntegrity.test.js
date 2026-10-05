@@ -71,13 +71,17 @@ test("refresh chỗ trống chỉ nhận response mới nhất", async () => {
 });
 
 
-test("nhật ký tải đủ mọi trang và bỏ qua response filter đã cũ", async () => {
+// CL-AUTH #67 (review 05/10/2026): the audit table has no retention, so the page
+// fetches one server page per view instead of every page (see
+// fix20261005ClauthAuditPaging.test.js); stale responses are still ignored.
+test("nhật ký tải từng trang theo bộ lọc và bỏ qua response filter đã cũ", async () => {
   const source = await readFile(
     new URL("../src/pages/AuditLog/AuditLogPage.jsx", import.meta.url),
     "utf8",
   );
 
-  assert.match(source, /requestAllOffsetPages/);
+  assert.doesNotMatch(source, /requestAllOffsetPages/);
+  assert.match(source, /auditLogRequest\(/);
   assert.match(source, /createLatestRequestGate/);
   assert.match(source, /\.isCurrent\(/);
   assert.doesNotMatch(source, /limit:\s*500/);

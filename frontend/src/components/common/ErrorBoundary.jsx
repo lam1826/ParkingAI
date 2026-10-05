@@ -1,5 +1,6 @@
 import { Component } from "react";
 import { Alert, AlertTitle, Box, Button, Stack } from "@mui/material";
+import { shouldResetErrorBoundary } from "./errorBoundaryReset";
 
 /**
  * ErrorBoundary tối giản: chặn lỗi render của cây con để một trang lỗi
@@ -8,6 +9,8 @@ import { Alert, AlertTitle, Box, Button, Stack } from "@mui/material";
  * - Dùng ở cấp root (main.jsx) làm lưới an toàn cuối cùng.
  * - Dùng quanh <Outlet/> trong MainLayout (kèm key theo pathname để tự reset
  *   khi điều hướng sang trang khác) — lỗi một trang vẫn giữ Header/Sidebar.
+ * - `resetKey` (pathname + query): lỗi đang hiển thị được xóa khi người dùng
+ *   chuyển sang đích khác cùng pathname, ví dụ các tab /portal?tab=...
  *
  * Lỗi được log ra console phục vụ debug; không hiển thị stack trace cho người dùng.
  */
@@ -28,6 +31,17 @@ class ErrorBoundary extends Component {
   componentDidCatch(error, errorInfo) {
     // Không nuốt lỗi âm thầm — giữ log đầy đủ cho dev
     console.error("ErrorBoundary bắt được lỗi render:", error, errorInfo);
+  }
+
+  componentDidUpdate(prevProps, prevState) {
+    if (shouldResetErrorBoundary({
+      prevResetKey: prevProps.resetKey,
+      resetKey: this.props.resetKey,
+      hadError: prevState.hasError,
+      hasError: this.state.hasError,
+    })) {
+      this.setState({ hasError: false, chunkError: false });
+    }
   }
 
   handleRetry = () => {

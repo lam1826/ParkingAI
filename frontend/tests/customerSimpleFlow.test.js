@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { advanceBookingBody, feeLookupBody, portalTab, uncertainMutation, validFeeLookup } from "../src/pages/Expansion/customerFlow.js";
+import { advanceBookingBody, feeLookupBody, portalTab, refreshFeeLookup, uncertainMutation, validFeeLookup } from "../src/pages/Expansion/customerFlow.js";
 import { chatRequest, chatScopeKey } from "../src/components/ai/chatRequest.js";
 
 const types = [{ id: 1, name: "Ô tô", requires_plate: true }, { id: 2, name: "Xe đạp", requires_plate: false }];
@@ -24,6 +24,54 @@ test("fee result requires active scoped session and consistent real balance", ()
   assert.equal(validFeeLookup({ ...result, payment_status: { ...result.payment_status, session_id: "other" } }), false);
   assert.equal(validFeeLookup({ ...result, payment_status: { ...result.payment_status, balance_due: 0 } }), false);
   assert.equal(validFeeLookup({ ...result, session: { ...result.session, status: "completed" } }), false);
+});
+const ownedLookup = () => ({ session: { id: "owned-stay", license_plate: "30A-999.99", vehicle_type_id: 1,
+  status: "active", check_in_time: "2026-10-02T10:00:00+07:00" }, access: { kind: "owned", expires_at: null },
+  payment_status: { session_id: "owned-stay", session_status: "active", gross_fee: 50000, online_paid: 0,
+    balance_due: 50000, can_quote: false, server_now: "2026-10-02T11:10:00+07:00" } });
+test("cash departure updates the lookup state without reinterpreting collected cash as online credit", () => {
+  // Exact monetary/state shape observed through real isolated lookup, cash checkout and status APIs.
+  const before = ownedLookup();
+  const payment = { ...before.payment_status, session_status: "completed" };
+  const result = refreshFeeLookup(before, payment);
+  assert.equal(result.session.status, "completed");
+  assert.equal(result.payment_status.balance_due, 50000, "Completed contract preserves the cashier share already collected");
+  assert.equal(result.payment_status.online_paid, 0, "Cash must never be relabelled as online credit");
+  assert.equal(result.session.id, before.session.id);
+  assert.equal(result.access, before.access);
+  assert.equal(before.session.status, "active", "The old snapshot is not mutated");
+  assert.equal(validFeeLookup(result), false, "A completed result is not a fresh active lookup");
+});
+test("cancelled and fully online paid departures become terminal lookup results", () => {
+  const before = ownedLookup();
+  const cancelled = refreshFeeLookup(before, { ...before.payment_status,
+    session_status: "cancelled", gross_fee: 0, balance_due: 0 });
+  assert.equal(cancelled.session.status, "cancelled");
+  const onlineCompleted = refreshFeeLookup(before, { ...before.payment_status,
+    session_status: "completed", online_paid: 50000, balance_due: 0 });
+  assert.equal(onlineCompleted.session.status, "completed");
+  assert.equal(onlineCompleted.payment_status.online_paid, 50000);
+  assert.equal(onlineCompleted.payment_status.balance_due, 0);
+});
+test("refresh rejects other stays, malformed totals and unknown status instead of retaining old debt", () => {
+  const before = ownedLookup();
+  for (const change of [{ session_id: "another-stay" }, { balance_due: 0 }, { gross_fee: -1 },
+    { online_paid: "0" }, { session_status: "checking_out" }, { session_status: undefined }]) {
+    assert.equal(refreshFeeLookup(before, { ...before.payment_status, ...change }), null);
+  }
+  assert.equal(refreshFeeLookup(before, null), null);
+  assert.equal(refreshFeeLookup(null, before.payment_status), null);
+});
+test("a fresh active balance may change while a closed stay can never reopen", () => {
+  const before = ownedLookup();
+  const paid = refreshFeeLookup(before, { ...before.payment_status, online_paid: 20000, balance_due: 30000 });
+  assert.equal(paid.session.status, "active");
+  assert.equal(paid.payment_status.balance_due, 30000);
+  for (const terminal of ["completed", "cancelled"]) {
+    const closed = refreshFeeLookup(before, { ...before.payment_status, session_status: terminal });
+    assert.equal(refreshFeeLookup(closed, before.payment_status), null);
+    assert.equal(refreshFeeLookup(closed, { ...before.payment_status, session_status: terminal }).session.status, terminal);
+  }
 });
 test("uncertain booking response keeps original request while validation errors allow correction", () => {
   for (const status of [408, 429, 500, 502]) assert.equal(uncertainMutation({ response: { status } }), true);

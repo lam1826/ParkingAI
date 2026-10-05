@@ -1,7 +1,7 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { Alert, Button, Stack, Typography } from "@mui/material";
 import OnlinePaymentPanel from "./OnlinePaymentPanel";
-import { createSessionFeeFlow } from "./sessionFeeState";
+import { createSessionFeeFlow, staffFeeActions } from "./sessionFeeState";
 import { dateTime, money, read, requestKey, send } from "./shared";
 
 export default function SessionFeePayment({ sessionId, siteId, onChanged }) {
@@ -29,6 +29,7 @@ export default function SessionFeePayment({ sessionId, siteId, onChanged }) {
       <Typography variant="h5" component="p">{data.session_status === "completed" ? "Đã thu khi ra" : "Còn thanh toán"}: {money(data.balance_due)}</Typography>
       {data.paid_through && <Typography>Đã trả đến: {dateTime(data.paid_through)}</Typography>}
       {data.message && <Alert severity={data.enabled ? "info" : "warning"}>{data.message}</Alert>}
+      {siteId && !closed && !staffFeeActions(data).online && <Alert severity="info">Không lập được QR cho lượt này. Quay lại xác nhận xe ra để thu tiền mặt hoặc chuyển khoản.</Alert>}
     </>}
     <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap" }}>
       <Button variant="outlined" disabled={busy || uncertain || state.phase === "unauthorized"} onClick={() => void refresh()}>Cập nhật số dư</Button>

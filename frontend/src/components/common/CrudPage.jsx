@@ -35,7 +35,8 @@ const catalogue = {
   "Quản lý khách hàng thân thiết": ["Khách & vé", "Hồ sơ khách, phương tiện liên kết và các kỳ vé tháng.", "khách hàng", "Khách hàng"],
 };
 
-export default function CrudPage({ title, fields, service, canEdit = true, canDelete = canEdit, readOnlyMessage, descriptionNote, embedded = false }) {
+// canCreate=false hides "Thêm …" while existing rows stay editable; createNote says where to create instead (#71).
+export default function CrudPage({ title, fields, service, canEdit = true, canDelete = canEdit, canCreate = canEdit, createNote, readOnlyMessage, descriptionNote, embedded = false }) {
   const [rows, setRows] = useState([]), [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false), [editing, setEditing] = useState(null), [form, setForm] = useState({});
   const [busy, setBusy] = useState(false), [formError, setFormError] = useState("");
@@ -55,14 +56,14 @@ export default function CrudPage({ title, fields, service, canEdit = true, canDe
   useEffect(() => { void load(); }, [load]);
   useEffect(() => { if (open) editor.current?.scrollIntoView({ behavior: "smooth", block: "nearest" }); }, [open, editing]);
   const start = row => {
-    if (!canEdit || busy) return;
+    if (!canEdit || busy || (!row && !canCreate)) return;
     setEditing(row); setFormError("");
     setForm(Object.fromEntries(fields.map(field => [field.name, row?.[field.name] ?? field.defaultValue ?? (field.type === "boolean" ? true : "")])));
     setOpen(true);
   };
   const save = async event => {
     event.preventDefault();
-    if (!canEdit || working.current) return;
+    if (!canEdit || working.current || (!editing && !canCreate)) return;
     const missing = fields.filter(field => field.required && field.type !== "boolean" && (form[field.name] === "" || form[field.name] == null));
     if (missing.length) { setFormError(`Vui lòng nhập: ${missing.map(field => field.label).join(", ")}.`); return; }
     working.current = true; setBusy(true); setFormError("");
@@ -88,12 +89,13 @@ export default function CrudPage({ title, fields, service, canEdit = true, canDe
   const filtered = rows.filter(row => visible.some(field => String(valueFor(row, field)).toLocaleLowerCase("vi-VN").includes(search.trim().toLocaleLowerCase("vi-VN"))));
   if (sort) filtered.sort((a, b) => String(valueFor(a, sort.field)).localeCompare(String(valueFor(b, sort.field)), "vi", { numeric: true }) * sort.direction);
   const currentPage = Math.min(page, Math.max(0, Math.ceil(filtered.length / 25) - 1));
-  const add = canEdit && <button className="button primary" onClick={() => start(null)} disabled={busy}><AddIcon fontSize="small" /> Thêm {entity}</button>;
+  const add = canEdit && canCreate && <button className="button primary" onClick={() => start(null)} disabled={busy}><AddIcon fontSize="small" /> Thêm {entity}</button>;
   return <>
     {!embedded && <><PageHeader title={heading} description={description} actions={add} /><WorkspaceTabs /></>}
     {descriptionNote && <p className="inline-note">{descriptionNote}</p>}
     {!canEdit && readOnlyMessage && <p className="inline-note">{readOnlyMessage}</p>}
-    {open && canEdit && <section ref={editor} className="surface core-editor" aria-labelledby="catalog-editor-title">
+    {canEdit && !canCreate && createNote && <p className="inline-note" role="note">{createNote}</p>}
+    {open && canEdit && (editing || canCreate) && <section ref={editor} className="surface core-editor" aria-labelledby="catalog-editor-title">
       <div className="section-head"><h2 id="catalog-editor-title">{editing ? "Sửa" : "Thêm"} {entity}</h2></div>
       <form className="form-grid" onSubmit={save}>
         <CrudFields fields={fields} form={form} disabled={busy} onChange={(name, value) => setForm(old => ({ ...old, [name]: value }))} />

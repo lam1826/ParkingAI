@@ -6,6 +6,9 @@ const userService = {
 
   getRoles: async () => requestAllOffsetPages(api, "/api/v1/roles"),
 
+  // Active lots visible to the actor (all active lots for an Admin).
+  getSites: async () => (await api.get("/api/v2/sites")).data,
+
   create: async (data) => {
     const response = await api.post("/api/v1/users", data);
     return response.data;

@@ -19,7 +19,7 @@ import { combineRemotes, dateTime, formLayout, items, money, PageControls, read,
 
 const RESERVATION_STATES = [["", "Tất cả"], ["confirmed", "Đã đặt"], ["arrived", "Đã đến"], ["cancelled", "Đã hủy"], ["expired", "Hết hạn"]];
 const ALLOCATION_STATES = [["", "Tất cả"], ["active", "Đang hiệu lực"], ["cancelled", "Đã hủy"]];
-const WAITLIST_STATES = [["waiting", "Đang chờ"], ["offered", "Đã có chỗ"], ["cancelled", "Đã hủy"], ["", "Tất cả"]];
+const WAITLIST_STATES = [["waiting", "Đang chờ"], ["offered", "Đã có chỗ"], ["used", "Đã sử dụng"], ["cancelled", "Đã hủy"], ["expired", "Hết hạn"], ["", "Tất cả"]];
 
 function StatusFilter({ value, options, onChange, disabled, label = "Trạng thái" }) {
   return <TextField select size="small" label={label} value={value} onChange={(event) => onChange(event.target.value)} disabled={disabled} sx={{ minWidth: 180 }}>
@@ -96,7 +96,7 @@ function SiteOperations({ site, initialPlate, initialAction, onCheckoutChange, v
   const everything = combineRemotes(vehicleTypes, zones, organizations, members, availability, sessions, reservations, advanceBookings, allocations, waitlist);
   const slots = availability.data?.slots || [];
   const types = admissionVehicleTypes(vehicleTypes.data || []);
-  const closeCheckout = () => { setCheckout(null); };
+  const closeCheckout = () => { setCheckout(null); void refreshAll(sessions, availability)(); };
   const openCheckout = (id, intent = "") => { setTicket(null); setCheckoutIntent(intent); setCheckout(id); };
   const Layout = view === "history" ? Workspace : OperationWorkspace;
   useEffect(() => {
@@ -110,7 +110,7 @@ function SiteOperations({ site, initialPlate, initialAction, onCheckoutChange, v
     {view !== "history" && tab !== "operations" && <div className="page-head"><div><h1>Vận hành bãi</h1><p>Tiếp nhận đặt chỗ và quản lý hoạt động của bãi.</p></div><button className="button secondary" onClick={() => setTab("operations")}>Về xe vào / ra</button></div>}
     {tab === "operations" && <OperationsPanel site={site} availability={availability} vehicleTypes={vehicleTypes} sessions={sessions} page={sessionsPage}
       action={checkInAction} adapters={adapters} selected={selectedStay} onSelect={row => { setSelectedStay(row); if (row) setReceptionDraft(null); }} onCheckout={openCheckout} onDetail={setDetail} onTicket={setTicket}
-      initialPlate={receptionDraft?.license_plate || initialPlate} initialTypeId={receptionDraft?.vehicle_type_id || ""} initialAction={receptionDraft ? "check_in" : initialAction} onReservations={() => setTab("reservations")} onRefresh={refreshAll(sessions, availability, advanceBookings, reservations)} />}
+      initialBookingId={receptionDraft?.id || ""} initialPlate={receptionDraft?.license_plate || initialPlate} initialTypeId={receptionDraft?.vehicle_type_id || ""} initialAction={receptionDraft ? "check_in" : initialAction} onReservations={() => setTab("reservations")} onRefresh={refreshAll(sessions, availability, advanceBookings, reservations)} />}
     {view !== "history" && <details className="demo-help"><summary>Công cụ vận hành khác</summary><div className="demo-tools"><button className="button secondary small" onClick={() => setTab("availability")}>Chỗ trống</button><button className="button secondary small" onClick={() => setTab("reservations")}>Tiếp nhận đặt chỗ</button>{[["allocations", "Bảo đảm chỗ"], ["waitlist", "Danh sách chờ"], ["fleet", "Đội xe"], ...(capabilities?.site_finance_enabled ? [["finance", "Ca & chứng từ"]] : []), ...(canManage ? [["configuration", "Cấu hình bãi"]] : [])].map(([value, label]) => <button className="button quiet small" key={value} onClick={() => setTab(value)}>{label}</button>)}</div></details>}
     {tab === "history" && <>
       <RemoteSection remote={sessions} title="Tra cứu lượt gửi và cho xe ra" description="Mỗi trang 25 lượt; đổi biển số hoặc trạng thái sẽ về trang đầu.">
@@ -164,6 +164,7 @@ function SiteOperations({ site, initialPlate, initialAction, onCheckoutChange, v
       </Stack>}>
         {(rows) => <>
           <BookingRecords rows={rows} slots={slots} busy={reservationAction.busy}
+            onCancel={(row) => void reservationAction.run(() => send(`${prefix}/reservations/${row.id}/cancel`), "Đã hủy đặt chỗ.")}
             onArrive={(row) => void reservationAction.run(() => send(`${prefix}/reservations/${row.id}/arrive`), "Đã xác nhận khách đến và ghi nhận xe vào.", () => void sessions.reload())}
             />
           <PageControls page={reservationsPage.page} count={rows.length} size={reservationsPage.size} busy={reservations.loading || reservationAction.busy} onChange={reservationsPage.setPage} />
@@ -206,8 +207,8 @@ function SiteOperations({ site, initialPlate, initialAction, onCheckoutChange, v
       <FleetSection organizations={organizations.data || []} canManage={canManage} siteId={site.id} />
     </>}
     {tab === "configuration" && canManage && <><MetadataFeedback remote={zones} label="Khu vực" /><MetadataFeedback remote={members} label="Nhân sự" /><SiteConfiguration siteId={site.id} zones={zones.data || []} types={types} members={members.data || []} isAdmin={site.role === "admin"} action={{ ...configAction, busy: configAction.busy || zones.loading || vehicleTypes.loading || members.loading }} /></>}
-    {checkout && <CheckoutDialog key={`${site.id}:${checkout}`} sessionId={checkout} siteId={site.id} initialOnline={checkoutIntent === "online"} initialPaymentMethod={checkoutIntent === "cash" ? "cash" : ""} {...adapters} onClose={closeCheckout}
-      onCompleted={() => { closeCheckout(); setSelectedStay(null); checkInAction.notify("Đã ghi nhận xe ra."); void refreshAll(sessions, availability)(); }} />}
+    {checkout && <CheckoutDialog key={`${site.id}:${checkout}`} sessionId={checkout} siteId={site.id} initialOnline={checkoutIntent === "online"} initialPaymentMethod={["cash", "transfer"].includes(checkoutIntent) ? checkoutIntent : ""} {...adapters} onClose={closeCheckout}
+      onCompleted={() => { closeCheckout(); setSelectedStay(null); checkInAction.notify("Đã ghi nhận xe ra."); }} />}
     {detail && <SessionDetailsDialog key={`${site.id}:${detail.id}`} session={detail} siteId={site.id} canManage={canHandleExceptions}
       onClose={() => setDetail(null)} onBusy={setDetailBusy} onCheckout={openCheckout} onTicket={setTicket}
       onChanged={() => void refreshAll(sessions, availability)()} />}
@@ -223,6 +224,8 @@ export default function SitesWorkspace({ view = "operations" }) {
   const [creatingSite, setCreatingSite] = useState(false);
   const requestedSite = params.get("site");
   const selected = sites.sites.find((site) => String(site.id) === requestedSite) || sites.sites.find((site) => String(site.id) === String(sites.siteId));
+  const requestedTab = params.get("tab");
+  const scopedView = view === "operations" && ["operations", "availability", "reservations", "fleet"].includes(requestedTab) ? requestedTab : view;
   const action = useAction(sites.reload);
   const onCheckoutChange = useCallback((open) => setCheckoutOpen(open), []);
   return <Stack spacing={3}>
@@ -236,7 +239,7 @@ export default function SitesWorkspace({ view = "operations" }) {
     {action.notice && <Alert severity="success">{action.notice}</Alert>}
     {requestedSite && sites.data && !sites.sites.some((site) => String(site.id) === requestedSite) && <Alert severity="warning">Bạn không có quyền truy cập bãi được chọn hoặc bãi đã ngừng hoạt động. Hãy chọn lại bãi và kiểm tra biển số.</Alert>}
     {!sites.singleSiteMode && creatingSite && user?.role === "admin" && <CreateSiteForm action={action} onCreated={(row) => { setParams({ site: String(row.id) }); setCreatingSite(false); }} />}
-    {selected ? <SiteOperations key={`${selected.id}:${view}:${params.get("plate") || ""}:${params.get("action") || ""}`} site={selected} view={view}
+    {selected ? <SiteOperations key={`${selected.id}:${scopedView}:${params.get("plate") || ""}:${params.get("action") || ""}`} site={selected} view={scopedView}
       initialPlate={requestedSite === String(selected.id) ? params.get("plate") || "" : ""} initialAction={params.get("action")} onCheckoutChange={onCheckoutChange} /> : <Workspace title="Vận hành bãi đỗ" description="Mỗi nhân sự chỉ thao tác tại bãi được phân công." remote={sites}>{!sites.loading && !sites.error && <Alert severity="info">{user?.role === "admin" ? "Chưa có bãi phù hợp với cấu hình hiện tại. Kiểm tra bãi đang hoạt động và cấu hình bãi của ứng dụng." : "Tài khoản chưa được cấp quyền tại bãi này nên chưa thể tra biển số hoặc nhận/trả xe. Nhờ quản trị viên vào Vận hành → Công cụ vận hành khác → Cấu hình bãi → Nhân sự được phân công để cấp quyền, sau đó nhấn Làm mới."}<Button onClick={sites.reload} sx={{ ml: 1 }}>Làm mới</Button></Alert>}</Workspace>}
   </Stack>;
 }

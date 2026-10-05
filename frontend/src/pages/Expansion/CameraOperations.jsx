@@ -25,6 +25,7 @@ export default function CameraOperations({ site, direction = "entry", onManual, 
   const [selected, setSelected] = useState(null);
   const [plate, setPlate] = useState("");
   const [latest, setLatest] = useState(null);
+  const [passageActions, setPassageActions] = useState([]);
   const [error, setError] = useState("");
   const video = useRef(null), media = useRef(null), active = useRef(true), busy = useRef(false), processed = useRef(new Set());
   const startingRef = useRef(false);
@@ -33,7 +34,7 @@ export default function CameraOperations({ site, direction = "entry", onManual, 
   const loadEngine = useCallback(() => read("/vision/status"), []);
   const engine = useRemote(loadEngine);
   const laneCameras = useMemo(() => (cameras.data || []).filter(row => row.direction === direction), [cameras.data, direction]);
-  const camera = laneCameras.find(row => String(row.id) === String(choice)) || laneCameras[0];
+  const camera = laneCameras.find(row => String(row.id) === String(choice)) || laneCameras.find(row => row.is_active) || laneCameras[0];
   const cameraId = camera?.id;
   const edgeSource = source === "edge" && Boolean(camera?.edge_enabled);
   const hasAutomationSource = edgeSource || streaming;
@@ -155,9 +156,21 @@ export default function CameraOperations({ site, direction = "entry", onManual, 
           const result = await send(`/vision/observations/${row.id}/process`);
           processed.current.add(row.id);
           // Stop prevents new requests; a submitted request can still commit.
-          // Reconcile its result without stealing selection from a newer lane.
-          latestCallback.current?.(result, { updateSelection: !stopped && active.current });
-          if (!stopped) { setLatest(result); setSelected(row); setPlate(row.suggested_plate || ""); }
+          // The parent owns the fee selection and guards automatic changes.
+          // Older parents still reconcile without changing their selection.
+          latestCallback.current?.(result, { updateSelection: false, automatic: true, allowSelection: !stopped && active.current, cameraId });
+          if (!stopped) {
+            setLatest(result); setSelected(row); setPlate(row.suggested_plate || "");
+            setPassageActions((previous) => {
+              if (!result.session_id) return previous;
+              const sameStay = (passage) => passage.cameraId === cameraId && passage.result.session_id === result.session_id;
+              if (result.state === "exited") return previous.filter((passage) => !sameStay(passage));
+              if (!["entered", "already_entered", "waiting_payment"].includes(result.state)) return previous;
+              const existing = previous.find(sameStay);
+              if (existing && (existing.result.state === "waiting_payment") === (result.state === "waiting_payment")) return previous;
+              return [...previous.filter((passage) => !sameStay(passage)), { cameraId, result: { ...result } }].slice(-4);
+            });
+          }
         }
         if (!stopped) { setError(""); void reloadFrames(); }
       } catch (failure) {
@@ -212,8 +225,13 @@ export default function CameraOperations({ site, direction = "entry", onManual, 
     {running && <p role="status" className="muted" style={{ fontSize: 12, marginTop: 8 }}>{edgeSource && !edgeReceiving ? "Chưa có ảnh mới từ camera ngoài. Kiểm tra thiết bị và kết nối; hệ thống vẫn đang chờ ảnh." : "Đang xử lý ảnh mới."} Tự động tạm dừng khi tab bị ẩn.</p>}
     {latest && <Alert sx={{ mt: 2 }} severity={["entered", "exited", "already_entered"].includes(latest.state) ? "success" : "info"}>
       <strong>{passageLabels[latest.state]}{latest.license_plate ? ` · ${latest.license_plate}` : ""}</strong><p>{latest.reason}</p>
-      {latest.state === "waiting_payment" && latest.session_id && <Button onClick={() => onCheckout(latest.session_id)}>Xem phí & thanh toán</Button>}
     </Alert>}
+    {passageActions.filter((passage) => passage.cameraId === cameraId).map((passage) => <Alert key={`${passage.cameraId}:${passage.result.session_id}`} severity="info" sx={{ mt: 2 }} data-camera-passage-session={passage.result.session_id}>
+      <strong>{passage.result.license_plate || "Lượt gửi vừa được camera xử lý"}</strong>
+      {passage.result.state === "waiting_payment"
+        ? <Button onClick={() => onCheckout(passage.result.session_id)}>Xem phí & thanh toán</Button>
+        : <Button onClick={() => latestCallback.current?.(passage.result, { updateSelection: true, explicit: true, cameraId: passage.cameraId })}>Xem phí xe này</Button>}
+    </Alert>)}
     {current && <div style={{ marginTop: 18 }}>
       {recognition && <Alert severity={recognition.severity} role="status" data-camera-ocr-status={current.ocr_status}><strong>{recognition.title}</strong><p>{recognition.detail}</p></Alert>}
       <p className="muted" style={{ fontSize: 12, marginBottom: 12 }}>Ảnh chụp lúc {dateTime(current.captured_at)}</p>

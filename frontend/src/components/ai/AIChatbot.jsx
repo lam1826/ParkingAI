@@ -22,19 +22,23 @@ export default function AIChatbot() {
   return user ? <AccountChatbot key={`${user.id}:${user.role}`} user={user} /> : null;
 }
 
+// The window state and the typed draft belong to the account, not to one lot: switching
+// 'Bãi đang hỏi' (or the lot list arriving after the chat was opened) remounts the per-lot
+// history but must not close the chat or drop the draft (#63).
 function AccountChatbot({ user }) {
   const sites = useSites();
-  return <ScopedChatbot key={chatScopeKey(user.id, user.role, sites.siteId)} user={user} sites={sites} />;
+  const [open, setOpen] = useState(false);
+  const [question, setQuestion] = useState("");
+  return <ScopedChatbot key={chatScopeKey(user.id, user.role, sites.siteId)} user={user} sites={sites}
+    open={open} setOpen={setOpen} question={question} setQuestion={setQuestion} />;
 }
 
-function ScopedChatbot({ user, sites }) {
+function ScopedChatbot({ user, sites, open, setOpen, question, setQuestion }) {
   const customer = user.role === "customer";
   const scopeKey = chatScopeKey(user.id, user.role, sites.siteId);
   const welcome = { id: "welcome", role: "assistant", content: customer
     ? "Chào bạn! Mình giúp bạn xem giá, tìm chỗ trống và hướng dẫn đặt trước."
     : `Chào bạn! Mình có thể tóm tắt lưu lượng ngày/tuần, chỗ trống và gợi ý khung trực từ dữ liệu bãi.${user.role === "staff" ? " Tài khoản nhân viên chỉ xem dữ liệu vận hành." : ""}` };
-  const [open, setOpen] = useState(false);
-  const [question, setQuestion] = useState("");
   const [loading, setLoading] = useState(false);
   const [messages, setMessages] = useState(() => { const stored = readAIChat(sessionStorage, scopeKey); return stored.length ? stored : [welcome]; });
   const endRef = useRef(null), inputRef = useRef(null), launcherRef = useRef(null), versionRef = useRef(0), activeRef = useRef(false);

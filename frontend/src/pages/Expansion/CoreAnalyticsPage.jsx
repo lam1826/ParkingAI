@@ -11,7 +11,7 @@ import { dateTime, money, read, Records, SitePicker, useAction, useRemote, useSi
 
 const kinds = { report: "Báo cáo AI", question: "Hỏi đáp", staff: "Gợi ý nhân sự" };
 
-function AnalysisWorkspace({ site, mode, onBusy }) {
+function AnalysisWorkspace({ site, mode, onBusy, refreshSignal = 0 }) {
   const [period, setPeriod] = useState("day");
   const [anchorDate, setAnchorDate] = useState(toBusinessDateString);
   const [question, setQuestion] = useState("");
@@ -29,6 +29,14 @@ function AnalysisWorkspace({ site, mode, onBusy }) {
   const history = useRemote(loadHistory);
   const action = useAction(history.reload);
   useEffect(() => { onBusy(action.busy || exporting); return () => onBusy(false); }, [action.busy, exporting, onBusy]);
+  // Header 'Làm mới' (#73): re-fetch this page's own data, keeping the chosen period, draft and result.
+  const reloadReport = report.reload, reloadStatus = status.reload, reloadHistory = history.reload;
+  const handledRefresh = useRef(refreshSignal);
+  useEffect(() => {
+    if (handledRefresh.current === refreshSignal) return;
+    handledRefresh.current = refreshSignal;
+    void Promise.all([reloadReport(), reloadStatus(), reloadHistory()]);
+  }, [refreshSignal, reloadReport, reloadStatus, reloadHistory]);
   const setFilter = (setter) => (event) => { setter(event.target.value); setResult(null); setExportError(""); retry.current = null; };
   const exportReport = async () => {
     if (exporting || report.loading || report.error || !report.data) return;
@@ -126,11 +134,14 @@ function AnalysisWorkspace({ site, mode, onBusy }) {
 export default function CoreAnalyticsPage({ mode = "reports" }) {
   const sites = useSites();
   const [busy, setBusy] = useState(false);
+  const [refreshSignal, setRefreshSignal] = useState(0);
   const site = sites.sites.find((item) => String(item.id) === String(sites.siteId));
+  // The header button reloads the site list AND the report / AI status / history below (#73).
+  const remote = { ...sites, reload: async () => { await sites.reload(); setRefreshSignal((value) => value + 1); } };
   return <Workspace title="Báo cáo & AI"
-    description="Lưu lượng, chỗ trống và tiền đã thu từ dữ liệu của bãi." remote={sites}>
+    description="Lưu lượng, chỗ trống và tiền đã thu từ dữ liệu của bãi." remote={remote} action={{ busy }}>
     <SitePicker sites={sites} disabled={busy} />
-    {site ? <AnalysisWorkspace key={`${site.id}:${mode}`} site={site} mode={mode} onBusy={setBusy} />
+    {site ? <AnalysisWorkspace key={`${site.id}:${mode}`} site={site} mode={mode} onBusy={setBusy} refreshSignal={refreshSignal} />
       : !sites.loading && <Alert severity="info">Chưa có bãi được cấp quyền. Liên hệ quản trị viên để được phân công.</Alert>}
   </Workspace>;
 }

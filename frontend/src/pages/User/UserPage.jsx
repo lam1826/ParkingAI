@@ -7,7 +7,7 @@ import useUser from "./hooks/useUser";
 
 export default function UsersPage() {
   const {
-    users, roles, loading, submitting, canManage, canDeleteUsers, canEditUser,
+    users, roles, sites, loading, submitting, canManage, canDeleteUsers, canEditUser,
     dialogOpen, deleteDialogOpen, selectedUser, notify,
     handleOpenCreate, handleOpenEdit, handleOpenDelete,
     closeDialogs, handleSave, handleDelete, fetchUsers, closeNotify
@@ -35,6 +35,7 @@ export default function UsersPage() {
         onSave={handleSave}
         user={selectedUser}
         roles={roles}
+        sites={sites}
         submitting={submitting}
       />}
 

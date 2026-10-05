@@ -10,6 +10,8 @@ import BillingBasisDetails from "./BillingBasisDetails";
 import PrepaidDetails from "./PrepaidDetails";
 import { settlementAmounts } from "../settlementAmounts";
 import SessionFeePayment from "../../Expansion/SessionFeePayment";
+import { read } from "../../Expansion/shared";
+import { staffFeeActions } from "../../Expansion/sessionFeeState";
 import { singleSiteId } from "../../../utils/singleSiteMode";
 
 export default function CheckoutDialog({ sessionId, siteId, onClose, onCompleted, initialOnline = false, initialPaymentMethod = "",
@@ -22,7 +24,15 @@ export default function CheckoutDialog({ sessionId, siteId, onClose, onCompleted
   });
   const state = useSyncExternalStore(flow.subscribe, flow.getSnapshot, flow.getSnapshot);
   const [onlineOpen, setOnlineOpen] = useState(initialOnline);
+  const [qr, setQr] = useState(null);
   const paymentSite = siteId || singleSiteId();
+  useEffect(() => {
+    if (!paymentSite) return undefined;
+    let live = true;
+    read(`/sites/${encodeURIComponent(paymentSite)}/sessions/${encodeURIComponent(sessionId)}/payment-status`)
+      .then(data => { if (live) setQr(staffFeeActions(data)); }, () => { if (live) setQr(staffFeeActions(null)); });
+    return () => { live = false; };
+  }, [paymentSite, sessionId]);
   useEffect(() => {
     let active = true;
     void flow.start().then(() => { if (active && initialPaymentMethod) flow.setPaymentMethod(initialPaymentMethod); });
@@ -41,7 +51,8 @@ export default function CheckoutDialog({ sessionId, siteId, onClose, onCompleted
   const amounts = settlementAmounts(quote);
   const free = amounts?.due === 0;
   const editable = phase === "ready" && !expired;
-  const canConfirm = !onlineOpen && (uncertain || (editable && (free || (Boolean(paymentMethod) && paymentConfirmed))));
+  const showOnline = onlineOpen && qr?.online !== false;
+  const canConfirm = !showOnline && (uncertain || (editable && (free || (Boolean(paymentMethod) && paymentConfirmed))));
   const dismiss = () => { if (flow.canDismiss()) onClose(); };
 
   return <Dialog open onClose={dismiss} maxWidth="sm" fullWidth aria-labelledby="checkout-title">
@@ -85,7 +96,7 @@ export default function CheckoutDialog({ sessionId, siteId, onClose, onCompleted
             </Typography>
           </Box>
           {expired && phase === "ready" && <Alert severity="warning">Phí xem trước đã hết hiệu lực. Tải lại phí và kiểm tra số tiền trước khi xác nhận.</Alert>}
-          {!free && !onlineOpen && <>
+          {!free && !showOnline && <>
             <FormControl disabled={!editable}>
               <FormLabel id="checkout-payment-label">Hình thức đã thu tiền</FormLabel>
               <RadioGroup row aria-labelledby="checkout-payment-label" value={paymentMethod} onChange={event => flow.setPaymentMethod(event.target.value)}>
@@ -99,8 +110,9 @@ export default function CheckoutDialog({ sessionId, siteId, onClose, onCompleted
               label={`Tôi xác nhận đã nhận đủ ${formatParkingFee(amounts.due)} VND còn thu cho lượt gửi xe này.`} />
           </>}
           {paymentSite && !uncertain && !pending && <>
-            {!onlineOpen && <Button variant="outlined" disabled={!editable} onClick={() => { flow.setPaymentConfirmed(false); setOnlineOpen(true); }}>Xem thanh toán QR của lượt này</Button>}
-            {onlineOpen && <>
+            {qr?.online && !showOnline && <Button variant="outlined" disabled={!editable} onClick={() => { flow.setPaymentConfirmed(false); setOnlineOpen(true); }}>Xem thanh toán QR của lượt này</Button>}
+            {qr && !qr.online && !free && <Alert severity="info">{qr.note}</Alert>}
+            {showOnline && <>
               <SessionFeePayment key={`${paymentSite}:${sessionId}`} sessionId={sessionId} siteId={paymentSite} />
               <Button variant="outlined" onClick={() => { setOnlineOpen(false); void flow.refresh(); }}>Quay lại xác nhận xe ra và tải lại phí</Button>
             </>}

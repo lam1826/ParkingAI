@@ -1,7 +1,8 @@
 import { useCallback, useState } from "react";
 import { Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, MenuItem, Stack, TextField, Typography } from "@mui/material";
-import { dateTime, read, Records, RemoteSection, send, StateChip, useAction, useRemote } from "./shared";
-import { categoryLabel, LINK_LABEL, SUPPORT_CATEGORIES, SUPPORT_STATUS, supportStatusLabel } from "./supportState";
+import { dateTime, read, Records, RemoteSection, Section, send, StateChip, useAction, useRemote } from "./shared";
+import { categoryLabel, LINK_LABEL, OTHER_SITE_CLOSED_LABEL, otherSiteName, otherSiteRequests, requestSitePath, SUPPORT_CATEGORIES, SUPPORT_STATUS, supportStatusLabel } from "./supportState";
+import { singleSiteId } from "../../utils/singleSiteMode";
 
 /** Manager side: list/filter support requests of the site, read the thread, reply, close or reopen. */
 export default function SupportAdminPanel({ siteId }) {
@@ -11,10 +12,24 @@ export default function SupportAdminPanel({ siteId }) {
   const [reply, setReply] = useState("");
   const load = useCallback(() => siteId ? read(`/sites/${siteId}/support-requests`, { ...(status ? { status } : {}), ...(category ? { category } : {}) }).then((data) => Array.isArray(data) ? data : data.items) : Promise.resolve([]), [siteId, status, category]);
   const remote = useRemote(load);
-  const detailLoad = useCallback(() => selected ? read(`/sites/${siteId}/support-requests/${selected}`) : Promise.resolve(null), [siteId, selected]);
+  // Global admin only (the server answers others with nothing): open tickets
+  // filed under a site this screen cannot open (review 05/10 #76).
+  const elsewhereLoad = useCallback(() => siteId ? read(`/sites/${siteId}/other-site-requests`) : Promise.resolve(null), [siteId]);
+  const elsewhere = useRemote(elsewhereLoad);
+  const otherRows = otherSiteRequests(elsewhere.data, "support_requests", singleSiteId() !== null);
+  // `selected` keeps the row's own site: a ticket of another site is handled at that site.
+  const detailLoad = useCallback(() => selected ? read(`/sites/${requestSitePath(selected, siteId)}/support-requests/${selected.id}`) : Promise.resolve(null), [siteId, selected]);
   const detail = useRemote(detailLoad);
-  const action = useAction(async () => { await remote.reload(); await detail.reload(); });
-  const base = detail.data ? `/sites/${siteId}/support-requests/${detail.data.id}` : "";
+  const action = useAction(async () => { await remote.reload(); await elsewhere.reload(); await detail.reload(); });
+  const base = detail.data ? `/sites/${requestSitePath(detail.data, siteId)}/support-requests/${detail.data.id}` : "";
+  const columns = [
+    { key: "last_message_at", label: "Cập nhật", render: (row) => dateTime(row.last_message_at) },
+    { key: "customer_name", label: "Khách" }, { key: "subject", label: "Tiêu đề" },
+    { key: "category", label: "Chủ đề", render: (row) => categoryLabel(row.category) },
+    { key: "linked", label: "Gắn với", render: (row) => row.linked_type ? `${LINK_LABEL[row.linked_type]} ${String(row.linked_id).slice(0, 8)}` : "—" },
+    { key: "status", label: "Trạng thái", render: (row) => <StateChip value={row.status} label={supportStatusLabel(row.status)} /> },
+    { key: "open", label: "Xử lý", render: (row) => row.site_active === false ? OTHER_SITE_CLOSED_LABEL : <Button size="small" onClick={() => { setSelected({ id: row.id, site_id: row.site_id }); setReply(""); }}>Mở trao đổi</Button> },
+  ];
   return <Stack spacing={2}>
     {action.error && <Alert severity="error">{action.error}</Alert>}
     {action.notice && <Alert severity="success" role="status">{action.notice}</Alert>}
@@ -23,15 +38,11 @@ export default function SupportAdminPanel({ siteId }) {
       <TextField select size="small" label="Chủ đề" value={category} onChange={(event) => setCategory(event.target.value)} sx={{ minWidth: 200 }}><MenuItem value="">Tất cả</MenuItem>{SUPPORT_CATEGORIES.map(([key, label]) => <MenuItem key={key} value={key}>{label}</MenuItem>)}</TextField>
     </Stack>
     <RemoteSection remote={remote} title="Yêu cầu hỗ trợ của khách" description="Phản hồi được gửi kèm thông báo trong ứng dụng cho khách. Đóng yêu cầu khi đã xử lý xong.">
-      {(rows) => <Records rows={rows} columns={[
-        { key: "last_message_at", label: "Cập nhật", render: (row) => dateTime(row.last_message_at) },
-        { key: "customer_name", label: "Khách" }, { key: "subject", label: "Tiêu đề" },
-        { key: "category", label: "Chủ đề", render: (row) => categoryLabel(row.category) },
-        { key: "linked", label: "Gắn với", render: (row) => row.linked_type ? `${LINK_LABEL[row.linked_type]} ${String(row.linked_id).slice(0, 8)}` : "—" },
-        { key: "status", label: "Trạng thái", render: (row) => <StateChip value={row.status} label={supportStatusLabel(row.status)} /> },
-        { key: "open", label: "Xử lý", render: (row) => <Button size="small" onClick={() => { setSelected(row.id); setReply(""); }}>Mở trao đổi</Button> },
-      ]} empty="Không có yêu cầu hỗ trợ ở bộ lọc này." />}
+      {(rows) => <Records rows={rows} columns={columns} empty="Không có yêu cầu hỗ trợ ở bộ lọc này." />}
     </RemoteSection>
+    {otherRows.length > 0 && <Section title="Yêu cầu hỗ trợ đang mở ở bãi khác" description="Khách đã gắn các yêu cầu này với đơn, lượt gửi hoặc chứng từ của bãi khác với bãi đang làm việc. Phản hồi được ghi tại bãi của yêu cầu.">
+      <Records rows={otherRows} columns={[{ key: "site_name", label: "Bãi", render: otherSiteName }, ...columns]} />
+    </Section>}
     <Dialog open={Boolean(selected)} onClose={() => { if (!action.busy) setSelected(null); }} fullWidth maxWidth="md" aria-labelledby="support-admin-title">
       <DialogTitle id="support-admin-title">{detail.data ? `${detail.data.subject} · ${detail.data.customer_name}` : "Yêu cầu hỗ trợ"}</DialogTitle>
       <DialogContent>

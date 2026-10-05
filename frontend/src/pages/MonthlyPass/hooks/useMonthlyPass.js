@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback } from "react";
 import monthlyPassService from "../services/monthlyPassService";
 import vehicleService from "../../Vehicle/services/vehicleService";
 import customerService from "../../Customer/services/customerService";
+import { singleSiteId } from "../../../utils/singleSiteMode";
+import { withCounterSite } from "../monthlyPassForm";
 
 const useMonthlyPass = () => {
   const [passes, setPasses] = useState([]);
@@ -67,11 +69,14 @@ const useMonthlyPass = () => {
   const handleSave = async (formData) => {
     setSubmitting(true);
     try {
+      // Bán/gia hạn tại quầy ghi khoản thu vào bãi của bản triển khai một bãi;
+      // nếu không cấu hình, máy chủ dùng ca đang mở hoặc bãi duy nhất.
+      const body = withCounterSite(formData, singleSiteId());
       if (selectedPass) {
-        await monthlyPassService.renew(selectedPass.id, formData);
+        await monthlyPassService.renew(selectedPass.id, body);
         showNotify("Đã tạo kỳ gia hạn và ghi nhận khoản thu.", "success");
       } else {
-        await monthlyPassService.create(formData);
+        await monthlyPassService.create(body);
         showNotify("Đăng ký vé tháng thành công!", "success");
       }
       closeDialogs();
