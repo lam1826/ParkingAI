@@ -14,11 +14,14 @@ import react from "@vitejs/plugin-react";
 const frontend = resolve(import.meta.dirname, "..");
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 const chromePath = [process.env.CHROME_BINARY, process.env.CHROME_BIN, "C:/Program Files/Google/Chrome/Application/chrome.exe", "/usr/bin/google-chrome", "/usr/bin/chromium", "/usr/bin/chromium-browser", "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"].find(path => path && existsSync(path));
-const uiTest = (name, run) => test(name, { skip: chromePath ? false : "Chrome unavailable; set CHROME_BINARY to run real UI regressions" }, run);
+// The DevTools Protocol client needs a global WebSocket (Node >= 22); CI pins Node 20.
+const uiSkip = !chromePath ? "Chrome unavailable; set CHROME_BINARY to run real UI regressions"
+  : typeof WebSocket !== "function" ? "Node without a global WebSocket (needs Node >= 22); real-Chrome UI regression not run" : false;
+const uiTest = (name, run) => test(name, { skip: uiSkip }, run);
 let server, harnessServer, chrome, ws, scratch, evaluate;
 const externalAttempts = [];
 before(async () => {
-  if (!chromePath) return;
+  if (uiSkip) return;
   scratch = await mkdtemp(join(tmpdir(), "parkingai-cxvision-"));
   const blankHarness = { name: "isolated-camera-test", configureServer(vite) {
     vite.middlewares.use((request, response, next) => {
