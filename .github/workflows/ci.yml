@@ -145,7 +145,7 @@ jobs:
 
       - name: Preserve native camera test evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: native-camera-policy
           path: |
