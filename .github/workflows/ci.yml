@@ -60,7 +60,7 @@ jobs:
         run: python -m pytest tests/test_postgres_integration.py tests/test_round3_postgres.py tests/test_portal_admission_lock_regression.py tests/test_ticket_access_history_postgres.py tests/test_reservation_arrival_lock_regression.py tests/test_fix20261005_cxvision_locking.py tests/test_fix20261005_cxbooking_postgres.py tests/test_fix20261005_cxvision_monthly_locking.py tests/test_fix20261005_clreports_postgres_import.py tests/test_fix20261005_cxfinal_lock_order.py tests/test_fix20261005_cxbooking_downgrade_rework.py -q
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           # Node 22 provides the global WebSocket used by the real-Chrome UI regressions.
           node-version: "22"
