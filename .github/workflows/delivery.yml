@@ -83,7 +83,7 @@ jobs:
           fi
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           # Keep the production build on the same Node major as CI.
           node-version: "22"
