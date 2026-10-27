@@ -210,7 +210,8 @@ async def _read_upload(request):
         yield bytes(body)
     try:
         form = await MultiPartParser(request.headers, stream(), max_files=1, max_fields=3, max_part_size=512).parse()
-    except (MultiPartException, ValueError) as exc:
+    except (MultiPartException, ValueError, KeyError) as exc:
+        # KeyError: the parser indexes headers["Content-Type"], absent on a bare POST.
         raise HTTPException(422, "Yêu cầu phải gồm một ảnh JPEG/PNG và thông tin camera hợp lệ.") from exc
     try:
         if len(form.getlist("file")) != 1 or set(form) - {"file", "camera_id", "event_id", "captured_at"}:
