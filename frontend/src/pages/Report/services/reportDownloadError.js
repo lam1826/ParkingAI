@@ -1,19 +1,14 @@
+import { joinMessages } from "../../../utils/errorMessage.js";
+
 function formatValidationDetail(detail) {
   if (typeof detail === "string" && detail.trim()) return detail;
   if (!Array.isArray(detail)) return "";
 
-  return detail
-    .map((item) => {
-      if (!item || typeof item !== "object") return "";
-      const location = Array.isArray(item.loc)
-        ? item.loc.slice(1).join(".")
-        : "";
-      const message = typeof item.msg === "string" ? item.msg : "";
-      if (!message) return "";
-      return location ? `${location}: ${message}` : message;
-    })
-    .filter(Boolean)
-    .join("; ");
+  // The server's message already names the field in Vietnamese ("Ngày báo cáo:
+  // ngày không hợp lệ."), so the raw location (anchor_date) is not repeated (B-05).
+  return joinMessages(detail
+    .map((item) => (item && typeof item === "object" && typeof item.msg === "string" ? item.msg : ""))
+    .filter(Boolean), "; ");
 }
 
 function detailFromPayload(payload) {

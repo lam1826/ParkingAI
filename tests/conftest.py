@@ -14,6 +14,9 @@ os.environ.setdefault("SECRET_KEY", "test_secret_key_for_pytest_123456789")
 os.environ["GEMINI_API_KEY"] = "test_gemini_api_key_for_pytest_123456789"
 os.environ["AI_ENABLED"] = "true"
 os.environ["GEMINI_MODEL"] = "gemini-3.6-flash"
+# Contract tests read /openapi.json; production keeps the docs off by default
+# (review 28/10/2026 R2-10, test_fix20261028_backend_hardening.py).
+os.environ["API_DOCS_ENABLED"] = "true"
 os.environ.setdefault("MANAGER_REGISTRATION_CODE", "manager-test-code")
 os.environ.setdefault("ADMIN_REGISTRATION_CODE", "admin-test-code")
 

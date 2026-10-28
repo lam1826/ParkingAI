@@ -17,7 +17,7 @@ function AnalysisWorkspace({ site, mode, onBusy, refreshSignal = 0 }) {
   const [question, setQuestion] = useState("");
   const [kind, setKind] = useState("report");
   const [result, setResult] = useState(null);
-  const [exporting, setExporting] = useState(false);
+  const [exporting, setExporting] = useState(false); // false or the format being exported
   const [exportError, setExportError] = useState("");
   const retry = useRef(null);
   const prefix = `/sites/${site.id}`;
@@ -28,7 +28,7 @@ function AnalysisWorkspace({ site, mode, onBusy, refreshSignal = 0 }) {
   const loadHistory = useCallback(() => read(`${prefix}/ai/analyses`, { limit: 20 }), [prefix]);
   const history = useRemote(loadHistory);
   const action = useAction(history.reload);
-  useEffect(() => { onBusy(action.busy || exporting); return () => onBusy(false); }, [action.busy, exporting, onBusy]);
+  useEffect(() => { onBusy(action.busy || Boolean(exporting)); return () => onBusy(false); }, [action.busy, exporting, onBusy]);
   // Header 'Làm mới' (#73): re-fetch this page's own data, keeping the chosen period, draft and result.
   const reloadReport = report.reload, reloadStatus = status.reload, reloadHistory = history.reload;
   const handledRefresh = useRef(refreshSignal);
@@ -38,18 +38,19 @@ function AnalysisWorkspace({ site, mode, onBusy, refreshSignal = 0 }) {
     void Promise.all([reloadReport(), reloadStatus(), reloadHistory()]);
   }, [refreshSignal, reloadReport, reloadStatus, reloadHistory]);
   const setFilter = (setter) => (event) => { setter(event.target.value); setResult(null); setExportError(""); retry.current = null; };
-  const exportReport = async () => {
+  // R1-EXCEL (28/10/2026): the same server rows as CSV or as an Excel workbook.
+  const exportReport = async (format = "csv") => {
     if (exporting || report.loading || report.error || !report.data) return;
-    setExporting(true);
+    setExporting(format);
     setExportError("");
     try {
       const response = await api.get(`/api/v2${prefix}/reports/export`, {
-        params: { period: report.data.period, anchor_date: report.data.end_date }, responseType: "blob",
+        params: { period: report.data.period, anchor_date: report.data.end_date, format }, responseType: "blob",
       });
       const url = URL.createObjectURL(response.data);
       const link = document.createElement("a");
       link.href = url;
-      link.download = `parking-report-${site.id}-${report.data.period}-${report.data.end_date}.csv`;
+      link.download = `parking-report-${site.id}-${report.data.period}-${report.data.end_date}.${format}`;
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -74,12 +75,12 @@ function AnalysisWorkspace({ site, mode, onBusy, refreshSignal = 0 }) {
   const data = report.data;
   const days = (data?.daily_traffic || []).map(row => ({ ...row, id: row.date, movements: row.departures == null ? null : row.arrivals + row.departures }));
   const highest = Math.max(1, ...days.map(row => row.movements || 0));
-  const periodField = <label className="field">Kỳ phân tích<select value={period} onChange={setFilter(setPeriod)} disabled={action.busy || exporting}><option value="day">Một ngày</option><option value="week">7 ngày đến ngày chọn</option></select></label>;
-  const dateField = <label className="field">{period === "week" ? "Ngày kết thúc" : "Ngày báo cáo"}<input type="date" value={anchorDate} required min="0001-01-07" max="9998-12-31" disabled={action.busy || exporting} onChange={setFilter(setAnchorDate)} /></label>;
+  const periodField = <label className="field">Kỳ phân tích<select value={period} onChange={setFilter(setPeriod)} disabled={action.busy || !!exporting}><option value="day">Một ngày</option><option value="week">7 ngày đến ngày chọn</option></select></label>;
+  const dateField = <label className="field">{period === "week" ? "Ngày kết thúc" : "Ngày báo cáo"}<input type="date" value={anchorDate} required min="0001-01-07" max="9998-12-31" disabled={action.busy || !!exporting} onChange={setFilter(setAnchorDate)} /></label>;
   return <>
     {mode === "reports" && <>
-      <section className="surface"><div className="section-head"><h2>Khoảng thời gian</h2><div className="form-actions"><button className="button quiet small" disabled={action.busy || exporting} onClick={() => { setPeriod("day"); setAnchorDate(toBusinessDateString()); }}>Hôm nay</button><button className="button quiet small" disabled={action.busy || exporting} onClick={() => { setPeriod("week"); setAnchorDate(toBusinessDateString()); }}>7 ngày</button></div></div>
-        <form className="form-grid" onSubmit={event => { event.preventDefault(); void report.reload(); }}>{periodField}{dateField}<div className="form-actions core-wide"><button className="button primary" disabled={report.loading}>Xem báo cáo</button><button type="button" className="button secondary" disabled={exporting || report.loading || !!report.error || !data} onClick={exportReport}>{exporting ? "Đang xuất…" : "Xuất CSV"}</button></div></form>
+      <section className="surface"><div className="section-head"><h2>Khoảng thời gian</h2><div className="form-actions"><button className="button quiet small" disabled={action.busy || !!exporting} onClick={() => { setPeriod("day"); setAnchorDate(toBusinessDateString()); }}>Hôm nay</button><button className="button quiet small" disabled={action.busy || !!exporting} onClick={() => { setPeriod("week"); setAnchorDate(toBusinessDateString()); }}>7 ngày</button></div></div>
+        <form className="form-grid" onSubmit={event => { event.preventDefault(); void report.reload(); }}>{periodField}{dateField}<div className="form-actions core-wide"><button className="button primary" disabled={report.loading}>Xem báo cáo</button><button type="button" className="button secondary" disabled={!!exporting || report.loading || !!report.error || !data} onClick={() => void exportReport("csv")}>{exporting === "csv" ? "Đang xuất…" : "Xuất CSV"}</button><button type="button" className="button secondary" disabled={!!exporting || report.loading || !!report.error || !data} onClick={() => void exportReport("xlsx")}>{exporting === "xlsx" ? "Đang xuất…" : "Xuất Excel"}</button></div></form>
         <p className="muted" style={{ fontSize: 12, marginTop: 14 }}>Giờ Việt Nam. Kỳ 7 ngày bao gồm ngày kết thúc đã chọn.</p>
       </section>
       {exportError && <p className="form-error" role="alert">{exportError}</p>}

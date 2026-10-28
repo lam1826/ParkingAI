@@ -3,12 +3,10 @@ import { Link } from "react-router-dom";
 import { Alert, Button, Dialog, DialogActions, DialogContent, DialogTitle } from "@mui/material";
 import { PageHeader, ParkingIllustration, PrototypeIcon } from "../../components/common/PrototypeUI";
 import SessionFeePayment from "./SessionFeePayment";
-import { feeLookupBody, feeLookupTypes, feePaymentChoice, refreshFeeLookup, validFeeLookup } from "./customerFlow";
+import { feeLookupBody, feeLookupTypes, feePaymentChoice, refreshFeeLookup, stayDuration, validFeeLookup } from "./customerFlow";
 import { dateTime, items, money, read, send, SitePicker, useAction, useRemote, useSites } from "./shared";
 
 const loadTypes = () => read("/catalog/vehicle-types").then(items);
-// Session timestamps without an offset are business time in Vietnam, even on a browser abroad.
-const businessMillis = (value) => Date.parse(/(?:Z|[+-]\d{2}:?\d{2})$/i.test(value || "") ? value : `${value}+07:00`);
 
 function SiteFees({ site }) {
   const types = useRemote(loadTypes);
@@ -82,8 +80,7 @@ function SiteFees({ site }) {
   const payment = feePaymentChoice(balance);
   const completed = result?.session.status === "completed", cancelled = result?.session.status === "cancelled";
   const closed = completed || cancelled;
-  const minutes = result ? Math.max(0, Math.floor((businessMillis(balance.server_now) - businessMillis(result.session.check_in_time)) / 60000)) : 0;
-  const duration = Number.isFinite(minutes) ? `${Math.floor(minutes / 60)} giờ ${minutes % 60} phút` : "Đang cập nhật";
+  const duration = result ? stayDuration(result.session.check_in_time, balance.server_now) : "";
   return <>
     <PageHeader title="Tra phí & thanh toán" description="Xem thời gian gửi và thanh toán trước khi lấy xe." />
     <div className="content-grid">

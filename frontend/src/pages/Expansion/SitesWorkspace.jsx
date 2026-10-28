@@ -115,10 +115,11 @@ function SiteOperations({ site, initialPlate, initialAction, onCheckoutChange, v
     {tab === "history" && <>
       <RemoteSection remote={sessions} title="Tra cứu lượt gửi và cho xe ra" description="Mỗi trang 25 lượt; đổi biển số hoặc trạng thái sẽ về trang đầu.">
         {(rows) => <>
+          {/* B-09: changing the status also applies the date inputs as shown, so cleared dates leave the query. */}
           <Box component="form" onSubmit={(event) => { event.preventDefault(); if (!invalidDateRange) sessionsPage.setFilters({ license_plate: search.trim().toUpperCase(), session_id: searchTicket.trim(), ...dateRange }); }} sx={formLayout}>
             <TextField label="Tìm đúng biển số" value={search} onChange={(event) => setSearch(event.target.value)} slotProps={{ htmlInput: { maxLength: 20 } }} />
             <TextField label="Mã vé (mã lượt)" value={searchTicket} onChange={(event) => setSearchTicket(event.target.value)} slotProps={{ htmlInput: { maxLength: 36 } }} helperText="Nhập đầy đủ mã lượt trên vé để tìm chính xác." />
-            <TextField select label="Trạng thái lượt gửi" value={sessionsPage.filters.status} onChange={(event) => sessionsPage.setFilters({ status: event.target.value })}>
+            <TextField select label="Trạng thái lượt gửi" value={sessionsPage.filters.status} onChange={(event) => sessionsPage.setFilters({ status: event.target.value, ...(invalidDateRange ? {} : dateRange) })}>
               <MenuItem value="active">Đang đỗ</MenuItem><MenuItem value="completed">Đã ra</MenuItem><MenuItem value="cancelled">Đã hủy</MenuItem><MenuItem value="">Tất cả</MenuItem>
             </TextField>
             {capabilities.site_analytics_enabled && <><TextField type="date" label="Ngày vào từ" value={dateRange.date_from} onChange={(event) => setDateRange((old) => ({ ...old, date_from: event.target.value }))}

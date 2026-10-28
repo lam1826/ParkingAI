@@ -88,6 +88,19 @@ def test_create_admin_seeds_roles_and_validates_identity_in_process(monkeypatch,
     assert [(user.username, user.role.name) for user in db_session.query(User).all()] == [("rootadmin", "admin")]
 
 
+def test_create_admin_refuses_a_case_variant_of_an_existing_username(monkeypatch, db_session, capsys):
+    """Round 2 of the 28/10/2026 fix (BS-4): the bootstrap follows the API's case-insensitive rule."""
+    assert _run_create_admin(monkeypatch, db_session, "--username", "rootadmin",
+                             "--password", "Secret123!", "--full-name", "Quan Tri") == 0
+    capsys.readouterr()
+    assert _run_create_admin(monkeypatch, db_session, "--username", " RootAdmin ",
+                             "--password", "Secret123!", "--full-name", "Quan Tri 2") == 1
+    assert "đã tồn tại" in capsys.readouterr().out
+    db_session.expire_all()
+    from models.user import User
+    assert [user.username for user in db_session.query(User).all()] == ["rootadmin"]
+
+
 def test_ensure_canonical_roles_is_idempotent_and_keeps_existing_rows(db_session):
     existing = Role(name="staff", description="Mô tả riêng của bãi")
     db_session.add(existing)

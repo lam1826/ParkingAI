@@ -27,7 +27,7 @@ test("export chuẩn hóa detail 422 dạng mảng trong Blob", async () => {
       data: new Blob([
         JSON.stringify({
           detail: [
-            { loc: ["query", "anchor_date"], msg: "Input should be a valid date" },
+            { loc: ["query", "anchor_date"], msg: "Ngày báo cáo: ngày không hợp lệ." },
           ],
         }),
       ]),
@@ -36,7 +36,7 @@ test("export chuẩn hóa detail 422 dạng mảng trong Blob", async () => {
 
   assert.equal(
     await extractReportDownloadErrorMessage(error, "Lỗi dự phòng"),
-    "anchor_date: Input should be a valid date",
+    "Ngày báo cáo: ngày không hợp lệ.",
   );
 });
 

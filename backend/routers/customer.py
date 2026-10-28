@@ -46,6 +46,16 @@ def update_customer(id: int, customer_in: customer_schema.CustomerUpdate, db: Se
     if not db_customer:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Customer not found")
     
+    # Số điện thoại/email mới phải hợp lệ; giá trị đang lưu gửi lại nguyên vẹn
+    # (kể cả dữ liệu mẫu cũ) thì không bị kiểm tra lại.
+    try:
+        if "phone_number" in customer_in.model_fields_set and customer_in.phone_number != db_customer.phone_number:
+            customer_schema.validate_phone_number(customer_in.phone_number)
+        if customer_in.email and customer_in.email != (db_customer.email or "").lower():
+            customer_in.email = customer_schema.validate_email_address(customer_in.email)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from None
+
     # Nếu có cập nhật số điện thoại, phải đảm bảo không trùng với người khác
     if (
         "phone_number" in customer_in.model_fields_set

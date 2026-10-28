@@ -47,7 +47,7 @@ export default function OnlinePaymentPanel({ orderId, quoteId, sessionId, onOrde
     {data?.can_cancel && <Box component="form" onSubmit={(event) => { event.preventDefault(); void changed("cancel", { reason: reason.trim() }); }}>
       <Stack spacing={1}>
         <TextField label="Lý do hủy liên kết thanh toán" required value={reason} onChange={(event) => setReason(event.target.value)}
-          disabled={busy} inputProps={{ minLength: 3, maxLength: 200 }} />
+          disabled={busy} slotProps={{ htmlInput: { minLength: 3, maxLength: 200 } }} />
         <Typography variant="body2" color="text.secondary">Khoản chuyển đến sau khi hủy cần quản lý đối soát. Hủy liên kết không tự hoàn tiền.</Typography>
         <Button type="submit" color="error" variant="outlined" disabled={busy || reason.trim().length < 3} sx={{ alignSelf: "flex-start" }}>Xác nhận hủy liên kết</Button>
       </Stack>

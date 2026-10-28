@@ -156,7 +156,9 @@ def bookable_vehicles(site_id: int, q: str = Query("", max_length=20), limit: in
 @router.post("/sites/{site_id}/zones", status_code=201)
 def create_site_zone(site_id: int, body: SiteZoneCreate, db: Session = Depends(get_db), actor: User = Depends(get_current_user)):
     require_site_access(db, actor, site_id, "manager")
+    from core.names import lock_catalog_names
     from crud.zone import get_zone_by_name
+    lock_catalog_names(db, "zones")
     if get_zone_by_name(db, body.name):
         raise HTTPException(409, "Tên khu vực đã tồn tại trong hệ thống. Hãy thêm tên bãi vào tên khu vực.")
     def create():
@@ -193,6 +195,10 @@ def create_site_slot(site_id: int, body: SiteSlotCreate, db: Session = Depends(g
 @router.patch("/sites/{site_id}/zones/{zone_id}")
 def update_site_zone(site_id: int, zone_id: int, body: ZoneUpdate, db: Session = Depends(get_db), actor: User = Depends(get_current_user)):
     require_site_access(db, actor, site_id, "manager")
+    if body.name is not None:
+        # The catalog name lock comes before the zone row lock, as in the v1 route.
+        from core.names import lock_catalog_names
+        lock_catalog_names(db, "zones")
     zone = db.scalar(select(Zone).where(Zone.id == zone_id, Zone.site_id == site_id).with_for_update(key_share=True))
     if zone is None:
         raise HTTPException(404, "Khu vực không thuộc bãi này.")

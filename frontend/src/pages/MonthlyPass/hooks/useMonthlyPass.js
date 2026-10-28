@@ -1,9 +1,10 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import monthlyPassService from "../services/monthlyPassService";
 import vehicleService from "../../Vehicle/services/vehicleService";
 import customerService from "../../Customer/services/customerService";
 import { singleSiteId } from "../../../utils/singleSiteMode";
 import { withCounterSite } from "../monthlyPassForm";
+import { getErrorMessage } from "../../../utils/errorMessage";
 
 const useMonthlyPass = () => {
   const [passes, setPasses] = useState([]);
@@ -12,6 +13,9 @@ const useMonthlyPass = () => {
   
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  // B-08 (28/10/2026): two clicks in the same tick both see submitting=false; the
+  // ref closes that window so only one POST leaves the page.
+  const saving = useRef(false);
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [deactivateDialogOpen, setDeactivateDialogOpen] = useState(false);
@@ -67,6 +71,8 @@ const useMonthlyPass = () => {
   };
 
   const handleSave = async (formData) => {
+    if (saving.current) return;
+    saving.current = true;
     setSubmitting(true);
     try {
       // Bán/gia hạn tại quầy ghi khoản thu vào bãi của bản triển khai một bãi;
@@ -82,9 +88,9 @@ const useMonthlyPass = () => {
       closeDialogs();
       fetchData();
     } catch (err) {
-      const errorMsg = err.response?.data?.detail || "Lưu vé tháng thất bại!";
-      showNotify(`Lỗi: ${typeof errorMsg === 'object' ? JSON.stringify(errorMsg) : errorMsg}`, "error");
+      showNotify(`Lỗi: ${getErrorMessage(err, "Lưu vé tháng thất bại!")}`, "error");
     } finally {
+      saving.current = false;
       setSubmitting(false);
     }
   };

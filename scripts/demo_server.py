@@ -101,9 +101,19 @@ def build_demo_app(frontend_dist=None):
 
     @app.middleware("http")
     async def dashboard_content_negotiation(request: Request, call_next):
-        if request.url.path == "/dashboard" and "text/html" in request.headers.get("accept", "").lower():
+        browser = request.method == "GET" and "text/html" in request.headers.get("accept", "").lower()
+        if request.url.path == "/dashboard" and browser:
             return frontend()
-        return await call_next(request)
+        response = await call_next(request)
+        # B-19: a browser navigation to an unknown path (a reload of /portal/abc) gets
+        # the SPA, which renders its own "not found" page; API clients keep JSON 404s.
+        if browser and response.status_code == 404 and not request.url.path.startswith("/api/"):
+            return frontend()
+        return response
+
+    from middleware.security_headers import SecurityHeadersMiddleware
+    # A-13: the SPA shell, assets and /config.js carry the production frontend headers.
+    app.add_middleware(SecurityHeadersMiddleware, frontend=True)
 
     @app.get("/config.js", include_in_schema=False)
     def config():

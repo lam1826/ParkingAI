@@ -146,7 +146,7 @@ export default function VisionPage() {
     {current && <Section title="Kiểm tra kết quả" description={`Ảnh nhận lúc ${dateTime(current.observed_at)} · ${current.ocr_status === "recognized" ? "Đã có kết quả nhận diện" : "Cần nhập hoặc kiểm tra thủ công"}`}>
       {current.ocr_status === "no_plate" && <Alert severity="info">Chưa tìm được biển số trong ảnh. Chụp lại rõ biển và phần xe xung quanh, hoặc nhập biển số đã kiểm tra ở dưới.</Alert>}
       <ObservationImage observation={current} />
-      <Box sx={formLayout}><TextField label="Biển số đã kiểm tra" value={plate} onChange={(event) => setPlate(event.target.value.toUpperCase())} inputProps={{ maxLength: 20 }} />
+      <Box sx={formLayout}><TextField label="Biển số đã kiểm tra" value={plate} onChange={(event) => setPlate(event.target.value.toUpperCase())} slotProps={{ htmlInput: { maxLength: 20 } }} />
         <Button variant="contained" disabled={action.busy || !plate.trim() || current.review_status !== "pending"} onClick={() => action.run(() => send(`/vision/observations/${current.id}/review`, { decision: "accept", license_plate: plate }), "Đã xác nhận biển số. Tiếp tục xử lý xe tại bãi.", (result) => { setSelected(result); navigate(`/sites?site=${current.site_id}&plate=${encodeURIComponent(plate)}&action=${result.next_action?.kind || "check_in"}`); })}>Xác nhận và xử lý xe</Button>
         <Button variant="outlined" disabled={action.busy || current.review_status !== "pending"} onClick={() => action.run(() => send(`/vision/observations/${current.id}/review`, { decision: "reject" }), "Đã từ chối ảnh này.", setSelected)}>Không sử dụng ảnh</Button>
       </Box>
@@ -171,9 +171,9 @@ export default function VisionPage() {
     {canManage && <Section title={editingCamera ? `Sửa camera — ${editingCamera.name}` : "Thêm camera"} description="Tên làn, hướng nhận xe và thời hạn lưu ảnh áp dụng cho camera này.">
       <Box component="form" onSubmit={saveCamera}>
         <Box component="fieldset" disabled={action.busy} sx={{ ...formLayout, border: 0, p: 0, m: 0, minWidth: 0 }}>
-          <TextField required label="Tên camera" value={cameraForm.name} onChange={(event) => setCameraForm((old) => ({ ...old, name: event.target.value }))} inputProps={{ maxLength: 100 }} />
+          <TextField required label="Tên camera" value={cameraForm.name} onChange={(event) => setCameraForm((old) => ({ ...old, name: event.target.value }))} slotProps={{ htmlInput: { maxLength: 100 } }} />
           <TextField select label="Hướng xử lý" value={cameraForm.direction} onChange={(event) => setCameraForm((old) => ({ ...old, direction: event.target.value }))}><MenuItem value="entry">Xe vào</MenuItem><MenuItem value="exit">Xe ra</MenuItem></TextField>
-          <TextField required type="number" label="Thời gian lưu ảnh (giờ)" value={cameraForm.retention_hours} onChange={(event) => setCameraForm((old) => ({ ...old, retention_hours: event.target.value }))} inputProps={{ min: 1, max: 72, step: 1 }} helperText="Từ 1 đến 72 giờ. Giảm thời hạn cũng áp dụng cho ảnh đã nhận." />
+          <TextField required type="number" label="Thời gian lưu ảnh (giờ)" value={cameraForm.retention_hours} onChange={(event) => setCameraForm((old) => ({ ...old, retention_hours: event.target.value }))} slotProps={{ htmlInput: { min: 1, max: 72, step: 1 } }} helperText="Từ 1 đến 72 giờ. Giảm thời hạn cũng áp dụng cho ảnh đã nhận." />
           <FormControlLabel control={<Checkbox checked={cameraForm.is_active} onChange={(event) => setCameraForm((old) => ({ ...old, is_active: event.target.checked }))} />} label="Camera đang hoạt động" />
         </Box>
         {editingCamera?.edge_enabled && !cameraForm.is_active && <Alert severity="warning" sx={{ mt: 2 }}>Ngừng camera sẽ thu hồi khóa gửi ảnh. Bật lại camera không khôi phục khóa cũ.</Alert>}

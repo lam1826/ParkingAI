@@ -7,6 +7,7 @@ from services.auth_service import RoleChecker
 from schemas import zone as zone_schema
 from crud import zone as crud_zone
 from crud import parking_slot as crud_slot
+from core.names import lock_catalog_names, name_key
 
 router = APIRouter()
 
@@ -37,6 +38,7 @@ def read_zone(id: int, db: Session = Depends(get_db)):
              dependencies=[Depends(RoleChecker("manager"))])
 def create_zone(zone_in: zone_schema.ZoneCreate, db: Session = Depends(get_db)):
     """Tạo khu vực đỗ xe mới"""
+    lock_catalog_names(db, "zones")
     existing_zone = crud_zone.get_zone_by_name(db, name=zone_in.name)
     if existing_zone:
         raise HTTPException(
@@ -53,7 +55,10 @@ def update_zone(id: int, zone_in: zone_schema.ZoneUpdate, db: Session = Depends(
     db_zone = crud_zone.get_zone(db, zone_id=id)
     if not db_zone:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Zone not found")
-    if zone_in.name is not None:
+    # Only a changed name is checked: a near-duplicate pair from before the rule
+    # stays editable with its own names (review 28/10/2026, round 2).
+    if zone_in.name is not None and name_key(zone_in.name) != name_key(db_zone.name):
+        lock_catalog_names(db, "zones")
         conflicting_zone = crud_zone.get_zone_by_name(db, name=zone_in.name)
         if conflicting_zone is not None and conflicting_zone.id != db_zone.id:
             raise HTTPException(

@@ -2,6 +2,7 @@ import { useCallback, useState } from "react";
 import { Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, MenuItem, Stack, TextField, Typography } from "@mui/material";
 import { dateTime, formLayout, items, money, read, Records, RemoteSection, Section, send, SitePicker, StateChip, useAction, useRemote, useSites } from "./shared";
 import { categoryLabel, channelLabel, LINK_LABEL, linkNeedsSite, refundStatusLabel, SUPPORT_CATEGORIES, supportLinkCandidates, supportRequestBody, supportStatusLabel } from "./supportState";
+import { refundLabelWithPart } from "./portalState";
 
 const EMPTY = { subject: "", category: "general", message: "", linked_type: "", linked_id: "" };
 
@@ -74,7 +75,7 @@ export default function CustomerSupportPanel({ linked, orders, sessions, receipt
         { key: "payment_channel", label: "Kênh thanh toán", render: (row) => channelLabel(row.payment_channel) },
         { key: "requested_amount", label: "Số có thể hoàn", render: (row) => row.requested_amount == null ? "—" : money(row.requested_amount) },
         { key: "approved_amount", label: "Số duyệt hoàn", render: (row) => row.approved_amount == null ? "—" : money(row.approved_amount) },
-        { key: "status", label: "Trạng thái", render: (row) => <StateChip value={row.status} label={refundStatusLabel(row)} /> },
+        { key: "status", label: "Trạng thái", render: (row) => <StateChip value={row.status} label={refundLabelWithPart(refundStatusLabel(row), row)} /> },
         { key: "note", label: "Phản hồi của quản lý", render: (row) => row.note || row.decision_note || "—" },
         { key: "external_reference", label: "Tham chiếu hoàn", render: (row) => row.external_reference || (row.refund_method ? row.refund_method : "—") },
       ]} empty="Chưa có yêu cầu hoàn." />}

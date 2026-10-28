@@ -29,7 +29,8 @@ def test_reserved_arrival_with_unrelated_booking_three_days_ahead(customer_env):
     e = customer_env
     row = reserve(e)  # staff reservation for e.vehicle, now..now+2h, on e.slot
     start = e.now + timedelta(days=3)
-    e.actor["user"] = e.stranger
+    # Review 28/10/2026 R2-01: only the owner's account may declare a verified plate.
+    e.actor["user"] = e.account
     booked = post_booking(e, license_plate=e.vehicle.license_plate, vehicle_type_id=e.vehicle.vehicle_type_id,
                           start_at=start.replace(tzinfo=BUSINESS_TZ).isoformat(),
                           end_at=(start + timedelta(hours=2)).replace(tzinfo=BUSINESS_TZ).isoformat())

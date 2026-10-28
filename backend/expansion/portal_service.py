@@ -141,6 +141,37 @@ def _with_note(message, note, label):
     return (f"{message} {label}: {note}" if note else message)[:500]
 
 
+def _lock_profile_identities(db, phone_number):
+    """Identity locks of the profile's vehicles, in plate order, before the customer row.
+
+    Taken after the requester's account lock (a declaration locks its account,
+    then the identity) and before the customer row (a vehicle approval holds the
+    identity, then references the customer), so neither order is inverted.
+    """
+    from core.vehicle_identity import canonical_identity
+    customer_id = db.scalar(select(Customer.id).where(Customer.phone_number == phone_number))
+    if customer_id is None:
+        return {}
+    vehicles = db.scalars(select(Vehicle).where(Vehicle.customer_id == customer_id)).all()
+    locked = {}
+    for vehicle in sorted(vehicles, key=lambda row: (canonical_identity(row.license_plate), row.id)):
+        lock_identity(db, vehicle.vehicle_type_id, vehicle.license_plate)
+        locked[vehicle.id] = canonical_identity(vehicle.license_plate)
+    return locked
+
+
+def _release_for_new_owner(db, customer, locked):
+    """The linked account now owns the profile's plates: release other accounts' declarations
+    of them, such as those of an account unlinked earlier (review 28/10/2026 R2-01)."""
+    from core.vehicle_identity import canonical_identity
+    from expansion.declared_bookings import release_foreign
+    db.flush()  # release_foreign reads the new link as the owner account
+    for vehicle_id, plate in locked.items():
+        vehicle = db.scalar(select(Vehicle).where(Vehicle.id == vehicle_id).execution_options(populate_existing=True))
+        if vehicle is not None and vehicle.customer_id == customer.id and canonical_identity(vehicle.license_plate) == plate:
+            release_foreign(db, vehicle)
+
+
 def resolve_link(db, actor, identity, approve, note=""):
     check_permission(actor, "manager")
     # An approval note reaches the customer in the link notification. A rejected
@@ -164,6 +195,7 @@ def resolve_link(db, actor, identity, approve, note=""):
         return item
     try:
         if approve:
+            locked = _lock_profile_identities(db, item.phone_number)
             customer = db.scalar(select(Customer).where(Customer.phone_number == item.phone_number).with_for_update())
             if customer is None:
                 raise HTTPException(409, "Chưa có hồ sơ tương ứng để xác minh; hãy yêu cầu khách tạo hồ sơ mới.")
@@ -172,6 +204,7 @@ def resolve_link(db, actor, identity, approve, note=""):
                 raise HTTPException(409, "Hồ sơ hoặc tài khoản đã có liên kết; không thể chuyển quyền tự động.")
             db.add(PortalAccountLink(user_id=item.user_id, customer_id=customer.id,
                 verified_by_id=actor.id, verification="manager_approved"))
+            _release_for_new_owner(db, customer, locked)
             _notify(db, customer.id, f"link:{item.id}",
                 _with_note("Yêu cầu liên kết hồ sơ đã được quản lý duyệt.", note, "Ghi chú của quản lý"))
         item.status = "approved" if approve else "rejected"
@@ -232,6 +265,10 @@ def resolve_vehicle(db, actor, identity, approve, note=""):
             elif vehicle.customer_id not in {None, item.customer_id} or vehicle.vehicle_type_id != item.vehicle_type_id:
                 raise HTTPException(409, "Xe đang thuộc hồ sơ khác hoặc sai loại; cần quy trình chuyển chủ riêng.")
             vehicle.customer_id = item.customer_id
+            # The plate is now verified: other accounts' declarations of it are
+            # released (identity lock held above; no slot lock follows).
+            from expansion.declared_bookings import release_foreign
+            release_foreign(db, vehicle)
             if not db.scalar(select(PortalVehicleOwnership.id).where(
                 PortalVehicleOwnership.customer_id == item.customer_id, PortalVehicleOwnership.vehicle_id == vehicle.id)):
                 db.add(PortalVehicleOwnership(customer_id=item.customer_id, vehicle_id=vehicle.id, approved_by_id=actor.id))

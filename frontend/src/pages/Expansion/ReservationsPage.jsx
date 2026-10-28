@@ -10,6 +10,15 @@ import { dateTime, items, PageControls, read, Records, refreshAll, RemoteSection
 const loadTypes = () => read("/catalog/vehicle-types").then(items);
 const labels = { confirmed: "Đã giữ chỗ", arrived: "Đã đến", cancelled: "Đã hủy", expired: "Hết hạn" };
 
+// Fix 28/10/2026 round 2 (G6 e): granted reservations and waitlist rows ask before
+// cancelling, like an advance booking; the first click only opens the question.
+function ConfirmCancel({ question, confirm, busy, onConfirm, onKeep }) {
+  return <div role="group" aria-label={question}><p>{question}</p><div className="form-actions">
+    <Button disabled={busy} onClick={onConfirm}>{confirm}</Button>
+    <Button disabled={busy} onClick={onKeep}>Giữ lại</Button>
+  </div></div>;
+}
+
 function UpcomingCommitments({ siteId }) {
   const load = useCallback(async () => {
     const profile = await read("/me/profile");
@@ -23,8 +32,10 @@ function UpcomingCommitments({ siteId }) {
   }, [siteId]);
   const remote = useRemote(load);
   const action = useAction(remote.reload);
+  const [asking, setAsking] = useState(null);
   const reservations = remote.data?.reservations || [];
   const waiting = remote.data?.waitlist || [];
+  const run = (path, notice) => { setAsking(null); void action.run(() => send(path), notice); };
   return <div>
     {remote.error && <Alert severity="error" action={<Button onClick={remote.reload}>Thử lại</Button>}>{remote.error}</Alert>}
     {remote.loading && <p role="status">Đang tải chỗ đã cấp và danh sách chờ…</p>}
@@ -32,11 +43,17 @@ function UpcomingCommitments({ siteId }) {
     {action.notice && <Alert severity="success">{action.notice}</Alert>}
     {reservations.map((row) => <div className="booking-row" key={`reservation-${row.id}`}>
       <div><div className="plate">{row.license_plate}</div><p>{row.site_name} · {row.slot_name}</p><p>Giờ hẹn: {dateTime(row.start_at)} · Đến trước {dateTime(row.arrival_deadline)}</p></div>
-      {row.order_id ? <Button component={Link} to={`/portal?order=${encodeURIComponent(row.order_id)}`}>Xem đơn vé</Button> : <Button disabled={action.busy} onClick={() => void action.run(() => send(`/me/reservations/${row.id}/cancel`), "Đã hủy chỗ được cấp.")}>Hủy chỗ</Button>}
+      {row.order_id ? <Button component={Link} to={`/portal?order=${encodeURIComponent(row.order_id)}`}>Xem đơn vé</Button>
+        : asking === `reservation-${row.id}` ? <ConfirmCancel question="Hủy chỗ được cấp này? Vị trí sẽ được trả lại cho bãi." confirm="Xác nhận hủy chỗ" busy={action.busy}
+          onConfirm={() => run(`/me/reservations/${row.id}/cancel`, "Đã hủy chỗ được cấp.")} onKeep={() => setAsking(null)} />
+        : <Button disabled={action.busy} onClick={() => setAsking(`reservation-${row.id}`)}>Hủy chỗ</Button>}
     </div>)}
     {waiting.map((row) => <div className="booking-row" key={`waitlist-${row.id}`}>
       <div><div className="plate">{row.license_plate}</div><p>{row.status === "offered" ? "Đã được cấp chỗ; xem giờ hẹn ở trên." : `Đang chờ chỗ · ${dateTime(row.start_at)} → ${dateTime(row.end_at)}`}</p></div>
-      <Button disabled={action.busy} onClick={() => void action.run(() => send(`/me/waitlist/${row.id}/cancel`), "Đã rời danh sách chờ và thu hồi chỗ chưa dùng.")}>Rời danh sách chờ</Button>
+      {asking === `waitlist-${row.id}` ? <ConfirmCancel busy={action.busy} confirm="Xác nhận rời danh sách"
+        question={row.status === "offered" ? "Rời danh sách chờ? Chỗ đã được cấp cho yêu cầu này cũng bị thu hồi." : "Rời danh sách chờ? Yêu cầu chờ chỗ này sẽ bị hủy."}
+        onConfirm={() => run(`/me/waitlist/${row.id}/cancel`, "Đã rời danh sách chờ và thu hồi chỗ chưa dùng.")} onKeep={() => setAsking(null)} />
+        : <Button disabled={action.busy} onClick={() => setAsking(`waitlist-${row.id}`)}>Rời danh sách chờ</Button>}
     </div>)}
   </div>;
 }
@@ -48,11 +65,14 @@ function PreviousBookings({ siteId }) {
   }, [siteId]);
   const rows = useRemote(loadPrevious);
   const action = useAction(rows.reload);
+  const [asking, setAsking] = useState(null);
   return <Stack spacing={2}>
     {action.error && <Alert severity="error">{action.error}</Alert>}
     {action.notice && <Alert severity="success">{action.notice}</Alert>}
     <RemoteSection remote={rows} title="Đặt chỗ từ vé hoặc quyền đã cấp" description="Các đặt chỗ cũ được giữ nguyên. Vé trả trước và chứng từ nằm trong Vé & lịch sử.">
-      {(records) => <Records rows={records} columns={[{ key: "start_at", label: "Đến", render: (row) => dateTime(row.start_at) }, { key: "end_at", label: "Đi", render: (row) => dateTime(row.end_at) }, { key: "status", label: "Trạng thái", render: (row) => <StateChip value={row.status} label={labels[row.status]} /> }, { key: "action", label: "Thao tác", render: (row) => row.order_id ? <Button component={Link} to={`/portal?order=${encodeURIComponent(row.order_id)}`}>Xem đơn vé</Button> : row.status === "confirmed" ? <Button disabled={action.busy} onClick={() => void action.run(() => send(`/me/reservations/${row.id}/cancel`), "Đã hủy đặt chỗ.")}>Hủy đặt chỗ</Button> : "—" }]} empty="Không có đặt chỗ cũ." />}
+      {(records) => <Records rows={records} columns={[{ key: "start_at", label: "Đến", render: (row) => dateTime(row.start_at) }, { key: "end_at", label: "Đi", render: (row) => dateTime(row.end_at) }, { key: "status", label: "Trạng thái", render: (row) => <StateChip value={row.status} label={labels[row.status]} /> }, { key: "action", label: "Thao tác", render: (row) => row.order_id ? <Button component={Link} to={`/portal?order=${encodeURIComponent(row.order_id)}`}>Xem đơn vé</Button> : row.status === "confirmed" ? (asking === row.id ? <ConfirmCancel question="Hủy đặt chỗ này? Vị trí sẽ được trả lại cho bãi." confirm="Xác nhận hủy đặt chỗ" busy={action.busy}
+        onConfirm={() => { setAsking(null); void action.run(() => send(`/me/reservations/${row.id}/cancel`), "Đã hủy đặt chỗ."); }} onKeep={() => setAsking(null)} />
+        : <Button disabled={action.busy} onClick={() => setAsking(row.id)}>Hủy đặt chỗ</Button>) : "—" }]} empty="Không có đặt chỗ cũ." />}
     </RemoteSection>
   </Stack>;
 }
@@ -62,11 +82,15 @@ function AdvanceBookings({ site }) {
   const page = usePage({}, 25);
   const loadBookings = useCallback(() => read("/me/advance-bookings", { site_id: site.id, limit: page.size, offset: page.params.offset }), [site.id, page.size, page.params.offset]);
   const bookings = useRemote(loadBookings);
+  // Every live hold (at most five per account) is loaded on its own, so the history pager never hides one (G6 d).
+  const loadLive = useCallback(() => read("/me/advance-bookings", { site_id: site.id, status: "confirmed", limit: 100 }), [site.id]);
+  const live = useRemote(loadLive);
   const loadAvailability = useCallback(() => read(`/sites/${site.id}/availability`), [site.id]);
   const availability = useRemote(loadAvailability);
-  const action = useAction(refreshAll(bookings, availability));
+  const action = useAction(refreshAll(bookings, live, availability));
   const [form, setForm] = useState(() => ({ license_plate: "", vehicle_type_id: "", ...nextBookingWindow() }));
   const [pending, setPending] = useState(false), [created, setCreated] = useState(null), [previousOpen, setPreviousOpen] = useState(false);
+  const [cancelling, setCancelling] = useState(null);
   const attempt = useRef(null);
   const typeChoices = (types.data || []).filter((row) => row.is_active !== false && (!availability.data || availability.data.slots.some((slot) => slot.vehicle_type_id === row.id)));
   const vehicleTypeId = form.vehicle_type_id || String(typeChoices[0]?.id || "");
@@ -91,6 +115,24 @@ function AdvanceBookings({ site }) {
       }
     }, "Đã giữ chỗ. Bạn thanh toán phí theo lượt gửi thực tế, không cần trả trước.", setCreated);
   };
+  const cancel = (row) => {
+    setCancelling(null);
+    void action.run(() => send(`/me/advance-bookings/${encodeURIComponent(row.id)}/cancel`), "Đã hủy đặt chỗ.", () => setCreated(null));
+  };
+  // Only a live hold is upcoming: the server reports a hold past its arrival deadline
+  // as expired, and a booking can also be cancelled without the customer's action.
+  // Finished bookings get their own section, which also holds the pager of the list.
+  const bookingRows = items(bookings.data);
+  const upcoming = items(live.data).filter((row) => row.status === "confirmed"), finished = bookingRows.filter((row) => row.status !== "confirmed");
+  const paged = page.page > 0 || bookingRows.length >= page.size;
+  const bookingRow = (row) => <div className="booking-row" key={row.id}>
+    <div><div className="plate">{row.license_plate}</div><p>{types.data?.find((item) => item.id === row.vehicle_type_id)?.name || "Xe"} · {dateTime(row.start_at)} → {dateTime(row.end_at)}</p>{row.status === "confirmed" ? <p>{row.slot_name || "Vị trí phù hợp đã được giữ"}</p> : row.slot_name && <p>{row.slot_name}</p>}</div>
+    <div><span className={`badge ${row.status === "confirmed" ? "success" : "neutral"}`}>{labels[row.status] || row.status || "—"}</span>
+      {row.status === "confirmed" && (cancelling === row.id ? <div role="group" aria-label="Xác nhận hủy đặt chỗ"><p>Hủy đặt chỗ này? Chỗ đang giữ sẽ được trả lại.</p><div className="form-actions">
+        <button className="button quiet small" type="button" disabled={action.busy || pending} onClick={() => cancel(row)}>Xác nhận hủy</button>
+        <button className="button quiet small" type="button" disabled={action.busy} onClick={() => setCancelling(null)}>Giữ lại</button>
+      </div></div> : <button className="button quiet small" type="button" disabled={action.busy || pending} onClick={() => setCancelling(row.id)}>Hủy</button>)}</div>
+  </div>;
   return <>
     <PageHeader title="Đặt chỗ trước" description="Giữ một chỗ phù hợp, thanh toán theo thời gian gửi thực tế." />
     <div className="content-grid">
@@ -115,16 +157,21 @@ function AdvanceBookings({ site }) {
       <section className="surface">
         <div className="section-head"><h2>Lịch sắp đến</h2></div>
         <UpcomingCommitments siteId={site.id} />
-        {bookings.error && <Alert severity="error" action={<Button onClick={bookings.reload}>Thử lại</Button>}>{bookings.error}</Alert>}
-        {bookings.loading && <p className="muted" role="status">Đang tải lịch đặt chỗ…</p>}
-        {items(bookings.data).map((row) => <div className="booking-row" key={row.id}>
-          <div><div className="plate">{row.license_plate}</div><p>{types.data?.find((item) => item.id === row.vehicle_type_id)?.name || "Xe"} · {dateTime(row.start_at)} → {dateTime(row.end_at)}</p><p>{row.slot_name || "Vị trí phù hợp đã được giữ"}</p></div>
-          <div><span className={`badge ${row.status === "confirmed" ? "success" : "neutral"}`}>{labels[row.status] || row.status}</span>{row.status === "confirmed" && <button className="button quiet small" type="button" disabled={action.busy || pending} onClick={() => void action.run(() => send(`/me/advance-bookings/${encodeURIComponent(row.id)}/cancel`), "Đã hủy đặt chỗ.", () => setCreated(null))}>Hủy</button>}</div>
-        </div>)}
-        {!bookings.loading && !bookings.error && !items(bookings.data).length && <div className="empty"><PrototypeIcon name="calendar" />Chưa có đặt chỗ tự khai báo. Bạn vẫn có thể đến gửi trực tiếp.</div>}
-        {(page.page > 0 || items(bookings.data).length >= page.size) && <PageControls page={page.page} count={items(bookings.data).length} size={page.size} busy={bookings.loading || action.busy || pending} onChange={page.setPage} />}
+        {live.error && <Alert severity="error" action={<Button onClick={live.reload}>Thử lại</Button>}>{live.error}</Alert>}
+        {(live.loading || bookings.loading) && <p className="muted" role="status">Đang tải lịch đặt chỗ…</p>}
+        {upcoming.map(bookingRow)}
+        {!live.loading && !live.error && !upcoming.length && !bookings.loading && !bookings.error && (page.page === 0 && !bookingRows.length
+          ? <div className="empty"><PrototypeIcon name="calendar" />Chưa có đặt chỗ tự khai báo. Bạn vẫn có thể đến gửi trực tiếp.</div>
+          : <p className="muted" role="status">Không có đặt chỗ tự khai báo sắp đến. Bạn vẫn có thể đến gửi trực tiếp.</p>)}
       </section>
     </div>
+    {(finished.length > 0 || paged || bookings.error) && <section className="surface" style={{ marginTop: 24 }}>
+      <div className="section-head"><div><h2>Đặt chỗ đã kết thúc</h2><p>Đặt chỗ đã dùng, đã hủy hoặc hết hạn không còn giữ vị trí. Nếu một đặt chỗ đã hủy mà bạn không tự hủy, hãy liên hệ bãi để được hỗ trợ.</p></div></div>
+      {bookings.error && <Alert severity="error" action={<Button onClick={bookings.reload}>Thử lại</Button>}>{bookings.error}</Alert>}
+      {finished.map(bookingRow)}
+      {!bookings.loading && !bookings.error && !finished.length && <p className="muted">Không có đặt chỗ đã kết thúc trên trang này.</p>}
+      {paged && <PageControls page={page.page} count={bookingRows.length} size={page.size} busy={bookings.loading || action.busy || pending} onChange={page.setPage} />}
+    </section>}
     <details className="demo-help" onToggle={(event) => setPreviousOpen(event.currentTarget.open)}><summary>Đặt chỗ và vé trước đây</summary>{previousOpen && <PreviousBookings siteId={site.id} />}</details>
   </>;
 }

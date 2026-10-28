@@ -132,13 +132,20 @@ def summary(site_id: int, response: Response, period: Literal["day", "week"] = "
     return summarize(db, actor, site_id, period, anchor_date)
 
 
+XLSX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+
 @router.get("/reports/export")
 def export_summary(site_id: int, period: Literal["day", "week"] = "day", anchor_date: date | None = None,
+                   export_format: Literal["csv", "xlsx"] = Query("csv", alias="format"),
                    db=Depends(get_db), actor=Depends(get_current_user)):
-    from expansion.analytics_export import summary_csv
+    """The summary as CSV or Excel (R1-EXCEL): the same rows, scope and date range in both."""
+    from expansion.analytics_export import summary_csv, summary_xlsx
     data = summarize(db, actor, site_id, period, anchor_date)
-    filename = f"parking-{site_id}-{period}-{data['end_date']}.csv"
-    return Response(content=summary_csv(data), media_type="text/csv; charset=utf-8",
+    filename = f"parking-{site_id}-{period}-{data['end_date']}.{export_format}"
+    content, media_type = ((summary_xlsx(data), XLSX_MEDIA_TYPE) if export_format == "xlsx"
+                           else (summary_csv(data), "text/csv; charset=utf-8"))
+    return Response(content=content, media_type=media_type,
                     headers={"Content-Disposition": f'attachment; filename="{filename}"', "Cache-Control": "no-store"})
 
 

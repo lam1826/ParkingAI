@@ -94,9 +94,20 @@ export const REVOKED_REJECT_LABEL = "Vé đã được thu hồi khi duyệt ho�
 export function rejectBlockedLabel(row, detail) {
   return row?.status === "approved" && detail?.entitlement_revoked ? REVOKED_REJECT_LABEL : "";
 }
-export function approvalEffectNote(row) {
-  return row?.source_type === "portal_order" && row?.payment_channel !== "demo" && !row?.legacy
-    ? "Duyệt sẽ thu hồi ngay vé giờ/ngày và chỗ giữ của khách; sau đó chỉ còn bước ghi nhận đã hoàn tiền." : "";
+// R2-06 (28/10/2026): only an approval that settles the receipt ends the ticket or
+// monthly period. `amount` is what the manager typed (blank = everything still
+// refundable) and `refundable` the server's refundable amount, so the note follows
+// the typed amount. DEMO refunds at the decision; counter/online revoke a whole
+// ticket at the decision and stop a whole period when the refund is recorded.
+export function approvalEffectNote(row, { amount, refundable } = {}) {
+  if (!row || row.legacy || !["portal_order", "monthly_pass"].includes(row.source_type)) return "";
+  const partial = amount !== "" && amount != null && refundable != null && Number(amount) < Number(refundable);
+  if (partial) return "Duyệt một phần chỉ hoàn số tiền đã nhập; vé/kỳ vé của khách vẫn còn hiệu lực và khách có thể gửi yêu cầu hoàn phần còn lại.";
+  const demo = row.payment_channel === "demo";
+  if (row.source_type === "portal_order") return demo ? "Duyệt toàn bộ sẽ hoàn mô phỏng ngay và thu hồi vé giờ/ngày cùng chỗ giữ của khách."
+    : "Duyệt sẽ thu hồi ngay vé giờ/ngày và chỗ giữ của khách; sau đó chỉ còn bước ghi nhận đã hoàn tiền.";
+  return demo ? "Duyệt toàn bộ sẽ hoàn mô phỏng ngay và dừng kỳ vé tháng của khách."
+    : "Duyệt toàn bộ: kỳ vé tháng sẽ dừng khi ghi nhận đã hoàn tiền.";
 }
 
 export function refundAmountHint(row) {

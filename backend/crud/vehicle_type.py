@@ -1,7 +1,8 @@
 from sqlalchemy.orm import Session
-from sqlalchemy import func, select, update
+from sqlalchemy import select, update
 from sqlalchemy.exc import SQLAlchemyError
 from fastapi import HTTPException
+from core.names import name_key
 from models.vehicle_type import VehicleType
 from schemas import vehicle_type as vt_schema
 
@@ -31,13 +32,9 @@ def get_vehicle_type(db: Session, vt_id: int) -> VehicleType | None:
     return db.execute(stmt).scalar_one_or_none()
 
 def get_vehicle_type_by_name(db: Session, name: str) -> VehicleType | None:
-    normalized_name = name.strip().casefold()
-    stmt = (
-        select(VehicleType)
-        .where(func.unicode_casefold(VehicleType.name) == normalized_name)
-        .order_by(VehicleType.id)
-    )
-    return db.execute(stmt).scalars().first()
+    """The row whose name differs only in case, accents or spacing (core.names.name_key)."""
+    key = name_key(name)
+    return next((row for row in db.scalars(select(VehicleType).order_by(VehicleType.id)) if name_key(row.name) == key), None)
 
 def get_vehicle_types(db: Session, skip: int = 0, limit: int = 100):
     stmt = select(VehicleType).offset(skip).limit(limit)

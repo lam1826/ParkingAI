@@ -1,4 +1,4 @@
-import { useState, useContext } from "react";
+import { useEffect, useState, useContext } from "react";
 import { Link, Outlet, useNavigate, useLocation } from "react-router-dom";
 import { Menu, MenuItem, Divider } from "@mui/material";
 import { AuthContext } from "../context/AuthContext";
@@ -10,6 +10,7 @@ import { useExpansion } from "../context/ExpansionContext";
 import { singleSiteId } from "../utils/singleSiteMode";
 import { navigationItemSelected, navigationSections } from "../utils/navigationItems";
 import { getErrorMessage } from "../utils/errorMessage";
+import { items, read } from "../pages/Expansion/shared";
 import "../styles/prototype-reference.css";
 import "../styles/prototype-app.css";
 
@@ -38,6 +39,19 @@ function AccountUnavailable({ error, onRetry, onLogout }) {
   </main></div>;
 }
 
+// B-14 (28/10/2026): the sidebar names the lot the account works at. With more
+// than one lot (or none readable yet) it keeps a generic heading.
+function useLotName(enabled) {
+  const [name, setName] = useState("");
+  useEffect(() => {
+    if (!enabled) return undefined;
+    let alive = true;
+    read("/sites").then((data) => { const sites = items(data); if (alive) setName(sites.length === 1 ? sites[0].name : ""); }).catch(() => {});
+    return () => { alive = false; };
+  }, [enabled]);
+  return name;
+}
+
 export default function MainLayout() {
   const { user, logout, refreshUser, profileError } = useContext(AuthContext);
   const capabilities = useExpansion();
@@ -50,6 +64,7 @@ export default function MainLayout() {
   const management = sections.find(section => section.id === "management")?.items || [];
   const extensions = sections.find(section => section.id === "extensions")?.items || [];
   const name = user?.full_name || user?.username || roles[user?.role];
+  const lotName = useLotName(Boolean(user) && !customer);
   const go = path => { setAccountAnchor(null); navigate(path); };
   if (!user) return <AccountUnavailable error={profileError} onRetry={refreshUser} onLogout={logout} />;
   const nav = item => <Link key={item.path} className={`nav-item ${navigationItemSelected(location, item) ? "active" : ""}`} to={item.path} aria-current={navigationItemSelected(location, item) ? "page" : undefined}>
@@ -64,6 +79,8 @@ export default function MainLayout() {
         {(user?.role === "staff" ? ["staff"] : ["customer", "manager", "admin"]).map(role => <span key={role} className={`role-display ${role === user?.role ? "active" : ""}`} aria-current={role === user?.role ? "true" : undefined}><PrototypeIcon name={{ customer: "user", manager: "car", admin: "shield", staff: "car" }[role]} />{roles[role]}</span>)}
       </div>
       <div className="top-actions">
+        {/* R2-07: the assistant launcher lives in the header, never on top of page content. */}
+        <AIChatbot />
         <button type="button" className="icon-button" onClick={event => setAccountAnchor(event.currentTarget)} aria-label="Tài khoản của tôi"><PrototypeIcon name="user" /></button>
         <button type="button" className="icon-button" onClick={logout} aria-label="Đăng xuất"><PrototypeIcon name="logout" /></button>
       </div>
@@ -72,7 +89,7 @@ export default function MainLayout() {
     {customer && <nav className="customer-nav" aria-label="Điều hướng khách hàng">{primary.map(nav)}</nav>}
     <div className={`app-shell ${customer ? "customer" : "internal"}`}>
       {!customer && <aside className="sidebar" aria-label="Điều hướng nội bộ">
-        <div className="nav-label">{user?.role === "admin" ? "ĐIỀU HÀNH BÃI" : "BÃI TRUNG TÂM"}</div>
+        <div className="nav-label">{lotName || (user?.role === "admin" ? "ĐIỀU HÀNH BÃI" : "BÃI ĐỖ")}</div>
         {primary.map(nav)}
         {user?.role === "admin" && <><div className="nav-label admin-section-label">QUẢN TRỊ</div>{management.filter(item => item.path !== "/roles").map(nav)}</>}
         <div className="sidebar-bottom">
@@ -100,6 +117,5 @@ export default function MainLayout() {
       {management.map(item => <MenuItem key={item.path} onClick={() => go(item.path)}>{item.text}</MenuItem>)}
       <MenuItem onClick={() => { setAccountAnchor(null); logout(); }}>Đăng xuất</MenuItem>
     </Menu>
-    <AIChatbot />
   </div>;
 }

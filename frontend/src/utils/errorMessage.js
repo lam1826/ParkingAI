@@ -6,6 +6,16 @@ function transportFailure(error) {
   return !error?.response && (error?.isAxiosError === true || error?.request != null || TRANSPORT_CODES.has(error?.code));
 }
 
+/**
+ * Joins server messages: the backend's 422 texts are full sentences ("Họ tên: cần ít nhất 2 ký tự."),
+ * so one that already ends a sentence is followed by a space, never by a second full stop
+ * (fix 28/10/2026 round 2). Duplicates are shown once.
+ */
+export function joinMessages(messages, separator = ". ") {
+  return [...new Set(messages.map((message) => message.trim()))].reduce((text, message) =>
+    !text ? message : `${text}${/[.!?…]$/.test(text) ? " " : separator}${message}`, "");
+}
+
 /** FastAPI detail may be a list of validation objects, never a React child. */
 export function getErrorMessage(error, fallback = "Không thể thực hiện yêu cầu. Vui lòng thử lại.") {
   const detail = error?.response?.data?.detail;
@@ -13,7 +23,7 @@ export function getErrorMessage(error, fallback = "Không thể thực hiện y�
   if (Array.isArray(detail)) {
     const messages = detail.map((item) => typeof item === "string" ? item : item?.msg)
       .filter((item) => typeof item === "string" && item.trim());
-    if (messages.length) return [...new Set(messages)].join(". ");
+    if (messages.length) return joinMessages(messages);
   }
   if (transportFailure(error)) return fallback;
   // An error the page threw itself (no request involved) carries its own message.

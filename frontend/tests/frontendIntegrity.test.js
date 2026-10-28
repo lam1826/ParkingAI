@@ -26,7 +26,10 @@ test("bảng phiên gửi xe giữ nguyên phí 0 thay vì hiển thị thiếu 
     "utf8",
   );
 
-  assert.match(source, /formatParkingFee\(value\)/);
+  // A completed stay keeps its real 0 fee; only a stay still in the lot (no fee
+  // computed yet) reads "Chưa tính phí" (fix 28/10/2026 B-12).
+  assert.match(source, /formatParkingFee\(value, "Chưa tính phí"\)/);
+  assert.match(source, /\["active", "checking_out"\]\.includes\(row\.status\) \? null : value/);
   assert.doesNotMatch(source, /value\s*\?\s*new Intl\.NumberFormat/);
 });
 

@@ -55,7 +55,8 @@ def test_failed_anonymous_login_is_audited_without_credentials(
     assert response.status_code == 401
     audit = db_session.query(AuditLog).filter(AuditLog.path == "/api/auth/login").one()
     assert audit.action == "LOGIN"
-    assert audit.username == "anonymous"
+    # Review 28/10/2026 R1-AUDIT: the attempted username, still no authenticated user.
+    assert audit.username == test_user.username
     assert audit.user_id is None
     assert audit.ip_address == "203.0.113.8"
     assert audit.success is False

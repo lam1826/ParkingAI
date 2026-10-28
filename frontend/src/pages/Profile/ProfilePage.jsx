@@ -15,6 +15,7 @@ import {
 import PersonIcon from "@mui/icons-material/Person";
 import { AuthContext } from "../../context/AuthContext";
 import authService from "../../services/authService";
+import { getErrorMessage } from "../../utils/errorMessage";
 
 const roleLabels = {
   customer: "Khách hàng",
@@ -50,8 +51,7 @@ export default function ProfilePage() {
       await refreshUser();
       setNotice({ severity: "success", message: "Cập nhật hồ sơ thành công." });
     } catch (error) {
-      const detail = error.response?.data?.detail;
-      setNotice({ severity: "error", message: typeof detail === "string" ? detail : "Không thể cập nhật hồ sơ." });
+      setNotice({ severity: "error", message: getErrorMessage(error, "Không thể cập nhật hồ sơ.") });
     } finally {
       setSaving(false);
     }
@@ -85,11 +85,11 @@ export default function ProfilePage() {
               <Stack spacing={2.5}>
                 <TextField
                   required fullWidth label="Họ và tên" name="full_name"
-                  value={form.full_name} onChange={handleChange} inputProps={{ minLength: 2, maxLength: 100 }}
+                  value={form.full_name} onChange={handleChange} slotProps={{ htmlInput: { minLength: 2, maxLength: 100 } }}
                 />
                 <TextField
                   required fullWidth label="Tên đăng nhập" name="username"
-                  value={form.username} onChange={handleChange} inputProps={{ minLength: 3, maxLength: 50 }}
+                  value={form.username} onChange={handleChange} slotProps={{ htmlInput: { minLength: 3, maxLength: 50 } }}
                   helperText="Chỉ sử dụng chữ cái không dấu, số và các ký tự . _ -"
                 />
                 <TextField fullWidth label="Vai trò" value={roleLabels[user?.role] || user?.role || ""} disabled />

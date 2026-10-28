@@ -72,8 +72,22 @@ test("#23 an approved request whose ticket was revoked at approval cannot be rej
   assert.equal(rejectBlockedLabel({ status: "pending" }, { entitlement_revoked: true }), "");
   assert.equal(rejectBlockedLabel({ status: "approved" }, { entitlement_revoked: false }), "");
   assert.match(approvalEffectNote({ source_type: "portal_order", payment_channel: "counter" }), /thu hồi/);
-  assert.equal(approvalEffectNote({ source_type: "portal_order", payment_channel: "demo" }), "");
-  assert.equal(approvalEffectNote({ source_type: "monthly_pass", payment_channel: "counter" }), "");
+  // R2-06 (28/10/2026): every full approval of a ticket or monthly pass says what it ends;
+  // a partial amount keeps the ticket or period.
+  assert.equal(approvalEffectNote({ source_type: "portal_order", payment_channel: "demo" }),
+    "Duyệt toàn bộ sẽ hoàn mô phỏng ngay và thu hồi vé giờ/ngày cùng chỗ giữ của khách.");
+  assert.equal(approvalEffectNote({ source_type: "monthly_pass", payment_channel: "counter" }),
+    "Duyệt toàn bộ: kỳ vé tháng sẽ dừng khi ghi nhận đã hoàn tiền.");
+  const partial = "Duyệt một phần chỉ hoàn số tiền đã nhập; vé/kỳ vé của khách vẫn còn hiệu lực và khách có thể gửi yêu cầu hoàn phần còn lại.";
+  for (const row of [{ source_type: "portal_order", payment_channel: "counter" }, { source_type: "monthly_pass", payment_channel: "demo" }]) {
+    assert.equal(approvalEffectNote(row, { amount: "4000", refundable: 12000 }), partial, row.source_type);
+  }
+  assert.equal(approvalEffectNote({ source_type: "portal_order", payment_channel: "counter" }, { amount: "12000", refundable: 12000 }),
+    "Duyệt sẽ thu hồi ngay vé giờ/ngày và chỗ giữ của khách; sau đó chỉ còn bước ghi nhận đã hoàn tiền.");
+  assert.equal(approvalEffectNote({ source_type: "monthly_pass", payment_channel: "demo" }, { amount: "", refundable: 12000 }),
+    "Duyệt toàn bộ sẽ hoàn mô phỏng ngay và dừng kỳ vé tháng của khách.");
+  assert.equal(approvalEffectNote({ source_type: "session_credit", payment_channel: "counter" }, { amount: "4000", refundable: 12000 }), "");
+  assert.equal(approvalEffectNote({ source_type: "portal_order", payment_channel: "demo", legacy: true }), "");
 });
 
 

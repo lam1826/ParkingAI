@@ -92,7 +92,7 @@ def seed(db, namespace, password_hashes):
             ensure(SubscriptionPlan, f"plan_{suffix}_{kind.id}", {"name": f"{marker} {letter} - {kind.name} 30 ngày", "site_id": site.id},
                 {"vehicle_type_id": kind.id, "duration_days": 30, "price": price, "is_active": True})
         owner = ensure(Customer, "customer_profile_" + suffix, {"phone_number": f"{namespace.upper()}-{letter}"},
-            {"full_name": f"Khách {marker} {letter}", "email": f"{namespace}-{suffix}@example.invalid"})
+            {"full_name": f"Khách {marker} {letter}", "email": f"{namespace}-{suffix}@example.com"})
         ensure(PortalAccountLink, "customer_link_" + suffix, {"user_id": users["customer_" + suffix].id},
             {"customer_id": owner.id, "verified_by_id": users["admin"].id, "verification": "showcase_seed"})
         own = []

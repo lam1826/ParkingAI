@@ -78,6 +78,8 @@ def test_optional_booking_only_conflicts_with_live_vehicle_rights(customer_env, 
 
     old_status, old_session = old.status, getattr(old, 'session_id', None)
     assert availability(e.db, e.a.id)['available_now'] >= 1
+    # Review 28/10/2026 R2-01: only the owner's account may declare a verified plate.
+    e.actor['user'] = e.account
     response = post_booking(e, license_plate=e.vehicle.license_plate,
         start_at=(e.clock['now'] + timedelta(minutes=1)).replace(tzinfo=BUSINESS_TZ).isoformat(),
         end_at=(e.clock['now'] + timedelta(minutes=30)).replace(tzinfo=BUSINESS_TZ).isoformat())

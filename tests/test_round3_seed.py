@@ -3,7 +3,7 @@ from sqlalchemy import func, select
 import pytest
 
 from expansion.showcase_seed import ACCOUNTS, preview, seed
-from models import ParkingSession, User
+from models import Customer, ParkingSession, User
 from models.payment import Payment
 
 
@@ -19,6 +19,9 @@ def test_showcase_dry_run_and_replay_preserve_existing_data(db_session, test_use
     session_count = db_session.scalar(select(func.count()).select_from(ParkingSession))
     assert first["created"]["users"] == 7 and first["created"]["parking_sites"] == 2
     assert session_count > 2000
+    # Fix 28/10/2026 round 2: seeded contacts pass the customer form's email check, so they stay editable.
+    emails = db_session.scalars(select(Customer.email).where(Customer.phone_number.like("DEMOROUND3-%"))).all()
+    assert sorted(emails) == ["demoround3-a@example.com", "demoround3-b@example.com"]
     second = seed(db_session, "demoround3", hashes)
     db_session.commit()
     assert second["created"] == {}

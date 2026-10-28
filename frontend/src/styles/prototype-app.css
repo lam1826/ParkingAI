@@ -56,3 +56,11 @@
 .prototype-ui .app-password input{padding-right:64px}
 .prototype-ui .app-password button{position:absolute;right:7px;top:7px;min-height:32px;border:0;border-radius:5px;background:#f0f3f7;color:var(--muted);padding:5px 9px;font-size:12px}
 @media(max-width:780px){.prototype-ui .login-shell{grid-template-columns:1fr;gap:28px;padding:30px 18px;min-height:100vh}.prototype-ui .login-intro h1{font-size:32px;margin:24px 0 16px}}
+/* R2-07 (28/10/2026): the assistant launcher sits in the header row, so it never covers page content or controls; the opened window is a panel under the header. */
+.prototype-ui .top-actions .chat-widget{position:static;display:flex;align-items:center;gap:8px}
+.prototype-ui .top-actions .chat-launcher{width:40px;height:40px;box-shadow:none}
+.prototype-ui .top-actions .chat-launcher>svg{width:22px;height:22px}
+.prototype-ui .top-actions .chat-launcher.is-open>svg{width:18px;height:18px}
+.prototype-ui .top-actions .chat-launcher-label{box-shadow:none}
+.prototype-ui .top-actions .chat-window{position:fixed;z-index:25;top:96px;right:24px;bottom:auto;max-height:calc(100dvh - 120px)}
+@media(max-width:780px){.prototype-ui .top-actions .chat-launcher-label{display:none}.prototype-ui .top-actions .chat-window{top:72px;right:16px;max-height:calc(100dvh - 88px)}}

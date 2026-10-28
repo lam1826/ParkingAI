@@ -21,6 +21,8 @@ from models.user import User
 
 # tokenUrl trỏ tới endpoint OAuth2 form (/auth/login), không phải endpoint JSON
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
+# Separates a bcrypt hash from its session stamp (AuthService.revoke_sessions).
+SESSION_STAMP = "#"
 
 # ==========================================
 # 2. LỚP AUTH SERVICE (Nghiệp vụ cốt lõi)
@@ -33,13 +35,25 @@ class AuthService:
     
     @staticmethod
     def verify_password(plain_password: str, hashed_password: str) -> bool:
-        """Kiểm tra mật khẩu chưa mã hóa với hash lưu trong DB."""
+        """Kiểm tra mật khẩu chưa mã hóa với hash lưu trong DB (bỏ qua dấu phiên, xem revoke_sessions)."""
         try:
             return bcrypt.checkpw(
-                plain_password.encode("utf-8"), hashed_password.encode("utf-8")
+                plain_password.encode("utf-8"), hashed_password.split(SESSION_STAMP, 1)[0].encode("utf-8")
             )
-        except (ValueError, TypeError):
+        except (ValueError, TypeError, AttributeError):
             return False
+
+    @staticmethod
+    def revoke_sessions(password_hash: str) -> str:
+        """The same password with a new credential snapshot: every token issued so far stops working.
+
+        Review 28/10/2026 R2-09: deactivating an account must end its sessions for
+        good, so re-activation does not revive old tokens. Tokens are bound to the
+        stored hash (credential_version); a random stamp after the bcrypt hash
+        changes that binding without a schema change, and the password still
+        verifies. A bcrypt hash never contains the separator.
+        """
+        return password_hash.split(SESSION_STAMP, 1)[0] + SESSION_STAMP + secrets.token_hex(8)
 
     @staticmethod
     def get_password_hash(password: str) -> str:

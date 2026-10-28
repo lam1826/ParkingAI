@@ -4,6 +4,7 @@ import { Box, CircularProgress } from "@mui/material";
 
 import MainLayout from "../layouts/MainLayout";
 import PrivateRoute from "./PrivateRoute";
+import GuestRoute from "./GuestRoute";
 import PermissionRoute from "./PermissionRoute";
 import { AuthContext } from "../context/AuthContext";
 import { ExpansionProvider, useExpansion } from "../context/ExpansionContext";
@@ -80,8 +81,8 @@ const AppRoutes = () => {
       {/* Public: the lot introduction is readable without an account. */}
       <Route path="/gioi-thieu" element={<PublicSitePage />} />
       <Route path="/welcome" element={<Navigate to="/gioi-thieu" replace />} />
-      <Route path="/login" element={<LoginPage />} />
-      <Route path="/register" element={<RegisterPage />} />
+      <Route path="/login" element={<GuestRoute><LoginPage /></GuestRoute>} />
+      <Route path="/register" element={<GuestRoute><RegisterPage /></GuestRoute>} />
 
       {/* Private (Yêu cầu đăng nhập & bọc MainLayout) */}
       <Route

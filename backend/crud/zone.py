@@ -1,7 +1,8 @@
 from sqlalchemy.orm import Session
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from fastapi import HTTPException
+from core.names import name_key
 from models.zone import Zone  # Đảm bảo bạn có class Zone trong models/
 from schemas import zone as zone_schema
 
@@ -10,13 +11,9 @@ def get_zone(db: Session, zone_id: int) -> Zone | None:
     return db.execute(stmt).scalar_one_or_none()
 
 def get_zone_by_name(db: Session, name: str) -> Zone | None:
-    normalized_name = name.strip().casefold()
-    stmt = (
-        select(Zone)
-        .where(func.unicode_casefold(Zone.name) == normalized_name)
-        .order_by(Zone.id)
-    )
-    return db.execute(stmt).scalars().first()
+    """The row whose name differs only in case, accents or spacing (core.names.name_key)."""
+    key = name_key(name)
+    return next((row for row in db.scalars(select(Zone).order_by(Zone.id)) if name_key(row.name) == key), None)
 
 def get_zones(db: Session, skip: int = 0, limit: int = 100):
     stmt = select(Zone).offset(skip).limit(limit)

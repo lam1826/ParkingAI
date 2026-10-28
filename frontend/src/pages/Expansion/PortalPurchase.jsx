@@ -67,7 +67,7 @@ export default function PortalPurchase({ vehicles, plans, demoPaymentsEnabled, o
       </Alert>}
       <Stack direction="row" spacing={1} useFlexGap sx={{ mt: 2, flexWrap: "wrap" }}>
         <Button type="submit" variant="contained" disabled={pending || (!uncertain && (catalogBusy || !!catalogError || !selectedPlan || (timed && !selectedPlan.eligible_zones?.length)))}>
-          {pending ? "Đang tạo đơn…" : uncertain ? "Thử lại yêu cầu đã gửi" : timed ? "Tạo đơn giữ chỗ" : "Tạo đơn mua vé tháng"}
+          {pending ? "Đang tạo đơn…" : uncertain ? "Thử lại yêu cầu đã gửi" : form.kind !== "monthly" ? "Tạo đơn giữ chỗ" : "Tạo đơn mua vé tháng"}
         </Button>
         {state.error && !locked && <Button type="button" variant="outlined" onClick={() => flow.reset()}>Bắt đầu yêu cầu mới</Button>}
       </Stack>

@@ -12,7 +12,7 @@ const rows={reservations:[{id:31,license_plate:'30A12345',slot_name:'A1',site_na
 const miscURL=moduleURL(`export const sent=[];export const items=v=>Array.isArray(v)?v:v?.items||[];export const dateTime=v=>v;export const useRemote=load=>({data:${JSON.stringify(rows)},loading:false,error:'',reload:()=>{}});export const useAction=()=>({busy:false,run:async op=>op()});export const send=async path=>sent.push(path);export const read=()=>{};export const refreshAll=()=>{};export const requestKey=()=>'';export const usePage=()=>{};export const useSites=()=>{};export const nextBookingWindow=()=>{};export const advanceBookingBody=()=>{};export const uncertainMutation=()=>{};export const AuthContext={};export const Alert='alert',Button='button',Stack='div',Link='a',PageHeader='header',PrototypeIcon='i',PageControls='div',Records='div',RemoteSection='div',StateChip='span',SitePicker='div';`);
 function walk(node,fn){if(!node||typeof node!=='object')return;if(Array.isArray(node))return node.forEach(x=>walk(x,fn));fn(node);(node.props?.children||[]).forEach(x=>walk(x,fn));}
 const text=node=>node==null?'':typeof node!=='object'?String(node):(node.props?.children||[]).map(text).join('');
-test('customer upcoming area shows operational offers and a waiting row with working cancellation',async()=>{
+test('customer upcoming area shows operational offers and a waiting row that ask before cancelling',async()=>{
  const file=path.join(frontend,'src/pages/Expansion/ReservationsPage.jsx'),source=readFileSync(file,'utf8');
  assert.ok(source.includes('function UpcomingCommitments('),'current offers must be visible without opening history');
  const out=await transformWithOxc(source,file,{lang:'jsx',jsx:{runtime:'classic',pragma:'createElement',pragmaFrag:'Fragment'}});
@@ -26,7 +26,10 @@ test('customer upcoming area shows operational offers and a waiting row with wor
  assert.ok(text(tree).includes('30A67890'));
  const misc=await import(miscURL);
  for(const button of buttons)if(button.props.onClick)await button.props.onClick();
- assert.deepEqual(misc.sent.sort(),['/me/reservations/31/cancel','/me/waitlist/45/cancel','/me/waitlist/46/cancel']);
+ // Fix 28/10/2026 round 2 (G6 e): a click only asks. The confirmed cancellations of these three
+ // rows run with real component state in fix20261028RoundTwoFixer.test.js.
+ assert.deepEqual(misc.sent,[]);
+ assert.equal(buttons.filter(button=>button.props.onClick).length,3);
  // This section is mounted directly in upcoming, before collapsed history.
  assert.ok(source.indexOf('<UpcomingCommitments')<source.indexOf('<details'));
 });

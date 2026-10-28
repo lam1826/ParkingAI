@@ -82,7 +82,11 @@ export function useAction(reload) {
   const notify = (success) => {
     if (mounted.current) { setError(""); setNotice(success); }
   };
-  return { run, busy, error, notice, notify };
+  // A new, unrelated operation on the page: the previous result no longer describes it.
+  const clear = () => {
+    if (mounted.current) { setError(""); setNotice(""); }
+  };
+  return { run, busy, error, notice, notify, clear };
 }
 
 /** Page/filter state for one paged list: any filter change returns to the first page. */

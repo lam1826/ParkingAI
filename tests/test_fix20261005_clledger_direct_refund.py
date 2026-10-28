@@ -112,7 +112,8 @@ def test_direct_refund_of_portal_monthly_period_is_refused(portal):
 
 
 def test_a_portal_period_stopped_by_the_manager_can_still_be_refunded_directly(portal):
-    """Rework of #26: "Ngừng vé" tells the manager to refund in Thu tiền & Chốt ca.
+    """Rework of #26: "Ngừng vé" tells the manager to refund a counter/online payment in
+    Thu chi & ca làm việc (a DEMO remainder stays requestable instead, round 2 of 28/10/2026).
 
     A stopped portal period has no entitlement left to revoke and the customer
     can no longer request (pass_inactive), so the direct refund is the only way

@@ -22,13 +22,25 @@ def lookup(body: FeeLookup, response: Response, db=Depends(get_db), user=Depends
     return write(db, lambda: ticket_payment_access.fee_lookup(db, user, body, config))
 
 
+def _status_filter(query, model, status):
+    """The status the customer and staff lists show: a hold past its arrival deadline is 'expired'."""
+    now = declared_bookings.server_now()
+    if status == 'confirmed':
+        return query.where(model.status == 'confirmed', model.arrival_deadline > now)
+    if status == 'expired':
+        return query.where(or_(model.status == 'expired', (model.status == 'confirmed') & (model.arrival_deadline <= now)))
+    return query if status is None else query.where(model.status == status)
+
+
 @router.get('/me/advance-bookings')
-def bookings(site_id: int | None = Query(None, gt=0), limit: int = Query(50, ge=1, le=100),
-             offset: int = Query(0, ge=0), db=Depends(get_db), user=Depends(get_current_user)):
+def bookings(site_id: int | None = Query(None, gt=0), status: Literal['confirmed', 'arrived', 'cancelled', 'expired'] | None = None,
+             limit: int = Query(50, ge=1, le=100), offset: int = Query(0, ge=0), db=Depends(get_db), user=Depends(get_current_user)):
     ticket_payment_access.customer_only(user)
     query = select(DeclaredParkingReservation).where(DeclaredParkingReservation.user_id == user.id)
     if site_id is not None:
         query = query.where(DeclaredParkingReservation.site_id == site_id)
+    # Live holds (status=confirmed) are loaded on their own, so paging the history never hides one.
+    query = _status_filter(query, DeclaredParkingReservation, status)
     total = db.scalar(select(func.count()).select_from(query.subquery()))
     rows = db.scalars(query.order_by(DeclaredParkingReservation.created_at.desc(), DeclaredParkingReservation.id)
         .offset(offset).limit(limit))
@@ -53,18 +65,13 @@ def reception(site_id: int, status: Literal['confirmed', 'arrived', 'cancelled',
     from models.parking_slot import ParkingSlot
     require_site_access(db, user, site_id)
     model = DeclaredParkingReservation
-    query = select(model).where(model.site_id == site_id)
-    now = declared_bookings.server_now()
-    if status == 'confirmed':
-        query = query.where(model.status == 'confirmed', model.arrival_deadline > now)
-    elif status == 'expired':
-        query = query.where(or_(model.status == 'expired', (model.status == 'confirmed') & (model.arrival_deadline <= now)))
-    elif status is not None:
-        query = query.where(model.status == status)
+    query = _status_filter(select(model).where(model.site_id == site_id), model, status)
     total = db.scalar(select(func.count()).select_from(query.subquery()))
     rows = db.execute(query.add_columns(ParkingSlot).join(ParkingSlot, ParkingSlot.id == model.slot_id)
         .order_by(model.start_at.desc(), model.id).offset(offset).limit(limit)).all()
-    return {'items': [{**declared_bookings.serialize(db, row), 'user_id': row.user_id} for row, slot in rows],
+    # Staff reception sees the stored row, including the stay it opened.
+    return {'items': [{**declared_bookings.serialize(db, row, include_session=True), 'user_id': row.user_id}
+        for row, slot in rows],
         'total': total, 'limit': limit, 'offset': offset}
 
 

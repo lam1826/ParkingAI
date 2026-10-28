@@ -74,8 +74,8 @@ function CalibrationForm({ camera, observations, slots, action, current, effecti
             <TextField select label="Chỗ cần khoanh" value={slotId} onChange={(event) => setSlotId(event.target.value)}>
               {availableSlots.map((slot) => <MenuItem key={slot.id} value={slot.id}>{slot.slot_name} · {slot.zone_name}</MenuItem>)}
             </TextField>
-            <TextField label="Tọa độ X (0–1)" type="number" value={coordinate.x} inputProps={{ min: 0, max: 1, step: .001 }} onChange={(event) => setCoordinate((old) => ({ ...old, x: event.target.value }))} />
-            <TextField label="Tọa độ Y (0–1)" type="number" value={coordinate.y} inputProps={{ min: 0, max: 1, step: .001 }} onChange={(event) => setCoordinate((old) => ({ ...old, y: event.target.value }))} />
+            <TextField label="Tọa độ X (0–1)" type="number" value={coordinate.x} slotProps={{ htmlInput: { min: 0, max: 1, step: .001 } }} onChange={(event) => setCoordinate((old) => ({ ...old, x: event.target.value }))} />
+            <TextField label="Tọa độ Y (0–1)" type="number" value={coordinate.y} slotProps={{ htmlInput: { min: 0, max: 1, step: .001 } }} onChange={(event) => setCoordinate((old) => ({ ...old, y: event.target.value }))} />
           </Box>
           <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap" }}>
             <Button disabled={!reference || coordinate.x === "" || coordinate.y === "" || points.length >= 12} onClick={() => {
@@ -99,7 +99,7 @@ function CalibrationForm({ camera, observations, slots, action, current, effecti
                 ["occupied_ratio", "Tỷ lệ thay đổi tối thiểu khi có xe", .15, .8, .01], ["max_lighting_shift", "Mức đổi sáng tối đa", 10, 80, 1],
                 ["min_blur_variance", "Độ rõ tối thiểu", 0, 200, 1], ["stale_after_seconds", "Tuổi ảnh tối đa (giây)", 5, 300, 1],
                 ["confirmation_frames", "Số ảnh cần thống nhất", 1, 3, 1],
-              ].map(([name, label, min, max, step]) => <TextField key={name} label={label} type="number" required value={settings[name]} onChange={changeSettings(name)} inputProps={{ min, max, step }} />)}
+              ].map(([name, label, min, max, step]) => <TextField key={name} label={label} type="number" required value={settings[name]} onChange={changeSettings(name)} slotProps={{ htmlInput: { min, max, step } }} />)}
             </Box>
           </Box>
           <FormControlLabel control={<Checkbox checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} />} label="Tôi đã kiểm tra ảnh nền: tất cả các vùng vừa khoanh đang trống." />

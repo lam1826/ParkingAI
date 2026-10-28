@@ -2,17 +2,16 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, Snackbar } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
 import { PageHeader, WorkspaceTabs } from "./PrototypeUI";
+import { joinMessages } from "../../utils/errorMessage";
 
 export function extractErrorMessage(error, fallback = "Đã xảy ra lỗi.") {
   const detail = error?.response?.data?.detail;
   if (typeof detail === "string" && detail.trim()) return detail;
   if (Array.isArray(detail)) {
-    const parts = detail.map(item => {
-      if (typeof item === "string") return item;
-      const field = Array.isArray(item?.loc) ? item.loc[item.loc.length - 1] : null;
-      return field && item?.msg ? `${field}: ${item.msg}` : item?.msg;
-    }).filter(Boolean);
-    if (parts.length) return parts.join("; ");
+    // The server already names the field in Vietnamese ("Sức chứa: phải lớn hơn hoặc bằng 0."),
+    // so the raw field key (capacity, code_prefix) is never shown (fix 28/10/2026 B-05).
+    const parts = detail.map(item => typeof item === "string" ? item : item?.msg).filter(Boolean);
+    if (parts.length) return joinMessages(parts, "; ");
   }
   return fallback;
 }
@@ -33,10 +32,12 @@ const catalogue = {
   "Quản lý loại phương tiện": ["Loại xe & bảng giá", "Danh mục phương tiện, mã xe và đơn giá cho lượt gửi mới.", "loại xe", "Các loại xe"],
   "Cấu hình bảng giá": ["Loại xe & bảng giá", "Danh mục phương tiện, mã xe và đơn giá cho lượt gửi mới.", "bảng giá", "Bảng giá gửi xe"],
   "Quản lý khách hàng thân thiết": ["Khách & vé", "Hồ sơ khách, phương tiện liên kết và các kỳ vé tháng.", "khách hàng", "Khách hàng"],
+  "Vai trò hệ thống": ["Vai trò hệ thống", "Bốn vai trò cố định (khách hàng, nhân viên, quản lý, quản trị viên) và quyền hạn của từng vai trò. Trang chỉ để tra cứu: tên vai trò không đổi hay xóa được.", "vai trò", "Các vai trò"],
 };
 
 // canCreate=false hides "Thêm …" while existing rows stay editable; createNote says where to create instead (#71).
-export default function CrudPage({ title, fields, service, canEdit = true, canDelete = canEdit, canCreate = canEdit, createNote, readOnlyMessage, descriptionNote, embedded = false }) {
+// deleteLabel(row) names a record whose first column is not unique (several prices of one vehicle type).
+export default function CrudPage({ title, fields, service, canEdit = true, canDelete = canEdit, canCreate = canEdit, createNote, readOnlyMessage, descriptionNote, embedded = false, deleteLabel }) {
   const [rows, setRows] = useState([]), [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false), [editing, setEditing] = useState(null), [form, setForm] = useState({});
   const [busy, setBusy] = useState(false), [formError, setFormError] = useState("");
@@ -80,7 +81,9 @@ export default function CrudPage({ title, fields, service, canEdit = true, canDe
     finally { working.current = false; setBusy(false); }
   };
   const remove = async row => {
-    if (!canDelete || working.current || !window.confirm(`Xóa bản ghi #${row.id}?`)) return;
+    // B-18: the confirmation names the record the manager sees in the first column, not its id.
+    const label = deleteLabel ? deleteLabel(row) : visible.length ? valueFor(row, visible[0]) : "";
+    if (!canDelete || working.current || !window.confirm(label && label !== "—" ? `Xóa ${entity} "${label}"?` : `Xóa ${entity} này?`)) return;
     working.current = true; setBusy(true);
     try { await service.delete(row.id); notify("Xóa thành công."); await load(); }
     catch (error) { notify(extractErrorMessage(error, "Không thể xóa dữ liệu đang được sử dụng. Có thể ngừng hoạt động để giữ lịch sử."), "error"); }

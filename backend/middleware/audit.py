@@ -163,6 +163,9 @@ class AuditLogMiddleware(BaseHTTPMiddleware):
                 return
         elif not is_public_auth:
             return
+        else:
+            # Set by the login/register endpoint once the body parsed (never the password).
+            username = getattr(request.state, "audit_username", None) or username
 
         resource, resource_id = _extract_resource(request.url.path)
         await run_in_threadpool(

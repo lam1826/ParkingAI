@@ -85,7 +85,7 @@ const MonthlyPassDialog = ({ inline = false, isOpen, onClose, onSave, pass, vehi
       <form onSubmit={handleSubmit}>
         <DialogContent dividers={!inline} sx={inline ? { p: 0, overflow: "visible" } : undefined}>
           <Alert severity="info" sx={{ mb: 2 }}>
-            {pass ? "Gia hạn tạo kỳ vé mới trên cùng mã thẻ. Lịch sử và khoản thu của kỳ cũ được giữ nguyên. Mặc định kỳ mới là 30 ngày; có thể chỉnh ngày." : "Xác nhận sẽ cấp vé và ghi nhận khoản thu vào sổ thu tiền."}
+            {pass ? "Gia hạn tạo kỳ vé mới trên cùng mã thẻ. Lịch sử và khoản thu của kỳ cũ được giữ nguyên. Mặc định kỳ mới là 30 ngày; có thể chỉnh ngày. Kỳ mới không áp dụng cho lượt gửi đang diễn ra: xe đang trong bãi vẫn tính theo kỳ vé lúc vào, phần vượt kỳ cũ thu phí khi xe ra." : "Xác nhận sẽ cấp vé và ghi nhận khoản thu vào sổ thu tiền."}
           </Alert>
           <Grid container spacing={2}>
             <Grid size={{ xs: 12, sm: 6 }}>

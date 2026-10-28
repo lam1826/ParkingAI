@@ -74,6 +74,17 @@ export function monthlyPaymentNotice(plan, paymentMode) {
   return `Sau khi tạo đơn, bạn có ${minutes} phút để thanh toán${paymentMode === "manual" ? " tại quầy" : ""}; quá hạn đơn tự hết hiệu lực và cần tạo đơn mới.`;
 }
 
+// R2-06: only a refund that settles the receipt ends the ticket or monthly period;
+// a smaller approved amount is compensation and the rest stays requestable. The
+// server sends no flag for it, so the lists derive it from the two amounts. A request
+// rejected after a partial approval keeps approved_amount but refunded nothing.
+const ENTITLEMENT_SOURCES = ["portal_order", "monthly_pass"];
+export function partialRefund(row) {
+  return ENTITLEMENT_SOURCES.includes(row?.source_type) && ["approved", "refunded"].includes(row.status)
+    && row.approved_amount != null && row.requested_amount != null && Number(row.approved_amount) < Number(row.requested_amount);
+}
+export const refundLabelWithPart = (label, row) => partialRefund(row) ? `${label} · một phần` : label;
+
 // #54: what happens to the manager's decision note. Link/vehicle notes reach the
 // customer in a notification; a rejected link requester has no customer profile, so
 // that reason cannot be delivered or stored and is optional. Order reviews store it.

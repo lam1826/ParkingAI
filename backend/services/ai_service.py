@@ -22,6 +22,8 @@ from services.parking_service import ParkingService
 
 
 logger = logging.getLogger(__name__)
+AI_UNAVAILABLE = ("Trợ lý AI hiện chưa được bật cho hệ thống này. "
+    "Các chức năng thống kê và vận hành vẫn hoạt động bình thường.")
 
 
 def _report_context(prompt: str, *, source: str, start_date=None, end_date=None) -> str:
@@ -186,23 +188,15 @@ class AIService:
         Thiếu API key -> trả 503 rõ ràng, KHÔNG làm hỏng các chức năng
         thống kê cơ bản (chúng chạy độc lập với AI).
         """
+        # Review 28/10/2026 R1-AI-TEXT: users read a neutral text; the
+        # configuration reason (flag or key) only goes to the server log.
         if not settings.AI_ENABLED:
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail=(
-                    "Chức năng AI đang tắt (AI_ENABLED=false). Chỉ bật sau "
-                    "khi môi trường và quyền gọi provider đã được phê duyệt."
-                ),
-            )
+            logger.warning("ai_unavailable reason=disabled")
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=AI_UNAVAILABLE)
 
         if not api_key or not api_key.strip():
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail=(
-                    "Chức năng AI chưa sẵn sàng: chưa cấu hình GEMINI_API_KEY "
-                    "trong file .env. Các chức năng thống kê vẫn hoạt động bình thường."
-                )
-            )
+            logger.warning("ai_unavailable reason=missing_api_key")
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=AI_UNAVAILABLE)
 
         self.db = db
         # Khởi tạo Client thay vì dùng genai.configure() cũ

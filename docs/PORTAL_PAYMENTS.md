@@ -27,10 +27,10 @@ stateDiagram-v2
     pending --> review: Kết quả cần kiểm tra
     expired --> review: Kết quả thành công đến muộn
     review --> fulfilled: Quản lý duyệt, điều kiện vé hợp lệ
-    fulfilled --> refunded: Duyệt hoàn mô phỏng và ngừng kỳ vé
+    fulfilled --> refunded: Hoàn đủ số tiền của phiếu thu
 ```
 
-Sơ đồ mô tả các luồng trình diễn chính. Quyết định xử lý phải thỏa trạng thái và điều kiện trong dịch vụ; không được sửa trực tiếp trường trạng thái để bỏ qua quy trình.
+Sơ đồ mô tả các luồng trình diễn chính. Đơn chỉ sang `refunded` khi tổng các phiếu hoàn bằng số tiền của phiếu thu; hoàn một phần giữ đơn ở `fulfilled` (review 28/10/2026, R2-06). Quyết định xử lý phải thỏa trạng thái và điều kiện trong dịch vụ; không được sửa trực tiếp trường trạng thái để bỏ qua quy trình.
 
 Giá, bãi, loại xe và số ngày được lấy từ gói ở server. Đơn giữ lại giá/kỳ đã chốt; sửa gói sau đó không sửa đơn cũ. `idempotency_key` chống tạo đơn lặp; token QR được kiểm tra cùng quyền sở hữu đơn. Thành công lặp không tạo thêm kỳ vé/phiếu thu. Không được đổi kết quả của một sự kiện đã xử lý bằng cách gửi lại mã đó.
 
@@ -46,7 +46,11 @@ Quyền sử dụng vé portal được xác định theo bãi của vị trí x
 
 Phiếu DEMO dùng `Payment.method = demo`, không gắn ca thu ngân. Hệ thống chặn dùng DEMO cho phiếu thu lượt gửi thường và chặn hoàn thật từ phiếu DEMO hoặc ngược lại. Doanh thu thực loại bỏ DEMO; nhánh dữ liệu lịch sử cũng không cộng lại giá kỳ vé đã có phiếu DEMO. Kiểm tra có ở dịch vụ, ràng buộc DB và readiness.
 
-Khách gửi yêu cầu hoàn từ đơn đã cấp vé. Quản lý xem lý do và duyệt/từ chối. Với DEMO, duyệt hoàn ghi phiếu hoàn cùng phương thức và ngừng kỳ vé; xe đang dùng kỳ vé trong bãi phải kết thúc lượt trước. Thao tác này không chuyển tiền. Màn hình thu ngân cũ không dùng nút hoàn cash/transfer cho chứng từ DEMO.
+Khách gửi yêu cầu hoàn từ đơn đã cấp vé. Quản lý xem lý do và duyệt/từ chối, có thể duyệt một phần số còn có thể hoàn. Với DEMO, duyệt hoàn ghi ngay phiếu hoàn cùng phương thức; quầy/chuyển khoản chỉ ghi phiếu hoàn khi quản lý ghi nhận đã hoàn tiền. Thao tác này không chuyển tiền. Màn hình thu ngân cũ không dùng nút hoàn cash/transfer cho chứng từ DEMO.
+
+Chỉ khoản hoàn làm phiếu thu hết số còn lại mới chấm dứt quyền sử dụng: thu hồi vé giờ/ngày chưa dùng (quầy/chuyển khoản thu hồi ngay lúc duyệt), dừng kỳ vé tháng và đánh dấu đơn `refunded`. Khoản hoàn một phần là bồi hoàn: vé/kỳ vé vẫn còn hiệu lực, đơn giữ `fulfilled` và khách có thể gửi yêu cầu hoàn phần còn lại theo các điều kiện thường (vé còn sẵn sàng trước giờ bắt đầu, kỳ vé đang hoạt động và không có xe đang gửi). Điều kiện duyệt không đổi: khi xe đang gửi theo kỳ vé, mọi lần duyệt đều bị từ chối cho đến khi xe ra. Ghi nhận một khoản đã duyệt một phần vẫn làm được sau khi vé đã dùng hoặc trong lúc xe đang gửi theo kỳ vé, vì việc ghi nhận đó không dừng vé. Phần còn lại mà quy tắc cũ đã kết thúc quyền sử dụng (đơn `refunded` nhưng phiếu thu còn tiền) cũng yêu cầu được. Kỳ vé quầy/chuyển khoản đã dừng vẫn hoàn trực tiếp tại Tài chính bãi; khoản DEMO luôn đi qua yêu cầu và phê duyệt.
+
+Tiền không bao giờ bị kẹt (sửa đổi vòng 2, 28/10/2026): Tài chính bãi từ chối hoàn phiếu DEMO và kỳ vé đã có khoản hoàn không bật lại được (#81), nên khi quản lý bấm "Ngừng vé" cho một kỳ vé thanh toán DEMO mà phiếu thu còn tiền (ví dụ đã duyệt hoàn một phần), khách vẫn gửi được yêu cầu hoàn số còn lại. Với phiếu DEMO của kỳ vé đã dừng, hệ thống chỉ bỏ qua điều kiện "kỳ vé còn hiệu lực" (`pass_inactive`); số tiền còn hoàn được, xe đang gửi theo kỳ vé (`pass_in_use`), đối soát và yêu cầu đang mở vẫn được kiểm tra như thường. Duyệt hết số còn lại đánh dấu đơn `refunded`; kỳ vé vẫn dừng. Kỳ vé thu tại quầy, chuyển khoản hoặc trực tuyến đã dừng giữ `pass_inactive` với khách và được quản lý hoàn trực tiếp tại mục Thu chi & ca làm việc. Hộp xác nhận "Ngừng vé" ghi rõ hai đường này.
 
 ## 5. API và màn hình
 

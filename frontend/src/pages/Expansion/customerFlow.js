@@ -1,5 +1,6 @@
 import { bookingTimestamp } from "./siteForms.js";
 import { validSessionBalance } from "./sessionFeeState.js";
+import { formatParkingDuration } from "../ParkingSession/sessionPresentation.js";
 
 const positive = (value) => Number.isSafeInteger(Number(value)) && Number(value) > 0;
 export function feeLookupBody(form, siteId) {
@@ -30,6 +31,16 @@ export function validFeeLookup(data) {
     && typeof data.session.license_plate === "string" && Number.isFinite(Date.parse(data.session.check_in_time))
     && ["owned", "ticket"].includes(data?.access?.kind)
     && validSessionBalance(data.payment_status, data.session.id);
+}
+
+// Session timestamps without an offset are business time in Vietnam, even on a browser abroad.
+const businessMillis = (value) => Date.parse(/(?:Z|[+-]\d{2}:?\d{2})$/i.test(value || "") ? value : `${value}+07:00`);
+
+// The stay as staff see it on the fee quote: whole minutes truncated like the
+// server (int(seconds / 60)) and the same compact wording (review 27/10 B-15).
+export function stayDuration(checkIn, serverNow) {
+  const minutes = Math.trunc((businessMillis(serverNow) - businessMillis(checkIn)) / 60000);
+  return Number.isFinite(minutes) ? formatParkingDuration(Math.max(0, minutes)) : "Đang cập nhật";
 }
 
 export function refreshFeeLookup(result, paymentStatus) {

@@ -3,6 +3,7 @@ import userService from "../services/userService";
 import { AuthContext } from "../../../context/AuthContext";
 import { assignableRoles, canCreateUser, canEditUser as mayEditUser } from "../../../constants/userPermissions";
 import { createAccountBody, createdAccountNotice, expectedAssignmentSite } from "../accountAssignment";
+import { getErrorMessage } from "../../../utils/errorMessage";
 
 const NO_SITES = [];
 
@@ -107,8 +108,8 @@ const useUser = () => {
       closeDialogs();
       fetchUsers();
     } catch (err) {
-      const errorMsg = err.response?.data?.detail || "Lưu người dùng thất bại!";
-      showNotify(`Lỗi: ${typeof errorMsg === 'object' ? JSON.stringify(errorMsg) : errorMsg}`, "error");
+      // B-05: the server's short Vietnamese message, never the raw validation JSON.
+      showNotify(`Lỗi: ${getErrorMessage(err, "Lưu người dùng thất bại!")}`, "error");
     } finally {
       setSubmitting(false);
     }
@@ -122,8 +123,7 @@ const useUser = () => {
       closeDialogs();
       fetchUsers();
     } catch (err) {
-      const errorMsg = err.response?.data?.detail || "Xóa người dùng thất bại!";
-      showNotify(`Lỗi: ${typeof errorMsg === 'object' ? JSON.stringify(errorMsg) : errorMsg}`, "error");
+      showNotify(`Lỗi: ${getErrorMessage(err, "Xóa người dùng thất bại!")}`, "error");
     }
   };
 

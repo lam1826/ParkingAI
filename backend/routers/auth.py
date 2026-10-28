@@ -18,6 +18,7 @@ from schemas.auth import (
     UpdateProfileRequest,
 )
 from services.auth_service import AuthService, get_current_user
+from crud.user import username_taken
 from core.auth_rate_limit import enforce_login_rate_limit, enforce_registration_rate_limit
 from crud.role import ensure_canonical_roles
 
@@ -28,6 +29,16 @@ router = APIRouter(
 # OAuth2-compatible router kept separately so the React JSON login endpoint and
 # Swagger/OAuth2 form login can coexist without content-type ambiguity.
 oauth_router = APIRouter(tags=["Authentication"])
+
+
+def _audit_username(request: Request, username) -> None:
+    """Review 28/10/2026 R1-AUDIT: the LOGIN/REGISTER audit row names the attempted account.
+
+    Only the username is handed to AuditLogMiddleware (request.state); the
+    password and registration code never leave the endpoint.
+    """
+    if isinstance(username, str) and username.strip():
+        request.state.audit_username = username.strip()[:50]
 
 
 @router.post(
@@ -42,12 +53,13 @@ def register(
     db: Annotated[Session, Depends(get_db)],
 ):
     """Khách hàng đăng ký công khai; manager/admin cần mã do hệ thống cấp."""
+    username = body.username.strip()
+    _audit_username(request, username)
     enforce_registration_rate_limit(request, db)
     auth_service = AuthService()
     auth_service.validate_registration_role(body.role, body.registration_code)
 
-    username = body.username.strip()
-    if db.query(User).filter(User.username == username).first():
+    if username_taken(db, username):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Tên đăng nhập đã tồn tại",
@@ -95,6 +107,7 @@ def login(  # Bỏ async vì hàm service xử lý đồng bộ
     """
     Xác thực tài khoản qua JSON body (username & password), trả về Access Token.
     """
+    _audit_username(request, body.username)
     enforce_login_rate_limit(request, db)
     if not body.username.strip() or not body.password.strip():
         raise HTTPException(
@@ -130,6 +143,7 @@ def oauth_login(
     db: Annotated[Session, Depends(get_db)],
 ):
     """Endpoint form chuẩn OAuth2 dành cho Swagger và các client cũ."""
+    _audit_username(request, form.username)
     enforce_login_rate_limit(request, db)
     auth_service = AuthService()
     user = auth_service.authenticate_user(
@@ -178,11 +192,9 @@ def update_me(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ):
-    existing = db.query(User).filter(
-        User.username == body.username,
-        User.id != current_user.id,
-    ).first()
-    if existing:
+    # Only a new or changed name is checked (as on the admin path), so accounts
+    # that were case variants before the rule keep saving their own profile.
+    if body.username != current_user.username and username_taken(db, body.username, exclude_id=current_user.id):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Tên đăng nhập đã tồn tại",

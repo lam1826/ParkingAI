@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import vehicleService from "../services/vehicleService";
+import { getErrorMessage } from "../../../utils/errorMessage";
 
 const useVehicle = () => {
   const [vehicles, setVehicles] = useState([]);
@@ -82,13 +83,9 @@ const useVehicle = () => {
       closeDialogs();
       fetchData();
     } catch (err) {
-      // Giữ nguyên logic parse lỗi 422 chi tiết của bạn
-      const errorDetail = err.response?.data?.detail;
-      const errorMsg =
-        typeof errorDetail === "object"
-          ? JSON.stringify(errorDetail)
-          : errorDetail || err.message || "Lưu phương tiện thất bại!";
-      showNotify(`Lỗi: ${errorMsg}`, "error");
+      // B-05 (28/10/2026): the server's short Vietnamese message ("Biển số: tối đa 20 ký tự."),
+      // never the raw validation JSON.
+      showNotify(`Lỗi: ${getErrorMessage(err, "Lưu phương tiện thất bại!")}`, "error");
     } finally {
       setSubmitting(false);
     }

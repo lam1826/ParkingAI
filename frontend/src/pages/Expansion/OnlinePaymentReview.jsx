@@ -50,10 +50,10 @@ function DecisionDialog({ row, siteId, onClose, onSaved }) {
             {row.resolution !== "external_refund_recorded" && row.currency === "VND" && <MenuItem value="confirmed_external_refund">Xác nhận đã hoàn ngoài hệ thống</MenuItem>}
           </TextField>
           <TextField required label="Lý do / kết quả kiểm tra" value={form.reason} onChange={edit("reason")} disabled={locked}
-            multiline minRows={3} inputProps={{ minLength: 3, maxLength: 500 }} />
+            multiline minRows={3} slotProps={{ htmlInput: { minLength: 3, maxLength: 500 } }} />
           {refund && <>
             <Alert severity="warning">Chỉ ghi nhận sau khi đã kiểm tra chứng từ hoàn đủ {money(row.amount)}. Thao tác này lưu lịch sử, không gửi lệnh hoàn tiền và không thu hồi vé đã cấp.</Alert>
-            <TextField required label="Mã chứng từ hoàn ngoài hệ thống" value={form.external_reference} onChange={edit("external_reference")} disabled={locked} inputProps={{ minLength: 3, maxLength: 100 }} />
+            <TextField required label="Mã chứng từ hoàn ngoài hệ thống" value={form.external_reference} onChange={edit("external_reference")} disabled={locked} slotProps={{ htmlInput: { minLength: 3, maxLength: 100 } }} />
             <FormControlLabel control={<Checkbox checked={form.confirmed} disabled={locked} onChange={(event) => setForm((old) => ({ ...old, confirmed: event.target.checked }))} />}
               label="Tôi đã xác minh khoản hoàn và chứng từ ngoài hệ thống" />
           </>}

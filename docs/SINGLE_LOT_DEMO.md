@@ -10,7 +10,7 @@ Từ thư mục Git root `ParkingAI`, sau khi cài thư viện theo [DEMO_GUIDE.
 ./scripts/start_single_lot_demo.ps1 -NoVision
 ```
 
-Mặc định tạo `backend/artifacts/demo/single-lot-20260915.db` với schema mở rộng (48 bảng, gồm phí lượt online), build frontend hợp nhất vào `frontend/dist` (đã gồm giao diện phí lượt F/C/D; không cần bundle riêng) và mở server tại `http://localhost:8766`. Đọc mật khẩu từ tệp **cục bộ** `backend/artifacts/demo/single-lot-20260915.db.demo-credentials.json`; mỗi tài khoản có mật khẩu ngẫu nhiên riêng. Script chỉ in đường dẫn, không in mật khẩu. Các tệp trong `backend/artifacts` và tệp `*.demo-credentials.json` được Git bỏ qua.
+Mặc định tạo `backend/artifacts/demo/single-lot-20260915.db` với schema mở rộng (57 bảng, gồm phí lượt online), build frontend hợp nhất vào `frontend/dist` (đã gồm giao diện phí lượt F/C/D; không cần bundle riêng) và mở server tại `http://localhost:8766`. Đọc mật khẩu từ tệp **cục bộ** `backend/artifacts/demo/single-lot-20260915.db.demo-credentials.json`; mỗi tài khoản có mật khẩu ngẫu nhiên riêng. Script chỉ in đường dẫn, không in mật khẩu. Các tệp trong `backend/artifacts` và tệp `*.demo-credentials.json` được Git bỏ qua.
 
 | Tài khoản | Mục đích |
 |---|---|

@@ -121,6 +121,27 @@ def test_one_lot_roles_can_open_core_workspace_and_reports_include_empty_week(se
         engine.dispose()
 
 
+def test_fresh_seed_matches_the_documented_catalog_and_contacts(seeded_demo):
+    """Fix 28/10/2026: B-17 the reserve zone is out of service (capacity stays 40 / 4 / 36),
+    R1-PHONE-EMAIL seeded emails use a valid example domain, A-11 the documented table count."""
+    from expansion.site_service import availability
+    target, result = seeded_demo
+    with sqlite3.connect(target) as db:
+        zones = dict(db.execute("SELECT name, is_active FROM zones").fetchall())
+        assert zones == {"DEMO - Xe máy": 1, "DEMO - Ô tô": 1, "DEMO - Dự phòng - ngừng sử dụng": 0}
+        emails = [row[0] for row in db.execute("SELECT email FROM customers WHERE email IS NOT NULL")]
+        assert emails and all(email.endswith("@example.com") for email in emails)
+        tables = db.execute("SELECT count(*) FROM sqlite_master WHERE type = 'table'").fetchone()[0]
+    assert f"({tables} bảng," in (Path(__file__).resolve().parents[1] / "docs" / "SINGLE_LOT_DEMO.md").read_text(encoding="utf-8")
+    engine = create_database_engine("sqlite:///" + target.as_posix())
+    try:
+        with Session(engine) as db:
+            current = availability(db, result["single_site_id"])
+            assert (current["capacity_total"], current["inactive_slots"], current["total"]) == (40, 4, 36)
+    finally:
+        engine.dispose()
+
+
 def test_rerun_refuses_and_preserves_database_marker_and_credentials(seeded_demo):
     target, result = seeded_demo
     paths = [target, Path(str(target) + ".demo.json"), Path(result["credentials_file"])]

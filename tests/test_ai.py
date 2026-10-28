@@ -290,7 +290,9 @@ def test_ai_missing_api_key_returns_503(client: TestClient, auth_headers: dict):
         response = client.post("/ai/question", json=payload, headers=auth_headers)
 
     assert response.status_code == 503
-    assert "GEMINI_API_KEY" in response.json()["detail"]
+    # Review 28/10/2026 R1-AI-TEXT: a neutral text that names no configuration.
+    assert "GEMINI_API_KEY" not in response.json()["detail"] and "AI_ENABLED" not in response.json()["detail"]
+    assert response.json()["detail"].startswith("Trợ lý AI hiện chưa được bật")
 
     # Chức năng thống kê cơ bản vẫn hoạt động độc lập với AI
     stats_response = client.get("/parking/statistics", headers=auth_headers)

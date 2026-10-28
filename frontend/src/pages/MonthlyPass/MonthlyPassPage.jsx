@@ -48,7 +48,7 @@ const MonthlyPassPage = () => {
         <DialogTitle fontWeight="bold">Xác nhận hủy vé</DialogTitle>
         <DialogContent>
           <DialogContentText>
-            Ngừng hiệu lực kỳ vé của thẻ <strong>{selectedPass?.card_code || selectedPass?.pass_code}</strong>? Thao tác này không hoàn tiền. Quản lý có thể ghi nhận hoàn tiền tại mục Thu tiền &amp; Chốt ca.
+            Ngừng hiệu lực kỳ vé của thẻ <strong>{selectedPass?.card_code || selectedPass?.pass_code}</strong>? Thao tác này không hoàn tiền. Khoản thu tại quầy, chuyển khoản hoặc trực tuyến do quản lý hoàn tại mục Thu chi &amp; ca làm việc; khoản thanh toán DEMO qua cổng khách chỉ hoàn qua yêu cầu hoàn tiền của khách, và khách vẫn gửi được yêu cầu cho số tiền còn lại sau khi vé bị ngừng.
           </DialogContentText>
         </DialogContent>
         <DialogActions sx={{ p: 2 }}>

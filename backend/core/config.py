@@ -31,7 +31,16 @@ class Settings(BaseSettings):
     READINESS_CACHE_SECONDS: float = 5.0
     PORTAL_MAINTENANCE_INTERVAL_SECONDS: float = 0.0
     TRUSTED_EDGE_PROXY: bool = False
-    
+    # Review 28/10/2026 R2-05: bodies are bounded before routing (413), JSON,
+    # forms and multipart alike. The camera upload routes read their image
+    # themselves after authentication (2 MB, 30 s); for them only a declared
+    # Content-Length above MAX_UPLOAD_BODY_BYTES is refused early.
+    MAX_REQUEST_BODY_BYTES: int = 1_048_576
+    MAX_UPLOAD_BODY_BYTES: int = 8_388_608
+    # Review 28/10/2026 R2-10: /docs, /redoc and /openapi.json are off unless a
+    # development environment turns them on explicitly.
+    API_DOCS_ENABLED: bool = False
+
     # Chỉ định đọc từ file .env ở thư mục gốc
     model_config = SettingsConfigDict(
         env_file=BACKEND_DIR / ".env",

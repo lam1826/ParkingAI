@@ -117,11 +117,13 @@ def test_counter_receipt_refund_is_approved_then_recorded_with_reference_and_nev
     replay = client.post(url + "/record-refund", json={"method": "transfer", "external_reference": "FT26091600123", "confirmed": True})
     assert replay.json()["refund_payment_id"] == refund.id
     assert client.post(url + "/record-refund", json={"method": "cash", "confirmed": True}).status_code == 409
-    assert db.get(MonthlyPass, order["monthly_pass_id"]).is_active is False
+    # Review 28/10/2026 R2-06: a partial refund is compensation; the period stays
+    # active and the remaining 200.000 stays requestable.
+    assert db.get(MonthlyPass, order["monthly_pass_id"]).is_active is True
     current["user"] = users[1]
     original = _receipt_row(client, order["receipt_id"])
-    # The remaining 200.000 cannot be requested again: the entitlement is gone.
-    assert original["refund"]["refunded_amount"] == 100000 and original["refund"]["blocked_reason"] == "pass_inactive"
+    assert original["refund"]["refunded_amount"] == 100000 and original["refund"]["eligible"] is True
+    assert original["refund"]["refundable_amount"] == 200000
     assert db.scalar(select(func.count()).select_from(Payment).where(Payment.kind == "refund")) == 1
 
 

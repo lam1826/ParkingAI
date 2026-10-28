@@ -82,6 +82,23 @@ def validate_license_plate_change(
             ),
         )
 
+
+def release_foreign_declarations(db: Session, vehicle) -> None:
+    """Gán chủ xe (review 28/10/2026 R2-01): hủy đặt trước của tài khoản khác cho biển này.
+
+    Hàm CRUD đã commit, nên bước này là một giao dịch riêng: giữ khóa định danh
+    của biển/loại cuối cùng, hủy hàng loạt rồi commit, không khóa vị trí nào.
+    """
+    if vehicle.customer_id is None:
+        return
+    from core.vehicle_identity import lock_identity
+    from expansion.declared_bookings import release_foreign
+    lock_identity(db, vehicle.vehicle_type_id, vehicle.license_plate)
+    db.refresh(vehicle)
+    release_foreign(db, vehicle)
+    db.commit()
+    db.refresh(vehicle)
+
 @router.get("", response_model=List[vehicle_schema.VehicleResponse])
 def read_vehicles(
     skip: int = Query(0, ge=0),
@@ -110,10 +127,12 @@ def create_vehicle(vehicle_in: vehicle_schema.VehicleCreate, db: Session = Depen
     if existing_vehicle:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Biển số xe đã tồn tại")
     try:
-        return crud_vehicle.create_vehicle(db=db, vehicle_in=vehicle_in)
+        vehicle = crud_vehicle.create_vehicle(db=db, vehicle_in=vehicle_in)
     except IntegrityError:
         db.rollback()
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Không thể tạo phương tiện với dữ liệu này")
+    release_foreign_declarations(db, vehicle)
+    return vehicle
 
 @router.put("/{id}", response_model=vehicle_schema.VehicleResponse)
 def update_vehicle(id: int, vehicle_in: vehicle_schema.VehicleUpdate, db: Session = Depends(get_db)):
@@ -153,11 +172,15 @@ def update_vehicle(id: int, vehicle_in: vehicle_schema.VehicleUpdate, db: Sessio
         current_license_plate=db_vehicle.license_plate,
         requested_license_plate=vehicle_in.license_plate,
     )
+    previous = (db_vehicle.customer_id, db_vehicle.license_plate)
     try:
-        return crud_vehicle.update_vehicle(db=db, db_vehicle=db_vehicle, vehicle_in=vehicle_in)
+        vehicle = crud_vehicle.update_vehicle(db=db, db_vehicle=db_vehicle, vehicle_in=vehicle_in)
     except IntegrityError:
         db.rollback()
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Không thể cập nhật phương tiện với dữ liệu này")
+    if (vehicle.customer_id, vehicle.license_plate) != previous:
+        release_foreign_declarations(db, vehicle)
+    return vehicle
 
 @router.delete("/{id}", status_code=status.HTTP_204_NO_CONTENT,
                dependencies=[Depends(RoleChecker("manager"))])

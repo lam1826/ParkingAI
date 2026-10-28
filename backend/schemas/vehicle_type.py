@@ -1,5 +1,6 @@
-import unicodedata
 from typing import Any, Optional
+
+from core.names import collapse_name
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -16,7 +17,7 @@ class VehicleTypeBase(BaseModel):
     @field_validator("name")
     @classmethod
     def normalize_name(cls, value: str) -> str:
-        return unicodedata.normalize("NFC", value.strip())
+        return collapse_name(value)
 
 # Schema cho POST
 class VehicleTypeCreate(VehicleTypeBase):
@@ -46,7 +47,7 @@ class VehicleTypeUpdate(BaseModel):
     def normalize_name(cls, value: str | None) -> str | None:
         if value is None:
             return value
-        return unicodedata.normalize("NFC", value.strip())
+        return collapse_name(value)
 
 # Schema trả về cho GET, POST, PUT
 class VehicleTypeResponse(VehicleTypeBase):

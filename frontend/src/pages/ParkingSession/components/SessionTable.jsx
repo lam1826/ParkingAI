@@ -9,6 +9,7 @@ import {
 import { DataGrid } from "@mui/x-data-grid";
 import LogoutIcon from "@mui/icons-material/Logout";
 import formatDate from "../../../utils/formatDate";
+import { VI_DATA_GRID_TEXT } from "../../../utils/dataGridLocale";
 import { formatParkingFee } from "../../../utils/formatCurrency";
 import {
   formatParkingDuration,
@@ -79,7 +80,9 @@ const SessionTable = ({
       headerName: "Phí (VNĐ)",
       flex: 0.8,
       minWidth: 110,
-      valueFormatter: (value) => formatParkingFee(value),
+      // B-12: a stay still in the lot has no fee yet; its stored 0 is not a price.
+      valueGetter: (value, row) => ["active", "checking_out"].includes(row.status) ? null : value,
+      valueFormatter: (value) => formatParkingFee(value, "Chưa tính phí"),
     },
     {
       field: "status",
@@ -134,6 +137,7 @@ const SessionTable = ({
               paginationModel={{ page, pageSize }}
               onPaginationModelChange={onPaginationModelChange}
               pageSizeOptions={[10, 25, 50, 100]}
+              localeText={VI_DATA_GRID_TEXT}
               disableRowSelectionOnClick
               sx={{
                 border: "none",

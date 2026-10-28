@@ -57,7 +57,8 @@
   check('lookup submits chosen type and compact plate', requests.some(r => r?.vehicle_type_id === 2 && r.license_plate === '30A12345' && r.site_id === 2));
   await change('#ticket', 'PAP1.fixture'); host.querySelector('#ticket').closest('form').querySelector('button').click();
   await wait(() => host.querySelector('.fee-total'));
-  check('valid ticket renders actual balance and duration', host.querySelector('.fee-total')?.textContent.includes('20.000') && host.innerText.includes('1 giờ 0 phút'));
+  // A whole hour reads '1 giờ' (customerFlow.stayDuration, fix 28/10/2026 B-15), never '1 giờ 0 phút'.
+  check('valid ticket renders actual balance and duration', host.querySelector('.fee-total')?.textContent.includes('20.000') && host.innerText.includes('1 giờ') && !host.innerText.includes('0 phút'));
   await change('#customer-plate', '30A99999');
   check('editing query clears previous vehicle balance', !host.querySelector('.fee-total'));
   root.unmount(); root = createRoot(host); manager = true; render(SitesWorkspace, 'manager');

@@ -10,7 +10,8 @@ Cách 2 - truyền thẳng qua tham số dòng lệnh (hữu ích nếu terminal
     python create_admin.py --username admin --password "MatKhau123" --full-name "Quan Tri Vien"
 
 An toàn khi chạy nhiều lần: vai trò chuẩn đã có được giữ nguyên, vai trò còn
-thiếu được bổ sung; nếu username đã tồn tại, script sẽ báo và không tạo trùng.
+thiếu được bổ sung; nếu username đã tồn tại (không phân biệt hoa/thường, như API),
+script sẽ báo và không tạo trùng.
 Tên đăng nhập/họ tên được kiểm tra cùng quy tắc với API quản lý tài khoản.
 
 Script không tạo/migration bảng. Hãy chạy ``db_rollout.py`` và xác minh
@@ -24,6 +25,7 @@ import bcrypt
 from pydantic import ValidationError
 
 from crud.role import ensure_canonical_roles
+from crud.user import username_taken
 from database import SessionLocal, engine
 from db_rollout import check_database_readiness
 from models.role import Role
@@ -96,9 +98,9 @@ def main() -> None:
             print("Username không được để trống.")
             sys.exit(1)
 
-        existing = db.query(User).filter(User.username == username).first()
-        if existing is not None:
-            print(f"[LỖI] Username '{username}' đã tồn tại (id={existing.id}). Không tạo trùng.")
+        # Same rule as the API (crud.user.username_taken): unique ignoring case.
+        if username_taken(db, username):
+            print(f"[LỖI] Username '{username}' đã tồn tại (không phân biệt hoa/thường). Không tạo trùng.")
             sys.exit(1)
 
         full_name = (args.full_name or input("Họ tên hiển thị: ")).strip() or username

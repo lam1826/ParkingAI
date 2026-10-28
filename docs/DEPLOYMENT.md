@@ -173,6 +173,12 @@ Không chạy endpoint `/ai/*` trong vòng UAT không-provider. Kiểm tra các 
    python backend\db_rollout.py --database C:\ParkingAI\data\parking.db
    ```
 
+   Lần đầu triển khai bản sửa 28/10/2026, ngay sau migration chạy bước đếm rồi
+   hủy đặt trước lạ còn sót, từ thư mục `backend` (không phải thư mục gốc):
+   `python -m expansion.release_foreign_declarations --database <file>` rồi
+   thêm `--apply` nếu số đếm khác 0; chi tiết ở
+   [đặt chỗ và đội xe](SITES_RESERVATIONS.md#đặt-trước-tự-khai-báo).
+
 5. Khởi động đúng commit, không `--reload`; ban đầu giữ `AI_ENABLED=false`.
 6. Yêu cầu `/ready` trả 200; sau đó smoke test read-only rồi một luồng
    check-in/check-out đánh dấu UAT.

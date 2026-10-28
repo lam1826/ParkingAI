@@ -111,8 +111,11 @@ def site_support_reply(site_id: int, identity: str, data: SupportMessage, db=Dep
 
 
 @router.post("/sites/{site_id}/support-requests/{identity}/close")
-def site_support_close(site_id: int, identity: str, data: SupportClose, db=Depends(get_db), actor=Depends(get_current_user)):
-    write(db, lambda: support_service.manager_close(db, actor, site_id, identity, data.note))
+def site_support_close(site_id: int, identity: str, data: SupportClose | None = None, db=Depends(get_db),
+                       actor=Depends(get_current_user)):
+    # The note is optional, so a close without any body is valid.
+    note = data.note if data is not None else ""
+    write(db, lambda: support_service.manager_close(db, actor, site_id, identity, note))
     return support_service.manager_detail(db, actor, site_id, identity)
 
 

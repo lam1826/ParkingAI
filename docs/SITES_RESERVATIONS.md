@@ -107,6 +107,23 @@ Sau đợt kiểm chứng review ngày 07/09/2026, cấp chỗ từ danh sách c
 
 Xác nhận đến cũng dùng một thời điểm sau khi khóa vị trí để kiểm tra hạn đến, ghi giờ vào và liên kết phiên. Đúng hạn đến hoặc muộn hơn thì từ chối. Phiên, vị trí, quyền xem lịch sử và trạng thái đặt chỗ được ghi trong cùng giao dịch; nếu liên kết phiên thất bại thì tất cả được rollback. Phạm vi bãi được kiểm tra lại khi chiếm vị trí, ngăn nhận xe sai bãi khi cấu hình thay đổi đồng thời.
 
+## Đặt trước tự khai báo
+
+Khách đã đăng nhập có thể tự khai báo đặt trước theo biển số/loại xe (`GET/POST /me/advance-bookings`, `POST /me/advance-bookings/{id}/cancel`); nhân viên xem ở `GET /sites/{site_id}/advance-bookings`. Từ bản sửa 28/10/2026 (R2-01):
+
+- Chỉ khai báo được biển chưa xác minh cho hồ sơ khách nào, hoặc xe đã xác minh của chính tài khoản. Biển đã xác minh cho hồ sơ khác, hay biển đã biết nhưng chọn sai loại xe, nhận một thông báo 409 chung cho mọi loại xe và khung giờ.
+- Đặt trước của tài khoản khác cho một biển ("đặt trước lạ") không bao giờ được dùng khi xe của chủ vào bãi và không thấy lượt gửi của xe đó. Nó bị hủy khi biển được gán chủ: quản lý duyệt xe cho hồ sơ, quản lý duyệt liên kết một tài khoản với hồ sơ đang có xe (đặt trước của tài khoản đã bị gỡ liên kết trước đó cũng bị hủy lúc này) hoặc nhân viên tạo/sửa xe có khách hàng. Gỡ liên kết một mình không hủy gì: đặt trước đó giữ chỗ đến hạn đến.
+- `GET /me/advance-bookings` lọc được `status` (`confirmed` là chỗ đang giữ, chưa quá hạn đến; `expired` gồm cả chỗ đã quá hạn đến). Trang Đặt chỗ trước tải riêng mọi chỗ đang giữ (tối đa 5 mỗi tài khoản), nên trang lịch sử đang xem không bao giờ che chỗ đang giữ.
+
+**Bước triển khai bắt buộc (một lần, trước khi chạy bản sửa).** Đặt trước lạ được tạo trước bản sửa vẫn chặn chủ xe đặt chỗ, mua vé giờ/ngày hay tự khai báo cùng biển (409 "đã có đặt trước trong khoảng thời gian này") cho tới hạn đến của nó, tối đa 30 ngày + 15 phút. Trong cửa sổ bảo trì, sau migration và trước khi mở lại backend, chạy từ thư mục `backend`:
+
+```powershell
+..\.venv\Scripts\python.exe -m expansion.release_foreign_declarations --database C:\ParkingAI\data\parking.db
+..\.venv\Scripts\python.exe -m expansion.release_foreign_declarations --database C:\ParkingAI\data\parking.db --apply
+```
+
+Lệnh đầu chỉ đọc và in số đếm `{"foreign_declarations": n, "vehicles": m, "applied": false}`. Nếu `n > 0`, lệnh thứ hai hủy chúng bằng đúng hàm `release_foreign` của bước duyệt, giữ khóa định danh biển số (`lock_identity`) theo thứ tự biển, trong một giao dịch, rồi in thêm `released`, `skipped_vehicles` và `skipped_vehicle_ids`. Số đếm tính theo bản ghi riêng biệt: một đặt trước khớp nhiều xe cũ chỉ tính một lần. Xe bị bỏ qua là xe có biển trùng định danh với xe cũ khác (dữ liệu cũ ghi một biển thành nhiều xe); lệnh không hủy đặt trước của các biển đó. Trang Phương tiện không tra theo id, nên người vận hành (đã có quyền vào DB để chạy lệnh) tra biển của các id đó bằng truy vấn chỉ đọc, ví dụ `SELECT id, license_plate, customer_id FROM vehicles WHERE id IN (...)`. Sau đó quản lý tìm mọi xe cùng biển (kể cả cách viết khác và xe chưa có khách hàng) trên trang Phương tiện, gộp hoặc sửa các xe trùng, rồi chạy lại hai lệnh. `--database` nhận đường dẫn file SQLite có sẵn (không tạo file mới) hoặc URL PostgreSQL (`postgresql+psycopg://...`). Khi chạy thành công, lệnh không in biển số, tài khoản hay thời gian, chỉ in số đếm và id xe bị bỏ qua; nếu lỗi DB, traceback của SQLAlchemy có thể chứa giá trị tham số, nên không chia sẻ log lỗi ra ngoài. Lệnh không gắn vào khởi động hay bước rollout tự động. Chạy lại lệnh đếm phải ra `0`, trừ khi còn xe bị bỏ qua. Người bị hủy thấy "Đã hủy" trong danh sách của mình.
+
 ## Các điểm tích hợp
 
 `expansion.site_scope.require_site_access(db,user,site_id,minimum_role='staff')`, `allowed_site_ids(db,user)` và `scoped_zone_ids(db,user)` dùng chung cho camera/portal. Customer xác minh bằng `expansion.portal_service.require_owned_vehicle`.

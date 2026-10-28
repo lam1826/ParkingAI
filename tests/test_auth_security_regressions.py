@@ -49,7 +49,9 @@ def test_public_login_always_counts_attempts(client, db_session, monkeypatch, ir
     assert [response.status_code for response in responses] == [401, 401, 429]
     attempts = db_session.scalars(select(AuditLog).where(AuditLog.action == "LOGIN")).all()
     assert len(attempts) == 3
-    assert all(row.user_id is None and row.username == "anonymous" for row in attempts)
+    # Review 28/10/2026 R1-AUDIT: the row names the attempted account, never the
+    # bearer's actor ("irrelevant-actor") and never an authenticated user id.
+    assert all(row.user_id is None and row.username == "missing-user" for row in attempts)
     assert all(not row.success for row in attempts)
 
 
@@ -64,7 +66,8 @@ def test_public_registration_always_counts_attempts(client, db_session, monkeypa
     assert [created.status_code, blocked.status_code] == [201, 429]
     attempts = db_session.scalars(select(AuditLog).where(AuditLog.action == "REGISTER")).all()
     assert len(attempts) == 2
-    assert all(row.user_id is None and row.username == "anonymous" for row in attempts)
+    assert all(row.user_id is None for row in attempts)
+    assert sorted(row.username for row in attempts) == ["new_customer", "second_customer"]
     assert db_session.scalar(select(func.count(User.id))) == 1
 
 

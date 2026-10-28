@@ -95,6 +95,8 @@ export default function OperationsPanel({ site, availability, vehicleTypes, sess
     event.preventDefault();
     if (lookup.busy) return;
     selectStay(null);
+    // B-10: "Đã ghi nhận xe ra." belongs to the previous car; a new lookup clears it.
+    action.clear?.();
     const turn = lookupGeneration.current;
     void lookup.run(async () => {
       try {

@@ -244,8 +244,8 @@ function CustomerTickets() {
       <Alert severity="info">Liên kết hồ sơ trước khi đăng ký xe và vé. Hồ sơ đã tồn tại cần được nhân viên xác minh để bảo vệ dữ liệu của bạn.</Alert>
       <Section title="Tạo hồ sơ khách hàng">
         <Box component="form" onSubmit={(event) => submit(identityAction)(event, () => send("/me/profile", { ...profile, email: profile.email || null }), "Đã tạo hồ sơ khách hàng.")} sx={formLayout}>
-          <TextField required label="Họ và tên" value={profile.full_name} onChange={edit(setProfile, "full_name")} inputProps={{ maxLength: 100 }} />
-          <TextField required label="Số điện thoại" value={profile.phone_number} onChange={edit(setProfile, "phone_number")} inputProps={{ maxLength: 20 }} />
+          <TextField required label="Họ và tên" value={profile.full_name} onChange={edit(setProfile, "full_name")} slotProps={{ htmlInput: { maxLength: 100 } }} />
+          <TextField required label="Số điện thoại" value={profile.phone_number} onChange={edit(setProfile, "phone_number")} slotProps={{ htmlInput: { maxLength: 20 } }} />
           <TextField label="Email" type="email" value={profile.email} onChange={edit(setProfile, "email")} />
           <Button type="submit" variant="contained" disabled={identityAction.busy}>Tạo hồ sơ</Button>
         </Box>
@@ -253,7 +253,7 @@ function CustomerTickets() {
       <Section title="Tôi đã có hồ sơ tại bãi" description="Gửi yêu cầu để nhân viên kiểm tra và liên kết với tài khoản này.">
         <Box component="form" onSubmit={(event) => submit(identityAction)(event, () => send("/me/link-requests", link), "Đã gửi yêu cầu liên kết. Nhân viên sẽ kiểm tra hồ sơ.", () => setLink({ phone_number: "", note: "" }))} sx={formLayout}>
           <TextField required label="Số điện thoại đã đăng ký" value={link.phone_number} onChange={edit(setLink, "phone_number")} />
-          <TextField label="Thông tin hỗ trợ xác minh" value={link.note} onChange={edit(setLink, "note")} inputProps={{ maxLength: 500 }} />
+          <TextField label="Thông tin hỗ trợ xác minh" value={link.note} onChange={edit(setLink, "note")} slotProps={{ htmlInput: { maxLength: 500 } }} />
           <Button type="submit" variant="outlined" disabled={identityAction.busy}>Yêu cầu liên kết</Button>
         </Box>
         <CatalogState remote={links} label="Yêu cầu liên kết" />
@@ -271,7 +271,7 @@ function CustomerTickets() {
         <Section title="Yêu cầu thêm xe">
           <CatalogState remote={types} label="Loại xe" />
           <Box component="form" sx={formLayout} onSubmit={(event) => submit(vehicleAction)(event, () => send("/me/vehicle-requests", { ...vehicle, vehicle_type_id: Number(vehicle.vehicle_type_id) }), "Đã gửi yêu cầu thêm xe.", () => setVehicle({ license_plate: "", vehicle_type_id: "", note: "" }))}>
-            <TextField required label="Biển số" value={vehicle.license_plate} onChange={edit(setVehicle, "license_plate")} inputProps={{ maxLength: 20 }} />
+            <TextField required label="Biển số" value={vehicle.license_plate} onChange={edit(setVehicle, "license_plate")} slotProps={{ htmlInput: { maxLength: 20 } }} />
             <TextField select required label="Loại xe" value={vehicle.vehicle_type_id} disabled={types.loading || !!types.error} onChange={edit(setVehicle, "vehicle_type_id")}>{(types.data || []).map((type) => <MenuItem key={type.id} value={type.id}>{type.name}</MenuItem>)}</TextField>
             <TextField label="Ghi chú" value={vehicle.note} onChange={edit(setVehicle, "note")} />
             <Button type="submit" variant="contained" disabled={vehicleAction.busy || types.loading || !!types.error || !types.data?.length}>Gửi yêu cầu</Button>

@@ -2,6 +2,7 @@ import { useCallback, useState } from "react";
 import { Alert, Box, Button, Checkbox, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, MenuItem, Stack, TextField, Typography } from "@mui/material";
 import { dateTime, money, read, Records, RemoteSection, Section, send, StateChip, useAction, useRemote } from "./shared";
 import { approvalEffectNote, channelLabel, OTHER_SITE_CLOSED_LABEL, otherSiteName, otherSiteRequests, REFUND_STATUS, refundDecisions, refundStatusLabel, rejectBlockedLabel, requestSitePath } from "./supportState";
+import { partialRefund, refundLabelWithPart } from "./portalState";
 import { singleSiteId } from "../../utils/singleSiteMode";
 
 const FILTERS = [["", "Đang chờ & đã xử lý"], ...Object.entries(REFUND_STATUS)];
@@ -39,7 +40,10 @@ export default function RefundAdminPanel({ siteId, onChanged }) {
   };
   const state = detail.data?.refund_state;
   const rejectBlocked = dialog?.kind === "reject" ? rejectBlockedLabel(dialog.row, detail.data) : "";
-  const approvalNote = dialog?.kind === "approve" ? approvalEffectNote(dialog.row) : "";
+  // The note follows the amount being typed: only a full approval ends the ticket or period (R2-06).
+  const approvalNote = dialog?.kind === "approve" ? approvalEffectNote(dialog.row, { amount, refundable: state?.refundable_amount ?? dialog.row.requested_amount }) : "";
+  const recordNote = dialog?.kind !== "record" ? "" : partialRefund(dialog.row) ? "Khoản hoàn một phần: ghi nhận này không thu hồi vé hay dừng kỳ vé của khách."
+    : dialog.row.source_type === "monthly_pass" ? "Ghi nhận hoàn toàn bộ sẽ dừng kỳ vé tháng của khách." : "";
   const titles = { review: "Bắt đầu xem xét", approve: "Duyệt yêu cầu hoàn", reject: "Từ chối yêu cầu hoàn", record: "Ghi nhận đã hoàn tiền ngoài hệ thống" };
   const columns = [
     { key: "created_at", label: "Ngày gửi", render: (row) => dateTime(row.created_at) },
@@ -48,7 +52,7 @@ export default function RefundAdminPanel({ siteId, onChanged }) {
     { key: "requested_amount", label: "Có thể hoàn", render: (row) => row.requested_amount == null ? "—" : money(row.requested_amount) },
     { key: "approved_amount", label: "Đã duyệt", render: (row) => row.approved_amount == null ? "—" : money(row.approved_amount) },
     { key: "reason", label: "Lý do của khách" },
-    { key: "status", label: "Trạng thái", render: (row) => <StateChip value={row.status} label={refundStatusLabel(row)} /> },
+    { key: "status", label: "Trạng thái", render: (row) => <StateChip value={row.status} label={refundLabelWithPart(refundStatusLabel(row), row)} /> },
     { key: "action", label: "Xử lý", render: (row) => {
       if (row.site_active === false) return OTHER_SITE_CLOSED_LABEL;
       const can = row.legacy ? { review: false, approve: row.status === "pending", reject: row.status === "pending", record: false } : refundDecisions(row);
@@ -62,7 +66,7 @@ export default function RefundAdminPanel({ siteId, onChanged }) {
     } },
   ];
   return <Stack spacing={2}>
-    <Alert severity="info">Số tiền có thể hoàn do máy chủ tính từ phiếu thu gốc trừ các khoản đã hoàn. Duyệt là quyết định; tiền chỉ được ghi vào sổ khi ghi nhận hoàn (khoản DEMO được hoàn mô phỏng ngay khi duyệt).</Alert>
+    <Alert severity="info">Số tiền có thể hoàn do máy chủ tính từ phiếu thu gốc trừ các khoản đã hoàn. Duyệt là quyết định; tiền chỉ được ghi vào sổ khi ghi nhận hoàn (khoản DEMO được hoàn mô phỏng ngay khi duyệt). Chỉ khi duyệt hoàn toàn bộ số còn có thể hoàn, vé giờ/ngày mới bị thu hồi hoặc kỳ vé tháng mới dừng; duyệt một phần vẫn giữ vé và khách có thể yêu cầu hoàn phần còn lại.</Alert>
     {action.error && <Alert severity="error">{action.error}</Alert>}
     {action.notice && <Alert severity="success" role="status">{action.notice}</Alert>}
     <TextField select size="small" label="Trạng thái" value={status} onChange={(event) => setStatus(event.target.value)} sx={{ maxWidth: 260 }}>{FILTERS.map(([key, label]) => <MenuItem key={key} value={key}>{label}</MenuItem>)}</TextField>
@@ -84,6 +88,7 @@ export default function RefundAdminPanel({ siteId, onChanged }) {
           {dialog.kind === "approve" && !dialog.row.legacy && <TextField label="Số tiền duyệt hoàn (đồng)" type="number" value={amount} onChange={(event) => setAmount(event.target.value)} helperText={`Để trống để duyệt toàn bộ ${money(state?.refundable_amount ?? dialog.row.requested_amount)}. Không được vượt số còn có thể hoàn.`} slotProps={{ htmlInput: { min: 1, max: state?.refundable_amount ?? dialog.row.requested_amount, step: 1 } }} />}
           {dialog.kind === "record" && <>
             <Typography>Số tiền đã duyệt: <strong>{money(dialog.row.approved_amount)}</strong>. Ghi nhận này tạo phiếu hoàn trong sổ thu; hệ thống không tự chuyển tiền qua ngân hàng.</Typography>
+            {recordNote && <Alert severity="info">{recordNote}</Alert>}
             <TextField select label="Hình thức đã hoàn" value={method} onChange={(event) => setMethod(event.target.value)}><MenuItem value="transfer">Chuyển khoản</MenuItem><MenuItem value="cash">Tiền mặt</MenuItem></TextField>
             <TextField label={method === "transfer" ? "Mã tham chiếu giao dịch ngân hàng" : "Tham chiếu / ghi chú (tuỳ chọn)"} required={method === "transfer"} value={reference} onChange={(event) => setReference(event.target.value)} slotProps={{ htmlInput: { maxLength: 120 } }} />
           </>}

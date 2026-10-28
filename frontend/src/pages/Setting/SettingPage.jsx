@@ -15,6 +15,7 @@ import LockIcon from "@mui/icons-material/Lock";
 import LogoutIcon from "@mui/icons-material/Logout";
 import { AuthContext } from "../../context/AuthContext";
 import PasswordField from "../../components/common/PasswordField";
+import { getErrorMessage } from "../../utils/errorMessage";
 
 const initialPasswords = {
   current_password: "",
@@ -50,8 +51,7 @@ export default function SettingPage() {
       });
       setPasswords(initialPasswords);
     } catch (error) {
-      const detail = error.response?.data?.detail;
-      setNotice({ severity: "error", message: typeof detail === "string" ? detail : "Không thể đổi mật khẩu." });
+      setNotice({ severity: "error", message: getErrorMessage(error, "Không thể đổi mật khẩu.") });
     } finally {
       setSaving(false);
     }
@@ -92,7 +92,7 @@ export default function SettingPage() {
                 <PasswordField
                   required fullWidth label="Mật khẩu mới" name="new_password"
                   value={passwords.new_password} onChange={handleChange} autoComplete="new-password"
-                  inputProps={{ minLength: 8, maxLength: 72 }}
+                  slotProps={{ htmlInput: { minLength: 8, maxLength: 72 } }}
                 />
                 <PasswordField
                   required fullWidth label="Xác nhận mật khẩu mới" name="confirm_password"

@@ -5,18 +5,30 @@ much was actually collected, how much was already refunded and how much may
 still be refunded. Approval is a decision record; money only moves when a
 compensating ``payments`` row is written through ``PaymentService.refund``
 (DEMO immediately, actual channels when a manager records the external
-refund with a reference). Existing entitlement guards are reused: an unused
-timed ticket is revoked, a monthly pass is deactivated, a session credit is
-only refundable for the part that was not applied to the parking fee.
+refund with a reference). Existing entitlement guards are reused: a session
+credit is only refundable for the part that was not applied to the parking fee.
 
-Review 05/10/2026: approving a counter/online refund of a prepaid hour/day
-ticket revokes the ticket at the decision, so the approved amount stays
-recordable after the window starts and the ticket cannot be used meanwhile.
-An approved monthly refund stays recordable when the manager stops the pass
-first. Direct manager refunds (Site Finance / legacy ledger) never bypass an
-open request. Ready portal tickets before their start and active portal
-monthly periods go through this workflow. A started unused ticket is revoked
-atomically with a direct refund; terminal tickets have no entitlement to stop.
+Review 28/10/2026 (R2-06): only a refund that settles the receipt (ledger
+refunds reach the receipt amount, the rule of a direct refund) ends the
+entitlement: the unused timed ticket is revoked, the monthly period stopped
+and the portal order marked refunded. A partial amount is compensation: the
+ticket or period stays usable and the remainder stays requestable under the
+usual guards. Recording an approved partial is not blocked by a ticket used
+or a car parked under the pass meanwhile. A remainder stranded by the earlier
+rule (portal order already refunded with money left) is requestable again.
+Round 2: a DEMO receipt is refunded only through this workflow, so the
+remainder of a DEMO monthly period the manager stopped ("Ngừng vé") stays
+requestable; a stopped counter/online period is refunded in Site Finance.
+
+Review 05/10/2026: approving a counter/online refund of a whole prepaid
+hour/day ticket revokes the ticket at the decision, so the approved amount
+stays recordable after the window starts and the ticket cannot be used
+meanwhile. An approved monthly refund stays recordable when the manager stops
+the pass first. Direct manager refunds (Site Finance / legacy ledger) never
+bypass an open request. Ready portal tickets before their start and active
+portal monthly periods go through this workflow. A started unused ticket is
+revoked atomically with a direct refund; terminal tickets have no entitlement
+to stop.
 """
 from fastapi import HTTPException
 from sqlalchemy import func, select
@@ -67,6 +79,15 @@ DIRECT_REFUND_LABELS = {
 }
 STATUS_LABELS = {"pending": "Đã tiếp nhận", "reviewing": "Đang xem xét", "approved": "Được duyệt, chờ hoàn",
     "rejected": "Bị từ chối", "refunded": "Đã hoàn tiền"}
+# Receipt sources whose refund can end an entitlement (ticket or monthly period).
+ENTITLEMENT_SOURCES = {"portal_order", "monthly_pass"}
+DEMO_REFUNDED = "Đã hoàn mô phỏng DEMO và dừng quyền sử dụng liên quan; không có tiền thật được chuyển."
+DEMO_PARTIAL = ("Đã hoàn mô phỏng DEMO một phần. Vé/kỳ vé vẫn còn hiệu lực; bạn có thể gửi yêu cầu hoàn phần còn lại "
+    "nếu muốn dừng vé. Không có tiền thật được chuyển.")
+APPROVED = ("Yêu cầu hoàn tiền đã được duyệt. Tiền sẽ được hoàn theo hình thức quản lý ghi nhận; "
+    "duyệt chưa có nghĩa tiền đã về tài khoản.")
+APPROVED_PARTIAL = ("Yêu cầu hoàn tiền được duyệt một phần. Vé/kỳ vé vẫn còn hiệu lực; tiền sẽ được hoàn theo hình thức "
+    "quản lý ghi nhận, duyệt chưa có nghĩa tiền đã về tài khoản.")
 
 
 def _aware(value):
@@ -76,6 +97,36 @@ def _aware(value):
 def refunded_sum(db, receipt_id):
     return sum_exact_vnd(db.execute(select(Payment.amount).where(
         Payment.original_payment_id == receipt_id, Payment.kind == "refund")).scalars())
+
+
+def _settles(db, receipt, amount):
+    """Whether refunding ``amount`` now empties the receipt; evaluate before the ledger row is written."""
+    return refunded_sum(db, receipt.id) + amount >= receipt.amount
+
+
+def _ended_by_partial_rule(db, receipt):
+    """The earlier rule ended the entitlement on any partial refund and marked the portal
+    order refunded. Only that path left a refunded order with money still on the receipt
+    (direct and legacy refunds settle an order only in full)."""
+    if receipt.source_type == "portal_order":
+        order = db.get(PortalOrder, receipt.source_id)
+    elif receipt.source_type == "monthly_pass":
+        order = db.scalar(select(PortalOrder).where(PortalOrder.receipt_id == receipt.id))
+    else:
+        return False
+    return order is not None and order.status == "refunded"
+
+
+def _entitlement_live(db, receipt):
+    """The ticket is still ready or the monthly period still active: what a partial refund keeps."""
+    if receipt.source_type == "portal_order":
+        order = db.get(PortalOrder, receipt.source_id)
+        ticket = db.get(TimedParkingPass, order.timed_pass_id) if order and order.timed_pass_id else None
+        return ticket is not None and ticket.status == "ready"
+    if receipt.source_type == "monthly_pass":
+        period = db.get(MonthlyPass, int(receipt.source_id))
+        return period is not None and period.is_active
+    return False
 
 
 def _online_link(db, receipt):
@@ -120,13 +171,16 @@ def _pass_in_use(db, period):
         ParkingSession.status.in_(["active", "checking_out"])).limit(1)) is not None
 
 
-def refund_state(db, receipt, *, except_request=None, decision=None):
+def refund_state(db, receipt, *, except_request=None, decision=None, amount=None):
     """Server-side truth about how much of a receipt may still be refunded and why not.
 
     ``decision`` evaluates an existing open request: ``"approve"`` for its
     decision and ``"record"`` for recording the money of an approved request.
     The decision owns the entitlement from then on: a pass the manager stopped
-    meanwhile, or a ticket revoked at approval, no longer blocks it.
+    meanwhile, or a ticket revoked at approval, no longer blocks it. ``amount``
+    is the approved amount being recorded: a partial compensation keeps the
+    entitlement, so a ticket used or a car parked under the pass meanwhile
+    does not block recording it.
     """
     refunded = refunded_sum(db, receipt.id)
     remaining = receipt.amount - refunded
@@ -135,6 +189,7 @@ def refund_state(db, receipt, *, except_request=None, decision=None):
         "refundable_amount": 0, "payment_channel": payment_channel(db, receipt, link),
         "blocked_reason": None, "open_request_id": None, "eligible": False}
     blocked, refundable = None, remaining
+    compensation = decision == "record" and amount is not None and refunded + amount < receipt.amount
     if receipt.kind != "receipt":
         blocked = "not_a_receipt"
     elif receipt.amount == 0 and refunded == 0:
@@ -146,15 +201,21 @@ def refund_state(db, receipt, *, except_request=None, decision=None):
         blocked = "legacy_receipt"
     elif decision is None and (site_problem := _site_block(db, receipt)):
         blocked = site_problem
+    elif receipt.source_type in ENTITLEMENT_SOURCES and _ended_by_partial_rule(db, receipt):
+        # The entitlement already ended under the earlier partial rule; only the
+        # money is left, so ticket and period guards no longer apply. Site,
+        # money, reconciliation and open-request checks still do.
+        pass
     elif receipt.source_type == "portal_order":
         order = db.get(PortalOrder, receipt.source_id)
         ticket = db.get(TimedParkingPass, order.timed_pass_id) if order and order.timed_pass_id else None
         if ticket is None:
             blocked = "ticket_missing"
         elif decision == "record":
-            # The approval froze eligibility (and revoked the ticket). Only a
-            # ticket used under an approval made before that rule blocks it.
-            if ticket.status == "consumed":
+            # The approval froze eligibility (and revoked a whole ticket). Only a
+            # ticket used under a whole-refund approval made before that rule blocks
+            # it; a partial compensation stays recordable after the ticket was used.
+            if ticket.status == "consumed" and not compensation:
                 blocked = "ticket_used"
         elif ticket.status != "ready":
             blocked = {"consumed": "ticket_used", "expired": "ticket_expired"}.get(ticket.status, "ticket_revoked")
@@ -162,9 +223,15 @@ def refund_state(db, receipt, *, except_request=None, decision=None):
             blocked = "ticket_window_started"
     elif receipt.source_type == "monthly_pass":
         period = db.get(MonthlyPass, int(receipt.source_id))
-        if period is None or (not period.is_active and decision is None):
+        # DEMO money is returned only through this workflow (Site Finance refuses it
+        # and a period with a refund is never re-activated), so a period the manager
+        # stopped keeps its DEMO remainder requestable: money is never stranded.
+        stopped_demo = period is not None and not period.is_active and receipt.method == "demo"
+        if period is None or (not period.is_active and decision is None and not stopped_demo):
             blocked = "pass_inactive"
-        elif _pass_in_use(db, period):
+        # Recording a partial compensation never stops the pass, so a car parked
+        # under it does not block that step.
+        elif not compensation and _pass_in_use(db, period):
             blocked = "pass_in_use"
     elif receipt.source_type == "session_credit":
         credit = db.get(SessionFeeCredit, receipt.source_id)
@@ -306,21 +373,27 @@ def approve(db, actor, site_id, identity, *, amount=None, note=""):
         raise HTTPException(409, "Số tiền duyệt vượt quá số còn có thể hoàn của khoản thu.")
     now = business_now()
     item.approved_amount, item.decision_note, item.reviewed_by_id, item.reviewed_at, item.updated_at = approved, note.strip(), actor.id, now, now
+    # Evaluated before any ledger row: only a refund that empties the receipt ends the entitlement.
+    ends = _settles(db, receipt, approved)
+    # The partial texts promise a ticket or period still in force; one the earlier
+    # rule or a manager stop already ended gets the plain text.
+    partial = not ends and _entitlement_live(db, receipt)
     if item.payment_channel == "demo":
         # Simulated money: the compensating DEMO ledger row is written at approval time.
-        _execute_refund(db, actor, item, receipt, method="demo", external_reference=None)
-        _notify(db, item.customer_id, f"refund:{item.id}:refunded",
-            "Đã hoàn mô phỏng DEMO và dừng quyền sử dụng liên quan; không có tiền thật được chuyển.")
+        _execute_refund(db, actor, item, receipt, method="demo", external_reference=None, ends=ends)
+        _notify(db, item.customer_id, f"refund:{item.id}:refunded", DEMO_PARTIAL if partial else DEMO_REFUNDED)
     else:
         item.status = "approved"
-        if receipt.source_type == "portal_order":
-            # The decision stops the prepaid ticket now (still unused and before
+        if ends and receipt.source_type == "portal_order":
+            # A whole refund stops the prepaid ticket now (still unused and before
             # its window, as checked above), so the approved amount remains
-            # recordable whenever the external payout happens.
-            from expansion.timed_parking_service import revoke
-            revoke(db, db.get(PortalOrder, receipt.source_id))
-        _notify(db, item.customer_id, f"refund:{item.id}:approved",
-            "Yêu cầu hoàn tiền đã được duyệt. Tiền sẽ được hoàn theo hình thức quản lý ghi nhận; duyệt chưa có nghĩa tiền đã về tài khoản.")
+            # recordable whenever the external payout happens. A ticket the
+            # earlier partial rule already revoked has nothing left to stop.
+            order = db.get(PortalOrder, receipt.source_id)
+            if db.get(TimedParkingPass, order.timed_pass_id).status == "ready":
+                from expansion.timed_parking_service import revoke
+                revoke(db, order)
+        _notify(db, item.customer_id, f"refund:{item.id}:approved", APPROVED_PARTIAL if partial else APPROVED)
     db.commit()
     return item
 
@@ -344,10 +417,12 @@ def record_refund(db, actor, site_id, identity, *, method, external_reference=No
     if item.payment_channel == "demo":
         raise HTTPException(409, "Khoản DEMO được hoàn mô phỏng ngay khi duyệt.")
     receipt = db.get(Payment, item.receipt_id)
-    state = refund_state(db, receipt, except_request=item.id, decision="record")
+    state = refund_state(db, receipt, except_request=item.id, decision="record", amount=item.approved_amount)
     if not state["eligible"] or item.approved_amount > state["refundable_amount"]:
         raise HTTPException(409, state["blocked_label"] or "Số tiền duyệt vượt quá số còn có thể hoàn.")
-    _execute_refund(db, actor, item, receipt, method=method, external_reference=reference)
+    # Exact: the open request blocks every other refund of this receipt meanwhile.
+    _execute_refund(db, actor, item, receipt, method=method, external_reference=reference,
+        ends=_settles(db, receipt, item.approved_amount))
     _notify(db, item.customer_id, f"refund:{item.id}:refunded",
         "Quản lý đã ghi nhận hoàn tiền " + ("bằng chuyển khoản" if method == "transfer" else "bằng tiền mặt") + ". Xem chứng từ hoàn trong Lịch sử & chứng từ.")
     db.commit()
@@ -380,12 +455,17 @@ def _revoke_unused_ticket(db, order):
     db.flush()
 
 
-def _execute_refund(db, actor, item, receipt, *, method, external_reference):
-    if receipt.source_type == "portal_order":
+def _execute_refund(db, actor, item, receipt, *, method, external_reference, ends):
+    """Write the ledger row; ``ends`` (computed before it) also stops the entitlement.
+
+    A partial amount only writes the ledger row: the ticket or period stays
+    usable and the order stays fulfilled until refunds reach the receipt amount.
+    """
+    if ends and receipt.source_type == "portal_order":
         order = db.get(PortalOrder, receipt.source_id)
         _revoke_unused_ticket(db, order)
         order.status = "refunded"
-    elif receipt.source_type == "monthly_pass":
+    elif ends and receipt.source_type == "monthly_pass":
         period = db.get(MonthlyPass, int(receipt.source_id))
         period.is_active = False
         order = db.scalar(select(PortalOrder).where(PortalOrder.receipt_id == receipt.id))
@@ -471,7 +551,8 @@ def manager_detail(db, actor, site_id, identity):
     data = serialize(item, order_id=_order_ids(db, [item]).get(item.receipt_id), customer_name=customer.full_name)
     data["receipt"] = {key: value for key, value in PaymentService.serialize(db, receipt).items() if key not in {"shift_id"}}
     decision = "record" if item.status == "approved" else "approve" if item.status in REFUND_OPEN_STATES else None
-    data["refund_state"] = refund_state(db, receipt, except_request=item.id, decision=decision)
+    data["refund_state"] = refund_state(db, receipt, except_request=item.id, decision=decision,
+        amount=item.approved_amount if item.status == "approved" else None)
     data["entitlement_revoked"] = item.status == "approved" and _ticket_revoked_by_approval(db, item)
     return data
 
@@ -493,6 +574,7 @@ def direct_refund_block(db, receipt):
     A portal period the manager already stopped ("Ngừng vé") has no
     entitlement left and the customer can no longer request it
     (``pass_inactive``), so the direct refund stays the way to return its money.
+    DEMO money is refused here (Site Finance) and stays requestable instead.
     """
     if receipt.kind != "receipt":
         return None

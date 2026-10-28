@@ -50,7 +50,7 @@ export default function PortalOrderDetails({ order, busy, onRefresh, onSimulate,
           {ownerCan(order, "cancel") && <Button variant="outlined" color="error" disabled={busy} onClick={onCancel}>Hủy đơn chưa thanh toán</Button>}
         </Stack>
         {ownerCan(order, "request_refund") && <Box component="form" onSubmit={(event) => { event.preventDefault(); onRefund(reason.trim()); }}><Stack spacing={1}>
-          <TextField required label="Lý do yêu cầu hoàn" value={reason} onChange={(event) => setReason(event.target.value)} disabled={busy} multiline minRows={2} inputProps={{ maxLength: 500 }} />
+          <TextField required label="Lý do yêu cầu hoàn" value={reason} onChange={(event) => setReason(event.target.value)} disabled={busy} multiline minRows={2} slotProps={{ htmlInput: { maxLength: 500 } }} />
           <Typography variant="body2" color="text.secondary">{demo ? "Đây là yêu cầu hoàn mô phỏng đồ án." : "Quản lý sẽ kiểm tra điều kiện và khoản thanh toán."} Gửi yêu cầu chưa có nghĩa tiền đã được hoàn.</Typography>
           <Button type="submit" variant="outlined" disabled={busy || !reason.trim()} sx={{ alignSelf: "flex-start" }}>Gửi yêu cầu hoàn</Button>
         </Stack></Box>}

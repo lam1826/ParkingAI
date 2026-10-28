@@ -74,7 +74,9 @@ def _seed_rows(db, credentials, now):
     for key, title, capacity, active in (("bike", "Xe máy", 24, True),
                                           ("car", "Ô tô", 12, True),
                                           ("reserve", "Dự phòng - ngừng sử dụng", 4, False)):
-        zone = Zone(site_id=site.id, name=f"DEMO - {title}", capacity=capacity, is_active=True)
+        # B-17: the reserve zone itself is out of service, not only its slots
+        # (capacity stays 40 total, 4 inactive, 36 active).
+        zone = Zone(site_id=site.id, name=f"DEMO - {title}", capacity=capacity, is_active=active)
         db.add(zone)
         db.flush()
         slots[key] = [ParkingSlot(zone_id=zone.id, vehicle_type_id=kinds["car" if key == "reserve" else key].id,
@@ -90,7 +92,7 @@ def _seed_rows(db, credentials, now):
     owner = None
     for index, (label, days_from, days_to) in enumerate((("valid", -5, 24), ("near_expiry", -27, 2), ("expired", -40, -11))):
         customer = Customer(full_name=f"Khách DEMO - {label}", phone_number=f"DEMO-CUSTOMER-{index + 1}",
-                            email=f"demo-{label}@example.invalid")
+                            email=f"demo-{label}@example.com")
         db.add(customer)
         db.flush()
         vehicle = Vehicle(license_plate=f"DEMO-MONTH-{index + 1}", vehicle_type_id=kinds["bike"].id, customer_id=customer.id)

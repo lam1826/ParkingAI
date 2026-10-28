@@ -1,4 +1,4 @@
-import unicodedata
+from core.names import collapse_name
 
 from pydantic import BaseModel, ConfigDict, Field, StrictInt, field_validator, model_validator
 from typing import Any, Optional
@@ -17,7 +17,7 @@ class ZoneBase(BaseModel):
     @field_validator("name")
     @classmethod
     def normalize_name(cls, value: str) -> str:
-        return unicodedata.normalize("NFC", value.strip())
+        return collapse_name(value)
 
 class ZoneCreate(ZoneBase):
     capacity: StrictInt = Field(..., ge=0, le=MAX_ZONE_CAPACITY, description="Sức chứa tối đa của khu vực")
@@ -43,7 +43,7 @@ class ZoneUpdate(BaseModel):
     def normalize_name(cls, value: str | None) -> str | None:
         if value is None:
             return value
-        return unicodedata.normalize("NFC", value.strip())
+        return collapse_name(value)
 
 class ZoneResponse(ZoneBase):
     id: int

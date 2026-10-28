@@ -763,7 +763,9 @@ def test_ai_disabled_fails_before_provider_client_is_created(db_session) -> None
         AIService(db_session, api_key="configured-but-must-not-be-used")
 
     assert exc_info.value.status_code == 503
-    assert "AI_ENABLED" in exc_info.value.detail
+    # Review 28/10/2026 R1-AI-TEXT: users read a neutral text; the flag name stays in the server log.
+    assert "AI_ENABLED" not in exc_info.value.detail
+    assert exc_info.value.detail.startswith("Trợ lý AI hiện chưa được bật")
     client_factory.assert_not_called()
 
 

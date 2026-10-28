@@ -192,8 +192,7 @@ def create_user(user_in: user_schema.UserCreate, db: Session = Depends(get_db),
                 current_user: User = Depends(get_current_user)):
     """Tạo người dùng mới"""
     # Kiểm tra xem username đã tồn tại chưa
-    existing_user = crud_user.get_user_by_username(db, username=user_in.username)
-    if existing_user:
+    if crud_user.username_taken(db, user_in.username):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Tên đăng nhập đã tồn tại")
     requested_role = db.get(Role, user_in.role_id)
     if not requested_role:
@@ -244,14 +243,19 @@ def update_user(id: int, user_in: user_schema.UserUpdate, db: Session = Depends(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     
     if user_in.username and user_in.username != db_user.username:
-        existing_user = crud_user.get_user_by_username(db, username=user_in.username)
-        if existing_user:
+        if crud_user.username_taken(db, user_in.username, exclude_id=db_user.id):
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Tên đăng nhập đã tồn tại")
     if user_in.role_id is not None and not db.get(Role, user_in.role_id):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vai trò không tồn tại")
 
     if is_admin:
         _ensure_active_admin_remains(db, db_user, user_in)
+        # Re-read under the row lock (after the admin-invariant lock, as deletion
+        # orders them): a deactivation stamps the hash it locked, so a password
+        # the user changed meanwhile is never overwritten (review 28/10/2026 R2-09).
+        db_user = _lock_user(db, id)
+        if db_user is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
     try:
         return crud_user.update_user(db=db, db_user=db_user, user_in=user_in)

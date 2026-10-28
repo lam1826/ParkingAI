@@ -51,8 +51,32 @@ Xem [hướng dẫn cài và trình diễn](docs/DEMO_GUIDE.md), [trạng thái 
   loại xe; hiển thị thời lượng đã gửi của phiên hoàn tất và thống kê chỗ trống theo khu vực.
 - Dashboard, báo cáo lưu lượng/doanh thu và khung giờ cao điểm.
 - Sơ đồ chỗ đỗ trực quan theo khu vực với trạng thái còn trống, đang có xe và bảo trì.
-- Xuất báo cáo tổng hợp ra tệp Excel (`.xlsx`) hoặc PDF.
+- Xuất báo cáo tổng hợp ra tệp Excel (`.xlsx`) hoặc PDF. Trang Báo cáo của bãi có nút "Xuất CSV" và
+  "Xuất Excel": hai tệp có cùng các dòng, cùng phạm vi dữ liệu và cùng khoảng ngày ghi trong tệp
+  (`GET /api/v2/sites/{id}/reports/export?format=csv|xlsx`). Cách tính "tuần" khác nhau giữa hai nhóm
+  báo cáo: báo cáo của bãi (v2, trang Báo cáo và AI) lấy **7 ngày kết thúc ở ngày đã chọn**; báo cáo cũ
+  `/reports/*` và tệp `/reports/export/xlsx|pdf` lấy **tuần Thứ Hai–Chủ Nhật chứa ngày đã chọn**. Mỗi tệp
+  ghi rõ "Từ ngày" và "Đến ngày" của kỳ đã tính.
 - Nhật ký hoạt động dành cho manager/admin, không lưu nội dung nhạy cảm của request.
+- Cổng khách hàng: khách tự khai báo đặt chỗ trước theo biển số/loại xe khi biển chưa được xác minh
+  cho hồ sơ nào hoặc là xe đã xác minh của chính mình. Biển đã xác minh cho hồ sơ khác bị từ chối bằng
+  một thông báo chung; đặt chỗ của tài khoản khác cho biển đó được hủy khi biển được duyệt cho chủ xe,
+  khi một tài khoản mới được duyệt liên kết với hồ sơ chủ xe hoặc khi nhân viên gán chủ xe, và không
+  bao giờ được dùng cho xe của chủ hay thấy lượt gửi của xe đó. Đặt chỗ như vậy còn sót từ trước bản sửa
+  28/10/2026 vẫn chặn chủ xe đặt cùng biển đến hạn đến của nó, nên trước khi triển khai phải chạy bước
+  bảo trì `python -m expansion.release_foreign_declarations` (xem
+  [đặt chỗ và đội xe](docs/SITES_RESERVATIONS.md#đặt-trước-tự-khai-báo)). Danh sách của khách không có
+  `session_id` và lọc được `status=confirmed` (mọi chỗ đang giữ); danh sách tiếp nhận của nhân viên vẫn có
+  `session_id`.
+- Yêu cầu hoàn tiền có thể được duyệt một phần. Chỉ khoản hoàn làm phiếu thu hết số còn lại mới
+  thu hồi vé giờ/ngày hoặc dừng kỳ vé tháng; khoản hoàn một phần giữ vé và khách có thể yêu cầu hoàn
+  phần còn lại. Khoản DEMO còn lại của kỳ vé đã bị quản lý ngừng vẫn yêu cầu hoàn được (tiền không bị
+  kẹt). Xem [cổng khách hàng và thanh toán](docs/PORTAL_PAYMENTS.md).
+- Giới hạn request: body JSON/form/multipart tối đa `MAX_REQUEST_BODY_BYTES` (1 MiB) và phải gửi xong
+  trong 30 giây (413/408; client ngắt giữa chừng nhận 400). Ba route ảnh camera tự đọc ảnh sau khi xác
+  thực (tối đa 2 MB, 30 giây); `MAX_UPLOAD_BODY_BYTES` (8 MiB) chỉ chặn sớm `Content-Length` khai báo
+  lớn hơn. Số vượt giới hạn database (id/offset/trang quá 2^63) trả 422 và ghi một dòng cảnh báo gồm
+  phương thức, đường dẫn và loại lỗi, không ghi query hay body.
 - Trang AI Analytics (`/ai`) và chatbot Gemini tích hợp trên các trang: hỏi đáp dữ liệu,
   sinh báo cáo ngày/tuần và gợi ý lịch nhân sự. Backend tự tổng hợp số liệu thật từ database
   rồi mới gửi cho AI (AI không tự tạo số liệu); thiếu `GEMINI_API_KEY` thì các endpoint `/ai/*`
@@ -78,8 +102,8 @@ Phân quyền được kiểm tra tại backend; ẩn menu ở frontend chỉ l�
 | Vai trò | Quyền chính |
 | --- | --- |
 | `customer` | Đăng nhập và dùng các chức năng tài khoản được cấp; không truy cập màn hình vận hành/quản trị |
-| `staff` | Nghiệp vụ xe vào/ra, tra cứu phiên, dashboard, báo cáo, AI analytics và quản lý dữ liệu bãi được router cho phép |
-| `manager` | Kế thừa `staff`; quản lý tài khoản và xem nhật ký hoạt động |
+| `staff` | Nghiệp vụ xe vào/ra, tra cứu phiên, báo cáo lưu lượng và xuất báo cáo của bãi (CSV/Excel, không có doanh thu), phân tích AI của bãi và quản lý dữ liệu bãi được router cho phép; không xem dashboard tổng quan (`GET /dashboard`), báo cáo doanh thu hay tệp báo cáo cũ (`/reports/revenue`, `/reports/export/*`) |
+| `manager` | Kế thừa `staff`; dashboard tổng quan, doanh thu, quản lý tài khoản và xem nhật ký hoạt động |
 | `admin` | Toàn quyền quản trị tài khoản và mô tả vai trò; không được đổi tên/xóa bốn vai trò canonical |
 
 Bốn tên vai trò `customer`, `staff`, `manager`, `admin` là contract cố định giữa token,
@@ -149,7 +173,8 @@ npm.cmd run dev
 ```
 
 - Giao diện: http://localhost:5173
-- API/Swagger: http://127.0.0.1:8000/docs
+- API/Swagger: http://127.0.0.1:8000/docs — chỉ khi đặt `API_DOCS_ENABLED=true` trong `backend/.env`
+  của máy phát triển. Mặc định `/docs`, `/redoc` và `/openapi.json` trả 404 (kể cả server demo).
 
 ## Kiểm thử
 

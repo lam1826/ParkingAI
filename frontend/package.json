@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
-    "test": "node --test",
+    "test": "node --test --test-timeout=180000",
     "preview": "vite preview"
   },
   "dependencies": {

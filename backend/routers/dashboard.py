@@ -1,5 +1,5 @@
 from typing import Annotated, List
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
 from database import get_db
@@ -66,7 +66,8 @@ def get_ai_insight(
 def get_recent_sessions(
     db: Annotated[Session, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)],
-    limit: int = 10,
+    # Review 28/10/2026 R2-03: a dashboard table, not an export; bounded like the other lists.
+    limit: int = Query(10, ge=1, le=100),
 ):
     """Trả về danh sách phiên gửi xe gần đây nhất (kèm biển số, loại xe) cho bảng Dashboard."""
     service = ParkingService(db)

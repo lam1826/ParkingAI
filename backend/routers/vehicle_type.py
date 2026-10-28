@@ -7,6 +7,7 @@ from database import get_db
 from services.auth_service import RoleChecker
 from schemas import vehicle_type as vt_schema
 from crud import vehicle_type as crud_vt
+from core.names import lock_catalog_names, name_key
 
 router = APIRouter()
 
@@ -47,6 +48,7 @@ def read_vehicle_type(id: int, db: Session = Depends(get_db)):
              dependencies=[Depends(RoleChecker("manager"))])
 def create_vehicle_type(vt_in: vt_schema.VehicleTypeCreate, db: Session = Depends(get_db)):
     """Tạo loại xe mới"""
+    lock_catalog_names(db, "vehicle_types")
     existing_vt = crud_vt.get_vehicle_type_by_name(db, name=vt_in.name)
     if existing_vt:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Tên loại xe đã tồn tại.")
@@ -63,7 +65,10 @@ def update_vehicle_type(id: int, vt_in: vt_schema.VehicleTypeUpdate, db: Session
     db_vt = crud_vt.get_vehicle_type(db, vt_id=id)
     if not db_vt:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vehicle Type not found")
-    if vt_in.name is not None:
+    # Only a changed name is checked: a near-duplicate pair from before the rule
+    # stays editable with its own names (review 28/10/2026, round 2).
+    if vt_in.name is not None and name_key(vt_in.name) != name_key(db_vt.name):
+        lock_catalog_names(db, "vehicle_types")
         conflict = crud_vt.get_vehicle_type_by_name(db, name=vt_in.name)
         if conflict is not None and conflict.id != db_vt.id:
             raise HTTPException(

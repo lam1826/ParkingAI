@@ -24,6 +24,8 @@ from db_rollout import check_database_readiness
 from middleware.audit import AuditLogMiddleware
 from middleware.security_headers import SecurityHeadersMiddleware
 from middleware.request_context import RequestContextMiddleware
+from middleware.request_limits import RequestLimitsMiddleware
+from core.validation_messages import vietnamese_error
 from expansion.site_router import router as site_router
 from expansion.portal_router import router as portal_router
 from expansion.online_payment_router import router as online_payment_router
@@ -84,13 +86,23 @@ async def app_lifespan(_app):
         stop.set()
         worker.join(timeout=min(5.0, max(0.1, interval)))
 
+def api_docs_urls(enabled: bool) -> dict:
+    """Review 28/10/2026 R2-10: /docs, /redoc and /openapi.json are opt-in (API_DOCS_ENABLED=true)."""
+    return {} if enabled else {"docs_url": None, "redoc_url": None, "openapi_url": None}
+
+
 # --- KHỞI TẠO APP & METADATA ---
 app = FastAPI(
     title="Parking Management System API",
     description="Hệ thống quản lý bãi đỗ xe thông minh tích hợp AI Text-to-SQL.",
     version="1.0.0",
     lifespan=app_lifespan,
+    **api_docs_urls(settings.API_DOCS_ENABLED),
 )
+
+# Innermost: oversized or non-finite JSON bodies are answered before routing,
+# still with the CORS, security and request-id headers added outside it.
+app.add_middleware(RequestLimitsMiddleware)
 
 # --- CẤU HÌNH CORS ---
 app.add_middleware(
@@ -138,15 +150,34 @@ async def response_validation_error_handler(
 
 @app.exception_handler(RequestValidationError)
 async def request_validation_error_handler(request: Request, exc: RequestValidationError):
-    """Return useful validation locations without reflecting submitted secrets."""
-    sensitive = {"password", "current_password", "new_password", "registration_code"}
-    errors = []
-    for error in exc.errors():
-        cleaned = dict(error)
-        if any(str(part).lower() in sensitive for part in cleaned.get("loc", ())):
-            cleaned.pop("input", None)
-        errors.append(cleaned)
-    return JSONResponse(status_code=422, content={"detail": jsonable_encoder(errors)})
+    """Return validation locations with short Vietnamese messages.
+
+    Review 28/10/2026 R2-05: no submitted value (``input``) is ever reflected,
+    so a 10 MB field yields a small answer and secrets are never echoed.
+    """
+    return JSONResponse(status_code=422, content={"detail": jsonable_encoder([vietnamese_error(error) for error in exc.errors()])})
+
+
+NUMBER_OUT_OF_RANGE = "Giá trị số vượt giới hạn cho phép."
+
+
+@app.exception_handler(OverflowError)
+async def overflow_error_handler(request: Request, exc: OverflowError):
+    """Review 28/10/2026 R2-03: an integer beyond what the database stores (an id, offset or
+    page past 2^63) or a date beyond the calendar is bad input, never a server error.
+
+    The same exception can come from arithmetic inside the server, so every case
+    is logged as a warning: method, path and exception only, never the query
+    string or body, which may carry personal data.
+    """
+    logger.warning(
+        "Number out of range answered 422 on %s %s: %s: %s",
+        request.method,
+        request.url.path,
+        type(exc).__name__,
+        exc,
+    )
+    return JSONResponse(status_code=422, content={"detail": NUMBER_OUT_OF_RANGE})
 
 
 # --- XỬ LÝ LỖI RÀNG BUỘC TOÀN VẸN (khóa ngoại/unique) ---
@@ -168,6 +199,11 @@ async def integrity_error_handler(request: Request, exc: IntegrityError):
 @app.exception_handler(DBAPIError)
 async def database_error_handler(request: Request, exc: DBAPIError):
     """Map known PostgreSQL trigger conflicts; hide every raw DB diagnostic."""
+    if getattr(getattr(exc, "orig", None), "sqlstate", None) == "22003":
+        # numeric_value_out_of_range: PostgreSQL's form of the OverflowError above.
+        # Logged like it; the DB error text is not, since it carries statement parameters.
+        logger.warning("Number out of range answered 422 on %s %s: sqlstate 22003", request.method, request.url.path)
+        return JSONResponse(status_code=422, content={"detail": NUMBER_OUT_OF_RANGE})
     if is_known_database_business_conflict(exc):
         return JSONResponse(
             status_code=409,

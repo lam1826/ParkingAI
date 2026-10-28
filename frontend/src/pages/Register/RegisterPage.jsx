@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Link as RouterLink, useLocation, useNavigate } from "react-router-dom";
+import { getErrorMessage } from "../../utils/errorMessage";
 import {
   Alert,
   Box,
@@ -66,8 +67,9 @@ export default function RegisterPage() {
         state: { message: "Đăng ký thành công. Bạn có thể đăng nhập ngay." },
       });
     } catch (requestError) {
-      const detail = requestError.response?.data?.detail;
-      setError(typeof detail === "string" ? detail : "Không thể đăng ký tài khoản");
+      // B-05: a validation list carries the server's short Vietnamese message
+      // ("Tên đăng nhập: sai định dạng."), so show it instead of a generic failure.
+      setError(getErrorMessage(requestError, "Không thể đăng ký tài khoản"));
     } finally {
       setLoading(false);
     }
@@ -89,11 +91,11 @@ export default function RegisterPage() {
           <Box component="form" onSubmit={handleSubmit}>
             <TextField
               fullWidth required margin="normal" name="full_name" label="Họ và tên"
-              value={form.full_name} onChange={handleChange} inputProps={{ minLength: 2, maxLength: 100 }}
+              value={form.full_name} onChange={handleChange} slotProps={{ htmlInput: { minLength: 2, maxLength: 100 } }}
             />
             <TextField
               fullWidth required margin="normal" name="username" label="Tên đăng nhập"
-              value={form.username} onChange={handleChange} inputProps={{ minLength: 3, maxLength: 50 }}
+              value={form.username} onChange={handleChange} slotProps={{ htmlInput: { minLength: 3, maxLength: 50 } }}
               helperText="Chỉ dùng chữ cái không dấu, số và các ký tự . _ -"
             />
             <TextField
@@ -112,7 +114,7 @@ export default function RegisterPage() {
             )}
             <PasswordField
               fullWidth required margin="normal" name="password" label="Mật khẩu"
-              value={form.password} onChange={handleChange} inputProps={{ minLength: 8, maxLength: 72 }}
+              value={form.password} onChange={handleChange} slotProps={{ htmlInput: { minLength: 8, maxLength: 72 } }}
               helperText="Từ 8 đến 72 ký tự"
             />
             <PasswordField
